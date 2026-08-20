@@ -1,11 +1,23 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { initialCases, initialNotifications, type Notification, type PetCase } from "./data";
+import { initialCases, initialNotifications, rescuerAccount, type Need, type Notification, type PetCase } from "./data";
 
 export type AccountMode = "donor" | "rescuer";
 export type DonorIntent = "adopt" | "donate";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
 export type PaymentOutcome = "success" | "error";
+
+export type RescuerProfile = {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  description: string;
+  instagram: string;
+  facebook: string;
+  clabe: string;
+  avatar?: string;
+};
 
 export type Donation = {
   id: string;
@@ -30,6 +42,7 @@ type PrototypeState = {
   paymentOutcome: PaymentOutcome;
   guardianAmount: number;
   guardianActive: boolean;
+  guardianImpactReady: boolean;
   savedPetIds: string[];
   savedRescuerIds: string[];
   cases: PetCase[];
@@ -37,10 +50,14 @@ type PrototypeState = {
   notifications: Notification[];
   messages: ChatMessage[];
   draft: Record<string, string | boolean | string[]>;
+  emptyStates: boolean;
+  rescuerProfile: RescuerProfile;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
   setPaymentOutcome: (outcome: PaymentOutcome) => void;
+  setEmptyStates: (value: boolean) => void;
+  updateRescuerProfile: (values: Partial<RescuerProfile>) => void;
   toggleSavedPet: (id: string) => void;
   toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
@@ -52,6 +69,7 @@ type PrototypeState = {
   updateCaseStatus: (id: string, status: PetCase["caseStatus"]) => void;
   toggleCaseAdoption: (id: string) => void;
   updateCase: (id: string, values: Partial<Pick<PetCase, "name" | "age" | "story" | "adoption">> & { needs?: PetCase["needs"] }) => void;
+  submitNeedEvidence: (caseId: string, needId: string) => void;
   resetPrototype: () => void;
 };
 
@@ -69,6 +87,7 @@ const initialState = {
   paymentOutcome: "success" as const,
   guardianAmount: 200,
   guardianActive: false,
+  guardianImpactReady: false,
   savedPetIds: [] as string[],
   savedRescuerIds: [] as string[],
   cases: initialCases,
@@ -76,6 +95,8 @@ const initialState = {
   notifications: initialNotifications,
   messages: baseMessages,
   draft: {} as Record<string, string | boolean | string[]>,
+  emptyStates: false,
+  rescuerProfile: { ...rescuerAccount },
 };
 
 export const usePrototypeStore = create<PrototypeState>()(
@@ -86,6 +107,16 @@ export const usePrototypeStore = create<PrototypeState>()(
       setDonorIntent: (donorIntent) => set({ donorIntent }),
       setVerification: (verification) => set({ verification }),
       setPaymentOutcome: (paymentOutcome) => set({ paymentOutcome }),
+      setEmptyStates: (emptyStates) =>
+        set((state) => ({
+          emptyStates,
+          // Al apagar empty states, muestra el feed de impacto de demo si ya es Guardián.
+          guardianImpactReady: emptyStates ? false : state.guardianActive ? true : state.guardianImpactReady,
+        })),
+      updateRescuerProfile: (values) =>
+        set((state) => ({
+          rescuerProfile: { ...state.rescuerProfile, ...values },
+        })),
       toggleSavedPet: (id) =>
         set((state) => ({
           savedPetIds: state.savedPetIds.includes(id)
@@ -144,6 +175,8 @@ export const usePrototypeStore = create<PrototypeState>()(
         set((state) => ({
           guardianActive,
           guardianAmount: guardianAmount ?? state.guardianAmount,
+          // Recién activado: feed vacío hasta que haya impacto registrado.
+          guardianImpactReady: guardianActive ? false : false,
           notifications: guardianActive
             ? [
                 {
@@ -195,25 +228,61 @@ export const usePrototypeStore = create<PrototypeState>()(
         set((state) => {
           const name = String(state.draft.petName || "Nuevo caso");
           const mode = state.draft.publishMode === "donation" ? "donation" : "adoption";
+          const photos = Array.isArray(state.draft.photos) ? state.draft.photos : [];
+          let donationNeeds: Need[] = [];
+          if (mode === "donation") {
+            try {
+              const parsed = JSON.parse(String(state.draft.needItemsJson || "[]")) as Array<{
+                id: string; title: string; type: Need["type"]; amount: number; urgent?: boolean;
+              }>;
+              donationNeeds = parsed.map((item) => ({
+                id: item.id,
+                title: item.title,
+                type: item.type,
+                requested: Number(item.amount || 0),
+                funded: 0,
+                urgent: Boolean(item.urgent),
+                recurring: item.type === "Comida",
+                status: "active" as const,
+              }));
+            } catch {
+              donationNeeds = [];
+            }
+            if (!donationNeeds.length && state.draft.needTitle) {
+              donationNeeds = [{
+                id: `need-${Date.now()}`,
+                title: String(state.draft.needTitle),
+                type: "Otra",
+                requested: Number(state.draft.amount || 500),
+                funded: 0,
+                status: "active",
+              }];
+            }
+          }
           const created: PetCase = {
             id: `case-${Date.now()}`,
             name,
             age: String(state.draft.age || "Edad pendiente"),
             sex: state.draft.sex === "Hembra" ? "Hembra" : "Macho",
             species: state.draft.species === "Gato" ? "Gato" : "Perro",
-            image: "/assets/luna-card.png",
+            image: String(photos[0] || "/assets/luna-card.png"),
             story: String(state.draft.story || "Historia por completar."),
             location: String(state.draft.location || "Monterrey, MX"),
             rescuer: "María R.",
             distance: "0 km",
             adoption: mode === "adoption",
             caseStatus: status,
-            health: { vaccinated: Boolean(state.draft.vaccinated), sterilized: Boolean(state.draft.sterilized), specialCare: "No especificado" },
-            social: { dogs: true, cats: true, children: true },
-            needs:
-              mode === "donation"
-                ? [{ id: `need-${Date.now()}`, title: String(state.draft.needTitle || "Nueva necesidad"), type: "Otra", requested: Number(state.draft.amount || 500), funded: 0, status: "active" }]
-                : [],
+            health: {
+              vaccinated: Boolean(state.draft.vaccinated),
+              sterilized: Boolean(state.draft.sterilized),
+              specialCare: state.draft.specialCare ? "Requiere cuidados especiales" : "Ninguno",
+            },
+            social: {
+              dogs: Boolean(state.draft.socialDogs),
+              cats: Boolean(state.draft.socialCats),
+              children: Boolean(state.draft.socialChildren),
+            },
+            needs: donationNeeds,
           };
           return { cases: [created, ...state.cases], draft: {} };
         }),
@@ -229,13 +298,51 @@ export const usePrototypeStore = create<PrototypeState>()(
         set((state) => ({
           cases: state.cases.map((item) => (item.id === id ? { ...item, ...values } : item)),
         })),
+      submitNeedEvidence: (caseId, needId) =>
+        set((state) => {
+          const pet = state.cases.find((item) => item.id === caseId);
+          const need = pet?.needs.find((entry) => entry.id === needId);
+          return {
+            cases: state.cases.map((item) =>
+              item.id === caseId
+                ? {
+                    ...item,
+                    needs: item.needs.map((entry) =>
+                      entry.id === needId ? { ...entry, status: "evidence" as const } : entry,
+                    ),
+                  }
+                : item,
+            ),
+            notifications: [
+              {
+                id: `evidence-${Date.now()}`,
+                kind: "case" as const,
+                title: "Evidencia en revisión",
+                body: need
+                  ? `Recibimos la evidencia de ${need.title} para ${pet?.name ?? "tu caso"}.`
+                  : "Recibimos tu evidencia. Te avisaremos cuando la revisemos.",
+                time: "Ahora",
+                target: `/rescuer/cases/${caseId}`,
+                read: false,
+              },
+              ...state.notifications,
+            ],
+          };
+        }),
       resetPrototype: () => set({ ...initialState }),
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 5,
+      version: 9,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
-      migrate: (persisted) => ({ ...(persisted as PrototypeState), cases: initialCases, notifications: initialNotifications }),
+      migrate: (persisted) => ({
+        ...(persisted as PrototypeState),
+        cases: initialCases,
+        notifications: initialNotifications,
+        emptyStates: false,
+        guardianImpactReady: false,
+        rescuerProfile: { ...rescuerAccount },
+      }),
     },
   ),
 );

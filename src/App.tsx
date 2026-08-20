@@ -5,7 +5,6 @@ import {
   donationLog,
   donorFaqs,
   paymentHistory,
-  rescuerAccount,
   rescuerFaqs,
   rescuers,
   savedCards,
@@ -185,9 +184,11 @@ function TestPanel() {
     paymentOutcome,
     verification,
     accountMode,
+    emptyStates,
     setPaymentOutcome,
     setVerification,
     setAccountMode,
+    setEmptyStates,
     resetPrototype,
   } = usePrototypeStore();
   const [open, setOpen] = useState(false);
@@ -233,6 +234,21 @@ function TestPanel() {
               <option value="rescuer">Rescatista</option>
             </select>
           </label>
+          <label className="test-toggle-row">
+            <span>Empty states</span>
+            <button
+              type="button"
+              className={`switch ${emptyStates ? "on" : ""}`}
+              role="switch"
+              aria-checked={emptyStates}
+              aria-label="Mostrar empty states"
+              onClick={() => {
+                setEmptyStates(!emptyStates);
+              }}
+            >
+              <i />
+            </button>
+          </label>
           <div className="test-shortcuts">
             <button onClick={() => navigate("/donate")}>Donación</button>
             <button onClick={() => navigate("/rescuer/publish")}>Publicar</button>
@@ -260,10 +276,14 @@ function Splash() {
     return () => window.clearTimeout(timer);
   }, [navigate]);
   return (
-    <button className="splash" onClick={() => navigate("/choose-intent")} aria-label="Continuar">
-      <img className="splash-mark" src={`${A}dopmi-mark.png`} alt="" width="132" height="132" />
-      <img className="splash-wordmark" src={`${A}dopmi-wordmark.png`} alt="DopMi" width="232" height="78" />
-      <span>Adopta, dona y acompaña cada rescate</span>
+    <button className="splash" onClick={() => navigate("/choose-intent")} aria-label="Continuar a DopMi">
+      <img
+        className="splash-wordmark"
+        src={`${A}splash-wordmark.png`}
+        alt="DopMi"
+        width={258}
+        height={86}
+      />
     </button>
   );
 }
@@ -625,23 +645,138 @@ function StaticSimulated({ title, children, back }: { title: string; children: R
 
 function AdoptionHome() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, notifications } = usePrototypeStore();
+  const { savedPetIds, toggleSavedPet, notifications, emptyStates } = usePrototypeStore();
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filter, setFilter] = useState<"Todos" | "Perro" | "Gato">("Todos");
-  const pets = adoptionPets.filter((pet) => filter === "Todos" || pet.type === filter);
+  const [draftSex, setDraftSex] = useState<Array<"Macho" | "Hembra">>([]);
+  const [draftType, setDraftType] = useState<Array<"Perro" | "Gato">>([]);
+  const [sexFilter, setSexFilter] = useState<Array<"Macho" | "Hembra">>([]);
+  const [typeFilter, setTypeFilter] = useState<Array<"Perro" | "Gato">>([]);
+  const unread = notifications.filter((item) => !item.read).length;
+  const filtersActive = sexFilter.length > 0 || typeFilter.length > 0;
+
+  const pets = emptyStates
+    ? []
+    : adoptionPets.filter((pet) => {
+        const sexOk = !sexFilter.length || sexFilter.includes(pet.sex);
+        const typeOk = !typeFilter.length || typeFilter.includes(pet.type);
+        return sexOk && typeOk;
+      });
+
+  const openFilters = () => {
+    setDraftSex(sexFilter);
+    setDraftType(typeFilter);
+    setFilterOpen(true);
+  };
+
+  const toggleDraft = <T extends string>(value: T, list: T[], setList: (next: T[]) => void) => {
+    setList(list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
+  };
+
+  const applyFilters = () => {
+    setSexFilter(draftSex);
+    setTypeFilter(draftType);
+    setFilterOpen(false);
+  };
+
+  const clearFilters = () => {
+    setDraftSex([]);
+    setDraftType([]);
+    setSexFilter([]);
+    setTypeFilter([]);
+    setFilterOpen(false);
+  };
+
   return (
-    <ScreenShell className="adoption-shell">
+    <ScreenShell
+      className="adoption-shell"
+      overlay={
+        filterOpen ? (
+          <div className="modal-backdrop center" onClick={() => setFilterOpen(false)}>
+            <div className="dialog-card adoption-filter-dialog" onClick={(event) => event.stopPropagation()}>
+              <button className="dialog-close" onClick={() => setFilterOpen(false)} aria-label="Cerrar">×</button>
+              <header className="adoption-filter-header">
+                <h2>Filtros de adopción</h2>
+                <p>Filtra las mascotas disponibles para adopción</p>
+              </header>
+              <div className="adoption-filter-grid">
+                <section>
+                  <h3>Sexo</h3>
+                  <div className="filter-options">
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftSex.includes("Macho")}
+                        onChange={() => toggleDraft("Macho", draftSex, setDraftSex)}
+                      />
+                      <span>Macho</span>
+                    </label>
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftSex.includes("Hembra")}
+                        onChange={() => toggleDraft("Hembra", draftSex, setDraftSex)}
+                      />
+                      <span>Hembra</span>
+                    </label>
+                  </div>
+                </section>
+                <section>
+                  <h3>Tipo</h3>
+                  <div className="filter-options">
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftType.includes("Gato")}
+                        onChange={() => toggleDraft("Gato", draftType, setDraftType)}
+                      />
+                      <span>Gato</span>
+                    </label>
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftType.includes("Perro")}
+                        onChange={() => toggleDraft("Perro", draftType, setDraftType)}
+                      />
+                      <span>Perro</span>
+                    </label>
+                  </div>
+                </section>
+              </div>
+              <div className="adoption-filter-actions">
+                <button type="button" className="primary-button" onClick={applyFilters}>Aplicar filtros</button>
+                <button type="button" className="secondary-button" onClick={clearFilters}>Limpiar filtros</button>
+              </div>
+            </div>
+          </div>
+        ) : null
+      }
+    >
       <div className="adoption-feed">
         {!pets.length ? (
           <section className="adoption-empty">
-            <h1>Adopción</h1>
-            <article className="empty-card">
+            <div className="adoption-empty-top">
+              <h1>Adopción</h1>
+              <button type="button" className="icon-button" onClick={openFilters} aria-label="Filtros">
+                <AssetIcon name="filter.svg" size={20} />
+              </button>
+            </div>
+            <article className="empty-card donor-empty-card">
               <span className="empty-chip yellow">
                 <Icon name="icon-heart.svg" size={28} />
               </span>
               <h2>No hay mascotas disponibles</h2>
-              <p>Actualmente no se han publicado mascotas disponibles para adopción.</p>
-              <button className="secondary-button" onClick={() => setFilter("Todos")}>Quitar filtros</button>
+              <p>
+                {filtersActive && !emptyStates
+                  ? "Prueba otros filtros o limpia la selección para ver más opciones."
+                  : "Por ahora no hay mascotas en adopción. Vuelve pronto o apoya a quienes ya buscan ayuda."}
+              </p>
+              {filtersActive && !emptyStates ? (
+                <button type="button" className="secondary-button" onClick={clearFilters}>Limpiar filtros</button>
+              ) : (
+                <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+                  Ir a Donar
+                </button>
+              )}
             </article>
           </section>
         ) : null}
@@ -650,10 +785,10 @@ function AdoptionHome() {
             <img className="adoption-image" src={pet.image} alt={pet.name} />
             <div className="adoption-shade" />
             <div className="floating-actions">
-              <button onClick={() => setFilterOpen(true)} aria-label="Filtros"><AssetIcon name="filter.svg" /></button>
-              <button onClick={() => navigate("/messages/luna")} aria-label="Mensajes">
+              <button onClick={openFilters} aria-label="Filtros"><AssetIcon name="filter.svg" /></button>
+              <button onClick={() => navigate("/messages")} aria-label="Mensajes">
                 <AssetIcon name="messages.svg" />
-                {notifications.filter((item) => !item.read).length > 0 && <span className="notification-dot">{notifications.filter((item) => !item.read).length}</span>}
+                {unread > 0 && <span className="notification-dot">{unread}</span>}
               </button>
             </div>
             <div className="swipe-hint"><AssetIcon name="swipe.svg" size={16} /><span>Desliza</span></div>
@@ -669,96 +804,209 @@ function AdoptionHome() {
                 onClick={() => toggleSavedPet(pet.id)}
                 aria-label={savedPetIds.includes(pet.id) ? "Quitar de guardados" : "Guardar"}
               >
-                <AssetIcon name="bookmark.svg" />
+                <Icon name="icon-bookmark.svg" size={20} />
               </button>
               <button className="primary-button" onClick={() => navigate(`/adoption/${pet.id}`)}>Conocer más de {pet.name}</button>
             </div>
           </section>
         ))}
       </div>
-      {filterOpen && (
-        <div className="modal-backdrop" onClick={() => setFilterOpen(false)}>
-          <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="sheet-handle" />
-            <h2>Filtrar mascotas</h2>
-            <div className="segmented-control">
-              {(["Todos", "Perro", "Gato"] as const).map((option) => (
-                <button key={option} className={filter === option ? "active" : ""} onClick={() => setFilter(option)}>{option}</button>
-              ))}
-            </div>
-            <button className="primary-button" onClick={() => setFilterOpen(false)}>Ver resultados</button>
-          </div>
-        </div>
-      )}
     </ScreenShell>
   );
 }
 
+function TraitRow({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <div className={`trait-row ${ok ? "ok" : "off"}`}>
+      <AssetIcon name={ok ? "onb-check.svg" : "icon-x-muted.svg"} size={20} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 function AdoptionDetail() {
-  const { petId = "rocky" } = useParams();
+  const { petId = "toby" } = useParams();
   const navigate = useNavigate();
   const { savedPetIds, toggleSavedPet } = usePrototypeStore();
   const pet = adoptionPets.find((item) => item.id === petId) ?? adoptionPets[0];
   const isSaved = savedPetIds.includes(pet.id);
+  const [report, setReport] = useState(false);
+  const [toast, setToast] = useState("");
+
   return (
-    <div className="plain-screen">
-      <div className="detail-hero">
-        <img src={pet.image} alt={pet.name} />
-        <button className="hero-back" onClick={() => navigate("/adoption")}><AssetIcon name="back-light.svg" /></button>
-        <button className={`hero-save ${isSaved ? "selected" : ""}`} onClick={() => toggleSavedPet(pet.id)}><AssetIcon name="bookmark.svg" /></button>
-      </div>
-      <div className="detail-content">
-        <div className="title-row"><div><h1>{pet.name}</h1><p>{pet.sex} · {pet.type}</p></div><span className="distance-pill">{pet.distance}</span></div>
-        <p>{pet.story}</p>
-        <div className="info-card"><strong>{pet.rescuer}</strong><span>Rescatista verificado · Monterrey, MX</span></div>
-        <h2>Salud</h2>
-        <div className="status-grid">
-          <span className="positive">Vacunado</span><span className="positive">Desparasitado</span><span>Cuidados al día</span>
+    <ScreenShell
+      overlay={
+        <>
+          {report ? (
+            <ReportDialog
+              title="Reportar publicación"
+              onClose={(sent) => {
+                setReport(false);
+                if (sent) setToast("Reporte enviado, lo revisaremos pronto");
+              }}
+            />
+          ) : null}
+          {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+        </>
+      }
+    >
+      <div className="adoption-detail">
+        <div className="detail-hero compact">
+          <img src={pet.image} alt={pet.name} />
+          <button className="hero-back" onClick={() => navigate("/adoption")} aria-label="Volver">
+            <AssetIcon name="back-light.svg" />
+          </button>
+          <button
+            className="hero-share"
+            onClick={() => setToast("Enlace copiado")}
+            aria-label="Compartir"
+          >
+            <Icon name="icon-share.svg" size={20} />
+          </button>
         </div>
-        <h2>Convive con</h2>
-        <div className="status-grid">
-          <span className="positive">Perros</span><span className="positive">Niños</span><span>Gatos: por conocer</span>
+
+        <div className="detail-content adoption-detail-content">
+          <article className="info-card case-summary-card">
+            <div className="title-row">
+              <h1>{pet.name}</h1>
+              <span className="distance-pill">
+                <Icon name="location.svg" size={12} />
+                {pet.distance}
+              </span>
+            </div>
+            <p className="pet-sex">{pet.sex}</p>
+            <p>{pet.story}</p>
+          </article>
+
+          <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(pet.rescuer)}`)}>
+            <span className="avatar yellow">{pet.rescuer.charAt(0)}</span>
+            <span>
+              <strong>
+                {pet.rescuer}
+                {pet.verified ? <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" /> : null}
+              </strong>
+              <small>{pet.location}</small>
+            </span>
+          </button>
+
+          <article className="info-card trait-card">
+            <h3>Salud</h3>
+            <TraitRow ok={pet.health.vaccinated} label="Vacunado" />
+            <TraitRow ok={pet.health.sterilized} label="Esterilizado" />
+            <TraitRow ok={pet.health.specialCare} label="Requiere cuidados especiales" />
+          </article>
+
+          <article className="info-card trait-card">
+            <h3>Social</h3>
+            <TraitRow ok={pet.social.dogs} label="Social con perros" />
+            <TraitRow ok={pet.social.cats} label="Social con gatos" />
+            <TraitRow ok={pet.social.children} label="Social con niños" />
+          </article>
+
+          <button className="report-link" onClick={() => setReport(true)}>
+            <Icon name="icon-alert-circle.svg" size={16} />
+            Reportar
+          </button>
+
+          {pet.journey.length ? (
+            <section className="journey-section">
+              <h2>Cómo llegó hasta aquí</h2>
+              <div className="story-stack">
+                {pet.journey.map((entry) => (
+                  <article className="story-card" key={entry.id}>
+                    <div className="story-media">
+                      <img src={pet.image} alt="" />
+                      <span className="story-when">
+                        <Icon name="icon-clock.svg" size={12} />
+                        {entry.when}
+                      </span>
+                      <span className="story-tag light">{entry.tag}</span>
+                    </div>
+                    <div className="story-body">
+                      <p>{entry.text}</p>
+                      {entry.need ? <span className="story-need">{entry.need}</span> : null}
+                      <small>
+                        <span className="avatar tiny yellow">{entry.thanksInitial}</span>
+                        {entry.thanks}
+                      </small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
-        <button className="primary-button sticky-action" onClick={() => navigate("/messages/luna")}>Contactar al rescatista</button>
+
+        <div className="adoption-detail-bar">
+          <button
+            className={`round-save ${isSaved ? "selected" : ""}`}
+            onClick={() => toggleSavedPet(pet.id)}
+            aria-label={isSaved ? "Quitar de guardados" : "Guardar"}
+          >
+            <Icon name="icon-bookmark.svg" size={20} />
+          </button>
+          <button className="primary-button adopt-cta" onClick={() => navigate("/messages/luna")}>
+            {pet.sex === "Hembra" ? "Quiero adoptarla" : "Quiero adoptarlo"}
+          </button>
+        </div>
       </div>
-    </div>
+    </ScreenShell>
   );
 }
 
 function DonationHome() {
   const navigate = useNavigate();
-  const { cases, savedPetIds, toggleSavedPet, notifications } = usePrototypeStore();
-  const unread = notifications.filter((item) => !item.read).length;
+  const { cases, savedPetIds, toggleSavedPet, emptyStates } = usePrototypeStore();
+  const openCases = emptyStates
+    ? []
+    : cases.filter((item) => item.caseStatus === "active" && item.needs.some((need) => need.status === "active"));
   return (
     <ScreenShell>
       <div className="content-pad donation-list">
         <div className="section-heading">
-          <div><h1>Apoya a la manada DopMi</h1><p>Elige a quien más conecte contigo. Cada peso ayuda a mantenerlos sanos y fuertes.</p></div>
-          <BellButton count={unread} onClick={() => navigate("/notifications")} />
+          <div>
+            <h1>Apoya a la manada DopMi</h1>
+            <p>
+              {openCases.length
+                ? "Elige a quien más conecte contigo. Cada peso ayuda a mantenerlos sanos y fuertes."
+                : "Cuando haya mascotas que necesiten apoyo, aparecerán aquí."}
+            </p>
+          </div>
         </div>
-        {cases
-          .filter((item) => item.caseStatus === "active" && item.needs.some((need) => need.status === "active"))
-          .map((item) => {
+        {!openCases.length ? (
+          <article className="empty-card donor-empty-card">
+            <span className="empty-chip yellow">
+              <Icon name="tab-donate.svg" size={28} />
+            </span>
+            <h2>No hay casos para donar</h2>
+            <p>Por ahora no hay necesidades abiertas. Mientras tanto, puedes conocer mascotas en adopción.</p>
+            <button type="button" className="primary-button" onClick={() => navigate("/adoption")}>
+              Ir a Adopción
+            </button>
+          </article>
+        ) : (
+          openCases.map((item) => {
             const need = item.needs.find((entry) => entry.status === "active")!;
             return (
-          <article className="case-card" key={item.id}>
-            <div className="case-image">
-              <img src={item.image} alt={item.name} />
-              {item.needs.some((entry) => entry.urgent && entry.status === "active") && <span className="urgent-badge">Urgente</span>}
-              <button className={savedPetIds.includes(item.id) ? "selected" : ""} onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button>
-              <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
-            </div>
-              <div className="need-summary" key={need.id}>
-                <div><strong>{need.title}</strong><b>${need.funded} / ${need.requested}</b></div>
-                <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
-                <div className="card-actions">
-                  <button className="primary-button" onClick={() => navigate(`/donate/${item.id}/${need.id}`)}>Donar</button>
-                  <button className="secondary-button" onClick={() => navigate(`/case/${item.id}`)}>Ver caso</button>
+              <article className="case-card" key={item.id}>
+                <div className="case-image">
+                  <img src={item.image} alt={item.name} />
+                  {item.needs.some((entry) => entry.urgent && entry.status === "active") && <span className="urgent-badge">Urgente</span>}
+                  <button className={savedPetIds.includes(item.id) ? "selected" : ""} onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button>
+                  <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
                 </div>
-              </div>
-          </article>
+                <div className="need-summary" key={need.id}>
+                  <div><strong>{need.title}</strong><b>${need.funded} / ${need.requested}</b></div>
+                  <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
+                  <div className="card-actions">
+                    <button className="primary-button" onClick={() => navigate(`/donate/${item.id}/${need.id}`)}>Donar</button>
+                    <button className="secondary-button" onClick={() => navigate(`/case/${item.id}`)}>Ver caso</button>
+                  </div>
+                </div>
+              </article>
             );
-          })}
+          })
+        )}
       </div>
     </ScreenShell>
   );
@@ -798,26 +1046,64 @@ function CaseDetail() {
     <div className="plain-screen detail-screen">
       <div className="detail-hero compact">
         <img src={item.id === "luna" ? `${A}luna-detail.png` : item.image} alt={item.name} />
-        <button className="hero-back" onClick={() => navigate("/donate")}><AssetIcon name="back-light.svg" /></button>
-        <button className={`hero-save ${savedPetIds.includes(item.id) ? "selected" : ""}`} onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button>
+        <button className="hero-back" onClick={() => navigate("/donate")} aria-label="Volver"><AssetIcon name="back-light.svg" /></button>
+        <button className="hero-share" onClick={() => setToast("Enlace del caso copiado")} aria-label="Compartir">
+          <Icon name="icon-share.svg" size={20} />
+        </button>
       </div>
       <div className="detail-content">
-        <div className="title-row"><div><h1>{item.name}, {item.age}</h1><p>{item.story}</p></div><span className="distance-pill">{item.distance}</span></div>
+        <article className="info-card case-summary-card">
+          <div className="title-row">
+            <h1>{item.name}, {item.age}</h1>
+            <span className="distance-pill">
+              <Icon name="location.svg" size={12} />
+              {item.distance}
+            </span>
+          </div>
+          <p>{item.story}</p>
+        </article>
         <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${item.id}`)}>
-          <span className="avatar">{item.rescuer.charAt(0)}</span><span><strong>{item.rescuer}</strong><small>{item.location} · Confianza 96%</small></span>
+          <span className="avatar yellow">{item.rescuer.charAt(0)}</span>
+          <span>
+            <strong>
+              {item.rescuer}
+              <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" />
+            </strong>
+            <small>{item.location}</small>
+          </span>
         </button>
         <article className="funding-card">
           <h3>Progreso total de la misión</h3>
-          <div className="split-meta"><span>Financiamiento</span><strong>{Math.round((funded / total) * 100)}%</strong></div>
-          <div className="progress"><i style={{ width: `${(funded / total) * 100}%` }} /></div>
+          <div className="split-meta"><span>Financiamiento</span><strong>{Math.round((funded / Math.max(total, 1)) * 100)}%</strong></div>
+          <div className="progress"><i style={{ width: `${(funded / Math.max(total, 1)) * 100}%` }} /></div>
         </article>
         <h2>Necesidades activas</h2>
         <div className="needs-stack">{item.needs.map((need) => <NeedCard key={need.id} need={need} caseId={item.id} />)}</div>
-        <button className="text-action" onClick={() => setToast("Enlace del caso copiado")}>Compartir caso</button>
-        <button className="text-action danger" onClick={() => setReport(true)}>Reportar</button>
+        <button className="report-link" onClick={() => setReport(true)}>
+          <Icon name="icon-alert-circle.svg" size={16} />
+          Reportar
+        </button>
         <button className="secondary-button" onClick={() => toggleSavedRescuer(item.rescuer)}>
           {savedRescuerIds.includes(item.rescuer) ? "Quitar rescatista de guardados" : "Guardar rescatista"}
         </button>
+        <div className="adoption-detail-bar case-detail-bar">
+          <button
+            className={`round-save ${savedPetIds.includes(item.id) ? "selected" : ""}`}
+            onClick={() => toggleSavedPet(item.id)}
+            aria-label={savedPetIds.includes(item.id) ? "Quitar de guardados" : "Guardar"}
+          >
+            <Icon name="icon-bookmark.svg" size={20} />
+          </button>
+          <button
+            className="primary-button adopt-cta"
+            onClick={() => {
+              const need = item.needs.find((entry) => entry.status === "active") ?? item.needs[0];
+              if (need) navigate(`/donate/${item.id}/${need.id}`);
+            }}
+          >
+            Donar ahora
+          </button>
+        </div>
       </div>
       {report ? (
         <ReportDialog
@@ -1112,8 +1398,9 @@ function GuardianCarousel() {
 
 function Impact() {
   const navigate = useNavigate();
-  const { guardianActive } = usePrototypeStore();
+  const { guardianActive, emptyStates, guardianImpactReady } = usePrototypeStore();
   if (guardianActive) {
+    const showEmpty = emptyStates || !guardianImpactReady;
     const stories = [
       { name: "Luna", image: "impact-luna.png", type: "Suscripción mensual", amount: 200, author: "Ana García", time: "Hace 2 días", copy: "Luna recibió su comida mensual gracias a tu suscripción. ¡Ya está mucho más fuerte!" },
       { name: "Milo", image: "impact-milo.png", type: "Donación directa", amount: 500, author: "Carlos Ruiz", time: "Hace 5 días", copy: "Milo completó su tratamiento de vacunas. Tu donación directa ayudó a proteger su salud." },
@@ -1123,22 +1410,37 @@ function Impact() {
     return (
       <ScreenShell>
         <div className="content-pad impact-page">
-          <div className="impact-heading"><h1>Vidas que continúan gracias a ti.</h1><p>Todas estas huellitas recibieron tu impacto, Guardián! Gracias por confiar en nosotros.</p></div>
-          {stories.map((item) => (
-            <article className="impact-card" key={item.name}>
-              <img src={`${A}${item.image}`} alt={item.name} />
-              <div>
-                <div className="title-row"><strong>{item.name}</strong><span>{item.type}</span></div>
-                <p>{item.copy}</p>
-                <div className="impact-meta"><small>Por {item.author}</small><small>{item.time}</small></div>
-                <div className="impact-foot">
-                  <span className="impact-amount">${item.amount} MXN</span>
-                  <button className="secondary-button compact"><Icon name="icon-share.svg" size={14} />Compartir</button>
-                </div>
-              </div>
+          <div className="impact-heading">
+            <h1>Vidas que continúan gracias a ti.</h1>
+            <p>Todas estas huellitas recibieron tu impacto, Guardián! Gracias por confiar en nosotros.</p>
+          </div>
+          {showEmpty ? (
+            <article className="empty-card donor-empty-card impact-empty-card">
+              <span className="empty-chip yellow">
+                <AssetIcon name="empty-impact-paw.svg" size={32} />
+              </span>
+              <h2>Aquí verás las mascotas que hayas apoyado</h2>
+              <p>Actualmente no hay registro de donaciones.</p>
             </article>
-          ))}
-          <button className="secondary-button" onClick={() => navigate("/settings/billing")}>Administrar suscripción</button>
+          ) : (
+            <>
+              {stories.map((item) => (
+                <article className="impact-card" key={item.name}>
+                  <img src={`${A}${item.image}`} alt={item.name} />
+                  <div>
+                    <div className="title-row"><strong>{item.name}</strong><span>{item.type}</span></div>
+                    <p>{item.copy}</p>
+                    <div className="impact-meta"><small>Por {item.author}</small><small>{item.time}</small></div>
+                    <div className="impact-foot">
+                      <span className="impact-amount">${item.amount} MXN</span>
+                      <button className="secondary-button compact"><Icon name="icon-share.svg" size={14} />Compartir</button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              <button className="secondary-button" onClick={() => navigate("/settings/billing")}>Administrar suscripción</button>
+            </>
+          )}
         </div>
       </ScreenShell>
     );
@@ -1305,8 +1607,8 @@ function Messages() {
     setText("");
   };
   return (
-    <div className="plain-screen chat-screen">
-      <TopBar title="Ana P." back={accountMode === "donor" ? "/adoption" : "/rescuer/messages"} actions={<span className="online-label">En línea</span>} />
+    <div className={`plain-screen chat-screen ${accountMode === "donor" ? "adopter-chat" : "rescuer-chat"}`}>
+      <TopBar title="Ana P." back={accountMode === "donor" ? "/messages" : "/rescuer/messages"} actions={<span className="online-label">En línea</span>} />
       <div className="chat-messages">
         {messages.map((message) => (
           <div key={message.id} className={`bubble ${message.author === accountMode ? "mine" : ""}`}>
@@ -1320,6 +1622,58 @@ function Messages() {
       </form>
       <BottomNav mode={accountMode} />
     </div>
+  );
+}
+
+function DonorMessages() {
+  const navigate = useNavigate();
+  const { messages, emptyStates } = usePrototypeStore();
+  const last = messages[messages.length - 1];
+  const threads = emptyStates
+    ? []
+    : [
+        { id: "luna", initial: "M", name: "María R.", about: "re: Luna", preview: last?.text ?? "¡Hola! ¿Te interesa conocer más de Luna?", time: last?.time ?? "5m", unread: last?.author === "rescuer" ? 1 : 0 },
+        { id: "rocky", initial: "C", name: "Carlos Ruiz", about: "re: Rocky", preview: "Puedes visitarlo el sábado por la mañana.", time: "2h", unread: 0 },
+        { id: "milo", initial: "L", name: "Laura V.", about: "re: Milo", preview: "Gracias por tu interés en adoptar.", time: "Ayer", unread: 0 },
+      ];
+  return (
+    <ScreenShell>
+      <div className="content-pad donor-messages">
+        <header className="page-head">
+          <h1>Mensajes</h1>
+        </header>
+        <p className="section-lead">Habla con rescatistas</p>
+        {threads.length === 0 ? (
+          <article className="empty-card donor-empty-card messages-empty-card">
+            <span className="empty-chip yellow">
+              <Icon name="icon-messages.svg" size={28} />
+            </span>
+            <h2>No tienes mensajes</h2>
+            <p>Cuando contactes a un rescatista sobre una mascota, verás las conversaciones aquí.</p>
+            <button type="button" className="primary-button" onClick={() => navigate("/adoption")}>
+              Ir a Adopción
+            </button>
+          </article>
+        ) : (
+          <div className="thread-list donor-thread-list">
+            {threads.map((thread) => (
+              <button className="thread-row" key={thread.id} onClick={() => navigate(`/messages/${thread.id}`)}>
+                <span className="thread-avatar">{thread.initial}</span>
+                <span className="thread-main">
+                  <span className="thread-head">
+                    <strong>{thread.name}</strong>
+                    <time>{thread.time}</time>
+                  </span>
+                  <small>{thread.about}</small>
+                  <p>{thread.preview}</p>
+                </span>
+                {thread.unread > 0 && <span className="thread-badge">{thread.unread}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </ScreenShell>
   );
 }
 
@@ -1442,7 +1796,7 @@ function DonorProfile() {
           <span className="member-avatar">A</span>
           <div>
             <strong>Alberto Quiroga</strong>
-            <span>{guardianActive ? "Community Member" : "Starter"}</span>
+            <span>{guardianActive ? "Guardián" : "Miembro de la Comunidad"}</span>
           </div>
         </article>
 
@@ -1803,62 +2157,65 @@ const rescuerActivity = [
 
 function RescuerHome() {
   const navigate = useNavigate();
-  const { verification, setVerification } = usePrototypeStore();
+  const { verification, setVerification, emptyStates } = usePrototypeStore();
   const verified = verification === "verified";
-  const pendingActions = verified
-    ? [
-        {
-          id: "messages",
-          tone: "message" as const,
-          icon: "icon-chat-yellow.svg",
-          title: "Responde mensajes pendientes",
-          copy: "Tienes conversaciones que necesitan respuesta.",
-          detail: "3 mensajes pendientes",
-          cta: "Ir a mensajes",
-          badge: "3",
-          target: "/rescuer/messages",
-        },
-        {
-          id: "evidence-draft",
-          tone: "danger" as const,
-          icon: "icon-camera-red.svg",
-          title: "Termina una evidencia pendiente",
-          copy: "Ya empezaste este formulario. Complétalo para enviarlo.",
-          detail: "Caso: Rocky · Necesidad: Veterinario · Progreso: incompleto",
-          cta: "Continuar evidencia",
-          target: "/rescuer/evidence/rocky/rocky-vet",
-        },
-        {
-          id: "evidence-new",
-          tone: "purple" as const,
-          icon: "icon-receipt-purple.svg",
-          title: "Sube evidencia de una necesidad cubierta",
-          copy: "Completa el formulario para comprobar cómo se usó el dinero.",
-          detail: "Caso: Luna · Necesidad: Alimento · Monto cubierto: $450 MXN",
-          cta: "Llenar evidencia",
-          target: "/rescuer/evidence/luna/luna-food",
-        },
-      ]
-    : [
-        {
-          id: "messages",
-          tone: "message" as const,
-          icon: "icon-chat-yellow.svg",
-          title: "Responde mensajes pendientes",
-          copy: "Tienes conversaciones que necesitan respuesta.",
-          detail: "3 mensajes pendientes",
-          cta: "Ir a mensajes",
-          badge: "3",
-          target: "/rescuer/messages",
-        },
-      ];
+  const showEmptyPending = emptyStates;
+  const pendingActions = showEmptyPending
+    ? []
+    : verified
+      ? [
+          {
+            id: "messages",
+            tone: "message" as const,
+            icon: "icon-chat-yellow.svg",
+            title: "Responde mensajes pendientes",
+            copy: "Tienes conversaciones que necesitan respuesta.",
+            detail: "3 mensajes pendientes",
+            cta: "Ir a mensajes",
+            badge: "3",
+            target: "/rescuer/messages",
+          },
+          {
+            id: "evidence-draft",
+            tone: "danger" as const,
+            icon: "icon-camera-red.svg",
+            title: "Termina una evidencia pendiente",
+            copy: "Ya empezaste este formulario. Complétalo para enviarlo.",
+            detail: "Caso: Rocky · Necesidad: Veterinario · Progreso: incompleto",
+            cta: "Continuar evidencia",
+            target: "/rescuer/evidence/rocky/rocky-vet",
+          },
+          {
+            id: "evidence-new",
+            tone: "purple" as const,
+            icon: "icon-receipt-purple.svg",
+            title: "Sube evidencia de una necesidad cubierta",
+            copy: "Completa el formulario para comprobar cómo se usó el dinero.",
+            detail: "Caso: Luna · Necesidad: Alimento · Monto cubierto: $450 MXN",
+            cta: "Llenar evidencia",
+            target: "/rescuer/evidence/luna/luna-food",
+          },
+        ]
+      : [
+          {
+            id: "messages",
+            tone: "message" as const,
+            icon: "icon-chat-yellow.svg",
+            title: "Responde mensajes pendientes",
+            copy: "Tienes conversaciones que necesitan respuesta.",
+            detail: "3 mensajes pendientes",
+            cta: "Ir a mensajes",
+            badge: "3",
+            target: "/rescuer/messages",
+          },
+        ];
 
   return (
     <ScreenShell mode="rescuer">
       <div className="content-pad rescuer-home">
         <header className="rh-greeting">
           <h1>Hola, María</h1>
-          <p>Tu panel de rescate</p>
+          <p>{showEmptyPending ? "Panel de Rescatista" : "Tu panel de rescate"}</p>
         </header>
 
         {verified ? (
@@ -1868,23 +2225,27 @@ function RescuerHome() {
                 <AssetIcon name="icon-wallet.svg" size={20} />
                 Cuenta Dopmi
               </span>
-              <span className="dopmi-wallet-badge">3 Casos activos</span>
+              <span className="dopmi-wallet-badge">
+                {showEmptyPending ? "0 Casos activos" : "3 Casos activos"}
+              </span>
             </div>
-            <strong className="dopmi-wallet-balance">$68</strong>
+            <strong className="dopmi-wallet-balance">{showEmptyPending ? "$0" : "$68"}</strong>
             <p>Disponible para tus mascotas</p>
-            <div className="dopmi-wallet-bar"><i style={{ width: "40%" }} /></div>
+            <div className="dopmi-wallet-bar">
+              <i style={{ width: showEmptyPending ? "0%" : "40%" }} />
+            </div>
             <div className="dopmi-wallet-stats">
               <div>
                 <span>Total de donaciones</span>
-                <b>$172</b>
+                <b>{showEmptyPending ? "$0" : "$172"}</b>
               </div>
               <div>
                 <span>Usado</span>
-                <b>$69</b>
+                <b>{showEmptyPending ? "$0" : "$69"}</b>
               </div>
             </div>
           </article>
-        ) : verification === "review" ? (
+        ) : verification === "review" && !showEmptyPending ? (
           <article className="verify-card review">
             <div className="verify-head">
               <span className="verify-chip">
@@ -1897,7 +2258,28 @@ function RescuerHome() {
               Simular verificación
             </button>
           </article>
-        ) : (
+        ) : showEmptyPending && !verified ? (
+          <article className="verify-card verify-card-cta">
+            <div className="verify-head">
+              <span className="verify-chip">
+                <AssetIcon name="verify-shield-purple.svg" size={24} />
+              </span>
+              <strong>
+                {verification === "rejected"
+                  ? "Corrige tu información"
+                  : "Verifica tu cuenta para recibir donaciones"}
+              </strong>
+            </div>
+            <p>
+              {verification === "rejected"
+                ? "El comprobante no es legible y falta vincular una red social."
+                : "Completa el proceso de verificación para desbloquear todas las funciones y comenzar a recibir donaciones."}
+            </p>
+            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/verification")}>
+              {verification === "rejected" ? "Corregir información" : "Verificarme"}
+            </button>
+          </article>
+        ) : !verified ? (
           <button
             className={`verify-card link-card ${verification}`}
             onClick={() => navigate("/rescuer/verification")}
@@ -1918,39 +2300,59 @@ function RescuerHome() {
             </p>
             {verification === "unverified" ? <span className="bonus-badge">Bono de $350 MXN al aprobar</span> : null}
           </button>
-        )}
+        ) : null}
 
         <section className="rh-section">
-          <div className="rh-section-head">
-            <AssetIcon name="icon-alert-circle.svg" size={20} />
+          {showEmptyPending ? (
             <h2>Acciones pendientes</h2>
-            <span className="rh-count">{pendingActions.length}</span>
-          </div>
-          <div className="rh-action-list">
-            {pendingActions.map((item) => (
-              <button
-                key={item.id}
-                className={`rh-action ${item.tone}`}
-                onClick={() => navigate(item.target)}
-              >
-                <AssetIcon name={item.icon} size={20} />
-                <span className="rh-action-body">
-                  <strong>{item.title}</strong>
-                  <small>{item.copy}</small>
-                  {item.detail ? <small>{item.detail}</small> : null}
-                  <em>{item.cta}</em>
-                </span>
-                {"badge" in item && item.badge ? (
-                  <span className="rh-action-badge">{item.badge}</span>
-                ) : (
-                  <Chevron />
-                )}
+          ) : (
+            <div className="rh-section-head">
+              <AssetIcon name="icon-alert-circle.svg" size={20} />
+              <h2>Acciones pendientes</h2>
+              <span className="rh-count">{pendingActions.length}</span>
+            </div>
+          )}
+          {showEmptyPending ? (
+            <article className="rh-empty-card">
+              <span className="rh-empty-icon">
+                <AssetIcon name="empty-pending-heart.svg" size={32} />
+              </span>
+              <h3>No tienes acciones pendientes</h3>
+              <p>
+                Cuando publiques casos, recibas mensajes o tengas evidencias por subir, tus acciones pendientes aparecerán aquí.
+              </p>
+              <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
+                <AssetIcon name="empty-publish-plus.svg" size={16} />
+                Publicar caso
               </button>
-            ))}
-          </div>
+            </article>
+          ) : (
+            <div className="rh-action-list">
+              {pendingActions.map((item) => (
+                <button
+                  key={item.id}
+                  className={`rh-action ${item.tone}`}
+                  onClick={() => navigate(item.target)}
+                >
+                  <AssetIcon name={item.icon} size={20} />
+                  <span className="rh-action-body">
+                    <strong>{item.title}</strong>
+                    <small>{item.copy}</small>
+                    {item.detail ? <small>{item.detail}</small> : null}
+                    <em>{item.cta}</em>
+                  </span>
+                  {"badge" in item && item.badge ? (
+                    <span className="rh-action-badge">{item.badge}</span>
+                  ) : (
+                    <Chevron />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
-        {verified ? (
+        {verified && !showEmptyPending ? (
           <section className="rh-section">
             <h2>Actividad reciente</h2>
             <div className="rh-activity-list">
@@ -2245,10 +2647,10 @@ function EditCaseModal({
 
 function RescuerCases() {
   const navigate = useNavigate();
-  const { cases, updateCaseStatus, toggleCaseAdoption } = usePrototypeStore();
+  const { cases, updateCaseStatus, toggleCaseAdoption, emptyStates } = usePrototypeStore();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
-  const visible = cases.filter((item) => item.caseStatus !== "closed");
+  const visible = emptyStates ? [] : cases.filter((item) => item.caseStatus !== "closed");
   const editing = editId ? cases.find((item) => item.id === editId) : null;
   return (
     <ScreenShell
@@ -2272,12 +2674,32 @@ function RescuerCases() {
     >
       <div className="content-pad">
         <div className="section-heading">
-          <div><h1>Mis Casos</h1><p>{visible.length} mascotas a tu cuidado</p></div>
-          <button className="purple-button compact" onClick={() => navigate("/rescuer/publish")}>
-            <Icon name="icon-plus-circle.svg" size={16} />
-            Nuevo
-          </button>
+          <div>
+            <h1>Mis Casos</h1>
+            <p>{visible.length === 0 ? "Aún no tienes mascotas publicadas" : `${visible.length} mascotas a tu cuidado`}</p>
+          </div>
+          {visible.length > 0 ? (
+            <button className="purple-button compact" onClick={() => navigate("/rescuer/publish")}>
+              <Icon name="icon-plus-circle.svg" size={16} />
+              Nuevo
+            </button>
+          ) : null}
         </div>
+        {visible.length === 0 ? (
+          <article className="rh-empty-card cases-empty-card">
+            <span className="rh-empty-icon">
+              <Icon name="rtab-cases.svg" size={32} />
+            </span>
+            <h3>No tienes casos todavía</h3>
+            <p>
+              Cuando publiques una mascota para adopción o donaciones, tus casos aparecerán aquí para que puedas darles seguimiento.
+            </p>
+            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
+              <AssetIcon name="empty-publish-plus.svg" size={16} />
+              Publicar caso
+            </button>
+          </article>
+        ) : (
         <div className="list-stack">
           {visible.map((item) => {
             const requested = item.needs.reduce((total, need) => total + need.requested, 0);
@@ -2285,6 +2707,21 @@ function RescuerCases() {
             const percent = requested ? Math.round((funded / requested) * 100) : 0;
             return (
               <article className="manage-case" key={item.id}>
+                {item.caseStatus === "review" ? (
+                  <div className="manage-case-top">
+                    <img src={item.image} alt="" />
+                    <div className="manage-case-body">
+                      <div className="manage-case-head">
+                        <h3>{item.name}</h3>
+                        <span className="status-pill review">
+                          <AssetIcon name="icon-info-blue.svg" size={9} />
+                          {caseStatusLabel.review}
+                        </span>
+                      </div>
+                      <p className="manage-case-review-note">El equipo DopMi lo revisará a la brevedad.</p>
+                    </div>
+                  </div>
+                ) : (
                 <button
                   type="button"
                   className="manage-case-top linkish"
@@ -2316,6 +2753,8 @@ function RescuerCases() {
                     ) : null}
                   </div>
                 </button>
+                )}
+                {item.caseStatus === "review" ? null : (
                 <div className="manage-case-actions">
                   {item.caseStatus === "draft" ? (
                     <>
@@ -2352,10 +2791,12 @@ function RescuerCases() {
                     </>
                   )}
                 </div>
+                )}
               </article>
             );
           })}
         </div>
+        )}
       </div>
     </ScreenShell>
   );
@@ -2367,6 +2808,8 @@ function RescuerNeedCard({ need, caseId }: { need: Need; caseId: string }) {
   const funded = remaining === 0 || need.status === "funded" || need.status === "evidence" || need.status === "completed";
   const progress = need.requested ? need.funded / need.requested : 0;
   const canUnlock = funded || progress >= 0.65;
+  const inReview = need.status === "evidence";
+  const completed = need.status === "completed";
   return (
     <article className="need-card rescuer-need-card">
       <div className="need-card-title">
@@ -2383,7 +2826,11 @@ function RescuerNeedCard({ need, caseId }: { need: Need; caseId: string }) {
         <strong>${remaining} restantes</strong>
       </div>
       <div className="progress purple"><i style={{ width: `${Math.min(100, (need.funded / need.requested) * 100)}%` }} /></div>
-      {canUnlock ? (
+      {completed ? (
+        <button className="purple-button soft" disabled>Completada</button>
+      ) : inReview ? (
+        <button className="purple-button soft" disabled>Evidencia en revisión</button>
+      ) : canUnlock ? (
         <div className={`card-actions ${need.type === "Comida" && funded ? "" : "single"}`}>
           {need.type === "Comida" && funded ? (
             <button className="secondary-button" onClick={() => navigate(`/rescuer/food/${caseId}/${need.id}`)}>Comprar</button>
@@ -2537,15 +2984,81 @@ function RescuerCaseDetail() {
   );
 }
 
+function PublishStepper({ step, total = 3 }: { step: number; total?: number }) {
+  const steps = Array.from({ length: total }, (_, i) => i + 1);
+  return (
+    <div className="publish-stepper" aria-label={`Paso ${step} de ${total}`}>
+      {steps.map((n) => {
+        const done = n < step;
+        const active = n === step;
+        return (
+          <div className="publish-step-seg" key={n}>
+            <span className={`publish-step-dot ${done || active ? "on" : ""}`}>
+              {done ? <AssetIcon name="publish-step-check.svg" size={16} /> : n}
+            </span>
+            {n < total ? <span className={`publish-step-line ${n < step ? "on" : ""}`} /> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+type DraftNeedItem = {
+  id: string;
+  type: "Comida" | "Medicina" | "Veterinario";
+  title: string;
+  amount: number;
+  detail?: string;
+  urgent?: boolean;
+  badge?: string;
+};
+
+const FOOD_CATALOG = [
+  { id: "food-adult", title: "Premium Adult Dog Food 3kg", brand: "PawNutri", amount: 280 },
+  { id: "food-puppy", title: "Puppy Dry Food 1.5kg", brand: "LittlePaws", amount: 180 },
+  { id: "food-kitten-wet", title: "Kitten Wet Food Pack x12", brand: "MeowChef", amount: 220 },
+  { id: "food-kitten-dry", title: "Kitten Dry Food 1kg", brand: "MeowChef", amount: 160 },
+];
+
+const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
+  Comida: "🥣",
+  Medicina: "💊",
+  Veterinario: "🩺",
+};
+
 function PublishFlow() {
   const navigate = useNavigate();
   const { verification, draft, updateDraft, publishDraft } = usePrototypeStore();
   const location = useLocation();
-  const [step, setStep] = useState(0);
-  const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
   const correcting = location.search.includes("correct");
   const continuing = location.search.includes("draft");
   const needsVerification = verification !== "verified";
+  const [step, setStep] = useState(correcting || continuing ? 1 : 0);
+  const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
+  const photos = Array.isArray(draft.photos) ? (draft.photos as string[]) : [];
+  const [needItems, setNeedItems] = useState<DraftNeedItem[]>(() => {
+    try {
+      return JSON.parse(String(draft.needItemsJson || "[]")) as DraftNeedItem[];
+    } catch {
+      return [];
+    }
+  });
+  const [sheet, setSheet] = useState<"food" | "medicine" | "vet" | null>(null);
+  const [foodQuery, setFoodQuery] = useState("");
+  const [medForm, setMedForm] = useState({ name: "", amount: "", treatment: "", urgent: false });
+  const emptyVetForm = {
+    reason: "",
+    amount: "",
+    urgent: false,
+  };
+  const [vetForm, setVetForm] = useState(emptyVetForm);
+  const [urgentVideo, setUrgentVideo] = useState(Boolean(draft.urgentVideo));
+
+  const totalSteps = mode === "donation" ? 4 : 3;
+  const reviewStep = totalSteps;
+  const needsStep = mode === "donation" ? 3 : -1;
+  const hasUrgentNeed = needItems.some((item) => item.urgent);
 
   const pickType = (nextMode: "adoption" | "donation") => {
     if (nextMode === "donation" && needsVerification) {
@@ -2557,20 +3070,104 @@ function PublishFlow() {
     setStep(1);
   };
 
-  const next = (event?: FormEvent) => {
-    event?.preventDefault();
-    if (step < (mode === "adoption" ? 4 : 3)) setStep(step + 1);
-    else {
-      publishDraft("review");
-      navigate("/rescuer/cases");
-    }
+  const persistNeeds = (items: DraftNeedItem[]) => {
+    setNeedItems(items);
+    updateDraft({ needItemsJson: JSON.stringify(items) });
   };
 
-  const title = correcting
-    ? "Corregir caso"
-    : continuing
-      ? "Continuar publicación"
-      : "Publicar caso";
+  const saveDraft = () => {
+    updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
+    navigate("/rescuer/cases");
+  };
+
+  const addPhoto = () => {
+    if (photos.includes(`${A}publish-sample-pet.jpg`)) return;
+    updateDraft({ photos: [...photos, `${A}publish-sample-pet.jpg`] });
+  };
+
+  const removePhoto = (src: string) => {
+    updateDraft({ photos: photos.filter((item) => item !== src) });
+  };
+
+  const canContinuePhotos = photos.length > 0;
+  const canContinueInfo = Boolean(draft.sex) && Boolean(draft.species);
+
+  const goNext = () => {
+    if (step < totalSteps) {
+      setStep(step + 1);
+      return;
+    }
+    updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
+    publishDraft("review");
+    navigate("/rescuer/cases");
+  };
+
+  const addFood = (item: (typeof FOOD_CATALOG)[number]) => {
+    persistNeeds([
+      ...needItems,
+      {
+        id: `need-${Date.now()}`,
+        type: "Comida",
+        title: item.title,
+        amount: item.amount,
+        detail: "Cada mes",
+        badge: "Patrocinio habilitado",
+      },
+    ]);
+    setSheet(null);
+    setFoodQuery("");
+  };
+
+  const saveMedicine = () => {
+    const amount = Number(medForm.amount || 0);
+    if (!medForm.name.trim() || !amount) return;
+    persistNeeds([
+      ...needItems,
+      {
+        id: `need-${Date.now()}`,
+        type: "Medicina",
+        title: medForm.name.trim(),
+        amount,
+        detail: medForm.treatment.trim() || undefined,
+        urgent: medForm.urgent,
+      },
+    ]);
+    setMedForm({ name: "", amount: "", treatment: "", urgent: false });
+    setSheet(null);
+  };
+
+  const saveVet = () => {
+    const amount = Number(vetForm.amount || 0);
+    if (!vetForm.reason.trim() || !amount) return;
+    persistNeeds([
+      ...needItems,
+      {
+        id: `need-${Date.now()}`,
+        type: "Veterinario",
+        title: vetForm.reason.trim(),
+        amount,
+        urgent: vetForm.urgent,
+      },
+    ]);
+    setVetForm(emptyVetForm);
+    setSheet(null);
+  };
+
+  const addUrgentVideo = () => {
+    setUrgentVideo(true);
+    updateDraft({ urgentVideo: true });
+  };
+
+  const clearUrgentVideo = () => {
+    setUrgentVideo(false);
+    updateDraft({ urgentVideo: false });
+  };
+
+  const removeNeed = (id: string) => {
+    const next = needItems.filter((item) => item.id !== id);
+    persistNeeds(next);
+    if (!next.some((item) => item.urgent)) clearUrgentVideo();
+  };
 
   if (step === 0 && !correcting && !continuing) {
     return (
@@ -2621,95 +3218,848 @@ function PublishFlow() {
     );
   }
 
+  const continueDisabled =
+    step === 1
+      ? !canContinuePhotos
+      : step === 2
+        ? !canContinueInfo
+        : step === needsStep
+          ? hasUrgentNeed && !urgentVideo
+          : false;
+  const continueLabel =
+    step === reviewStep ? "Publicar caso" : step === needsStep ? "Continuar a revisión" : "Continuar";
+  const headerTitle = step === reviewStep ? "Revisa tu caso" : "Publicar caso";
+  const goPrevStep = () => setStep(step <= 1 ? 0 : step - 1);
+  const filteredFood = FOOD_CATALOG.filter((item) => {
+    const q = foodQuery.trim().toLowerCase();
+    if (!q) return true;
+    return item.title.toLowerCase().includes(q) || item.brand.toLowerCase().includes(q);
+  });
+
   return (
-    <div className="plain-screen rescuer-theme publish-flow">
-      <TopBar title={title} back={step > 1 || correcting || continuing ? () => setStep(Math.max(1, step - 1)) : () => setStep(0)} />
-      {correcting && <SimulatedBanner />}
-      <form className="content-pad form-stack" onSubmit={next}>
+    <ScreenShell
+      mode="rescuer"
+      className="publish-case-shell"
+      overlay={
+        sheet ? (
+          <div className="modal-backdrop center" onClick={() => setSheet(null)}>
+            {sheet === "food" ? (
+              <div className="dialog-card publish-food-sheet" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
+                <h2>Catálogo de comida</h2>
+                <label className="publish-food-search">
+                  <span className="visually-hidden">Buscar</span>
+                  <input
+                    placeholder="Buscar por nombre o marca..."
+                    value={foodQuery}
+                    onChange={(e) => setFoodQuery(e.target.value)}
+                  />
+                </label>
+                <div className="publish-food-note">
+                  Selecciona la comida que necesitas. Cuando recibas suficientes donaciones, podrás comprarla, subir evidencia y solicitar el reembolso con las donaciones recibidas.
+                </div>
+                <div className="publish-food-list">
+                  {filteredFood.map((item) => (
+                    <button type="button" className="publish-food-item" key={item.id} onClick={() => addFood(item)}>
+                      <span className="publish-food-thumb" aria-hidden>🥣</span>
+                      <span className="publish-food-meta">
+                        <strong>{item.title}</strong>
+                        <small>{item.brand}</small>
+                      </span>
+                      <span className="publish-food-price">
+                        <strong>${item.amount}</strong>
+                        <small>MXN</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : sheet === "medicine" ? (
+              <div className="dialog-card publish-med-dialog" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
+                <header className="publish-med-head">
+                  <h2>Agregar medicina</h2>
+                  <p>Agrega los detalles de la medicina que necesita la mascota.</p>
+                </header>
+                <label className="publish-field">
+                  <span>Nombre de la medicina</span>
+                  <input
+                    placeholder="ej. Amoxicilina"
+                    value={medForm.name}
+                    onChange={(e) => setMedForm({ ...medForm, name: e.target.value })}
+                  />
+                </label>
+                <label className="publish-field">
+                  <span>Costo a cubrir</span>
+                  <span className="publish-amount-wrap">
+                    <em>$</em>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={medForm.amount}
+                      onChange={(e) => setMedForm({ ...medForm, amount: e.target.value })}
+                    />
+                  </span>
+                  <small>Monto en MXN</small>
+                </label>
+                <label className="publish-field">
+                  <span>¿Para qué tratamiento es?</span>
+                  <textarea
+                    rows={2}
+                    placeholder="ej. Infección respiratoria"
+                    value={medForm.treatment}
+                    onChange={(e) => setMedForm({ ...medForm, treatment: e.target.value })}
+                  />
+                </label>
+                <label className="publish-check publish-urgent">
+                  <input
+                    type="checkbox"
+                    checked={medForm.urgent}
+                    onChange={(e) => setMedForm({ ...medForm, urgent: e.target.checked })}
+                  />
+                  <span>
+                    Marcar como urgente
+                    <small>Se requiere evidencia de urgencia.</small>
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="purple-button"
+                  disabled={!medForm.name.trim() || !Number(medForm.amount)}
+                  onClick={saveMedicine}
+                >
+                  Guardar medicina
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <div className="dialog-card publish-med-dialog publish-vet-dialog" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
+                <header className="publish-med-head">
+                  <h2>Agregar servicio veterinario</h2>
+                  <p>Agrega los detalles del servicio veterinario que necesita la mascota.</p>
+                </header>
+                <label className="publish-field">
+                  <span>Motivo de consulta <em>*</em></span>
+                  <input
+                    placeholder="ej. Vacunación, revisión general"
+                    value={vetForm.reason}
+                    onChange={(e) => setVetForm({ ...vetForm, reason: e.target.value })}
+                  />
+                </label>
+                <label className="publish-field">
+                  <span>Monto de la consulta <em>*</em></span>
+                  <span className="publish-amount-wrap">
+                    <em>$</em>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={vetForm.amount}
+                      onChange={(e) => setVetForm({ ...vetForm, amount: e.target.value })}
+                    />
+                  </span>
+                  <small>Monto en MXN</small>
+                </label>
+                <label className="publish-check publish-urgent">
+                  <input
+                    type="checkbox"
+                    checked={vetForm.urgent}
+                    onChange={(e) => setVetForm({ ...vetForm, urgent: e.target.checked })}
+                  />
+                  <span>
+                    Marcar como urgente
+                    <small>Se requiere evidencia de urgencia.</small>
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="purple-button"
+                  disabled={!vetForm.reason.trim() || !Number(vetForm.amount)}
+                  onClick={saveVet}
+                >
+                  Guardar consulta
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
+                  Cancelar
+                </button>
+              </div>
+            )}
+          </div>
+        ) : null
+      }
+    >
+      <header className="publish-case-header">
+        <button
+          type="button"
+          className="publish-header-back"
+          onClick={goPrevStep}
+          aria-label="Volver"
+        >
+          <AssetIcon name="back.svg" size={24} />
+          <h1>{headerTitle}</h1>
+        </button>
+        <PublishStepper step={step} total={totalSteps} />
+      </header>
+
+      <div className="publish-case-body">
         {correcting && (
           <div className="error-callout">
             <strong>Corrige antes de reenviar</strong>
             <span>La historia necesita más detalle y la evidencia de urgencia no permite identificar a la mascota.</span>
           </div>
         )}
-        <div className="step-indicator">
-          <span style={{ width: `${(step / (mode === "adoption" ? 4 : 3)) * 100}%` }} />
-        </div>
+
         {step === 1 && (
-          <>
+          <section className="publish-section">
+            <h2>Sube fotos de la mascota</h2>
+            <div className="publish-photo-drop">
+              <AssetIcon name="publish-cam-lg.svg" size={48} />
+              <div>
+                <p className="publish-drop-title">Añade fotos de la mascota</p>
+                <p className="publish-drop-copy">Puedes subir una o varias fotos.</p>
+              </div>
+              <div className="publish-photo-actions">
+                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
+                  <AssetIcon name="publish-cam-sm.svg" size={16} />
+                  Tomar foto
+                </button>
+                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
+                  <AssetIcon name="publish-upload.svg" size={16} />
+                  Subir desde galería
+                </button>
+              </div>
+            </div>
+            {photos.length === 0 ? (
+              <p className="publish-hint">Sube al menos una foto para continuar.</p>
+            ) : (
+              <>
+                <h3>Fotos agregadas</h3>
+                <div className="publish-photo-grid">
+                  {photos.map((src, index) => (
+                    <article className="publish-photo-thumb" key={src}>
+                      <img src={src} alt={`Foto ${index + 1}`} />
+                      {index === 0 && <span className="publish-photo-badge">Principal</span>}
+                      <button type="button" className="publish-photo-remove" aria-label="Quitar foto" onClick={() => removePhoto(src)}>×</button>
+                    </article>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {step === 2 && (
+          <section className="publish-section">
             <h2>Información básica</h2>
-            <label>Fotos<input type="file" multiple /></label>
-            <label>Nombre de la mascota<input maxLength={25} required defaultValue={String(draft.petName || "")} onChange={(event) => updateDraft({ petName: event.target.value })} /></label>
-            <label>Historia<textarea required defaultValue={String(draft.story || "")} onChange={(event) => updateDraft({ story: event.target.value })} /></label>
-            <div className="field-grid">
-              <label>Edad<input defaultValue={String(draft.age || "")} onChange={(event) => updateDraft({ age: event.target.value })} /></label>
-              <label>Especie<select defaultValue={String(draft.species || "Perro")} onChange={(event) => updateDraft({ species: event.target.value })}><option>Perro</option><option>Gato</option><option>Otro</option></select></label>
+
+            <label className="publish-field">
+              <span>Nombre de la mascota</span>
+              <input
+                placeholder="Opcional"
+                maxLength={25}
+                value={String(draft.petName || "")}
+                onChange={(e) => updateDraft({ petName: e.target.value })}
+              />
+              <small>Si aún no tiene nombre, puedes dejarlo vacío.</small>
+            </label>
+
+            <div className="publish-field">
+              <span>Sexo <em>*</em></span>
+              <div className="publish-choice-row">
+                {(["Macho", "Hembra"] as const).map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`publish-choice ${draft.sex === value ? "selected" : ""}`}
+                    onClick={() => updateDraft({ sex: value })}
+                  >
+                    <span aria-hidden>{value === "Macho" ? "♂" : "♀"}</span>
+                    {value}
+                  </button>
+                ))}
+              </div>
+              {!draft.sex && <small>Selecciona una opción para continuar.</small>}
             </div>
-            <div className="field-grid">
-              <label>Sexo<select defaultValue={String(draft.sex || "Macho")} onChange={(event) => updateDraft({ sex: event.target.value })}><option>Macho</option><option>Hembra</option></select></label>
-              <label>Ubicación<input defaultValue={String(draft.location || "")} onChange={(event) => updateDraft({ location: event.target.value })} /></label>
+
+            <div className="publish-field">
+              <span>Especie <em>*</em></span>
+              <div className="publish-choice-row">
+                {(["Perro", "Gato"] as const).map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`publish-choice ${draft.species === value ? "selected" : ""}`}
+                    onClick={() => updateDraft({ species: value })}
+                  >
+                    <span aria-hidden>{value === "Perro" ? "🐶" : "🐱"}</span>
+                    {value}
+                  </button>
+                ))}
+              </div>
+              {!draft.species && <small>Selecciona una opción para continuar.</small>}
             </div>
-          </>
+
+            <label className="publish-field">
+              <span>Edad</span>
+              <input
+                placeholder="ej. 3 meses"
+                value={String(draft.age || "")}
+                onChange={(e) => updateDraft({ age: e.target.value })}
+              />
+              <small>Puede ser aproximada.</small>
+            </label>
+
+            <label className="publish-field">
+              <span>Historia de rescate</span>
+              <textarea
+                placeholder="Cuenta cómo la encontraste."
+                rows={3}
+                value={String(draft.story || "")}
+                onChange={(e) => updateDraft({ story: e.target.value })}
+              />
+            </label>
+
+            {mode === "adoption" && (
+              <>
+                <article className="publish-trait-card">
+                  <h3>Salud</h3>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.vaccinated)} onChange={(e) => updateDraft({ vaccinated: e.target.checked })} />
+                    <span>Vacunado</span>
+                  </label>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.sterilized)} onChange={(e) => updateDraft({ sterilized: e.target.checked })} />
+                    <span>Esterilizado</span>
+                  </label>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.specialCare)} onChange={(e) => updateDraft({ specialCare: e.target.checked })} />
+                    <span>Requiere cuidados especiales</span>
+                  </label>
+                </article>
+
+                <article className="publish-trait-card">
+                  <h3>Social</h3>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.socialDogs)} onChange={(e) => updateDraft({ socialDogs: e.target.checked })} />
+                    <span>Social con perros</span>
+                  </label>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.socialCats)} onChange={(e) => updateDraft({ socialCats: e.target.checked })} />
+                    <span>Social con gatos</span>
+                  </label>
+                  <label className="publish-check">
+                    <input type="checkbox" checked={Boolean(draft.socialChildren)} onChange={(e) => updateDraft({ socialChildren: e.target.checked })} />
+                    <span>Social con niños</span>
+                  </label>
+                </article>
+              </>
+            )}
+          </section>
         )}
-        {step === 2 && mode === "adoption" && (
-          <>
-            <h2>Salud y convivencia</h2>
-            <label className="check-row"><input type="checkbox" defaultChecked={Boolean(draft.vaccinated)} onChange={(event) => updateDraft({ vaccinated: event.target.checked })} />Vacunado</label>
-            <label className="check-row"><input type="checkbox" defaultChecked={Boolean(draft.sterilized)} onChange={(event) => updateDraft({ sterilized: event.target.checked })} />Esterilizado</label>
-            <label>Cuidados especiales<textarea placeholder="Describe cuidados o escribe “Ninguno”" /></label>
-            <h3>Convive con</h3>
-            <div className="check-grid">
-              <label className="check-row"><input type="checkbox" />Perros</label>
-              <label className="check-row"><input type="checkbox" />Gatos</label>
-              <label className="check-row"><input type="checkbox" />Niños</label>
+
+        {step === needsStep && (
+          <section className="publish-section">
+            <h2>¿Qué necesita la mascota?</h2>
+            <div className="publish-needs-note">
+              <strong>Nota:</strong> Las necesidades son opcionales. Puedes publicar el caso aunque aún no agregues apoyo económico.
             </div>
-          </>
+            <button type="button" className="publish-need-card" onClick={() => setSheet("food")}>
+              <span aria-hidden>🥣</span>
+              <span>
+                <strong>Comida</strong>
+                <p>Selecciona croquetas del catálogo y define cada cuánto las necesita.</p>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="publish-need-card"
+              onClick={() => {
+                setMedForm({ name: "", amount: "", treatment: "", urgent: false });
+                setSheet("medicine");
+              }}
+            >
+              <span aria-hidden>💊</span>
+              <span>
+                <strong>Medicina</strong>
+                <p>Agrega una medicina, costo y tratamiento relacionado.</p>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="publish-need-card"
+              onClick={() => {
+                setVetForm(emptyVetForm);
+                setSheet("vet");
+              }}
+            >
+              <span aria-hidden>🩺</span>
+              <span>
+                <strong>Veterinario</strong>
+                <p>Agrega consulta o tratamiento veterinario.</p>
+              </span>
+            </button>
+
+            {needItems.length > 0 && (
+              <div className="publish-needs-list">
+                <h3>Necesidades agregadas</h3>
+                {needItems.map((item) => (
+                  <article className="publish-need-row" key={item.id}>
+                    <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
+                    <div>
+                      <strong>{item.title}</strong>
+                      <p>
+                        ${item.amount}
+                        {item.detail ? ` • ${item.detail}` : ""}
+                      </p>
+                      {item.badge ? <span className="publish-need-badge">{item.badge}</span> : null}
+                      {item.urgent ? <span className="publish-need-badge urgent">Urgente</span> : null}
+                    </div>
+                    <button type="button" className="publish-need-remove" onClick={() => removeNeed(item.id)}>
+                      Eliminar
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {hasUrgentNeed && (
+              <section className="publish-urgent-video">
+                <h3>Video de evidencia de urgencia</h3>
+                <p>
+                  Agrega un video explicando la situación. Debes aparecer tú y también la mascota que necesita apoyo. El equipo DopMi revisará el caso y, si se aprueba, podremos apoyarte o priorizar tu caso para que reciba donaciones.
+                </p>
+                {urgentVideo ? (
+                  <article className="publish-urgent-video-done">
+                    <div>
+                      <strong>Video de urgencia agregado</strong>
+                      <small>Listo para revisión del equipo DopMi</small>
+                    </div>
+                    <button type="button" className="publish-need-remove" onClick={clearUrgentVideo}>
+                      Quitar
+                    </button>
+                  </article>
+                ) : (
+                  <div className="publish-photo-drop publish-urgent-drop">
+                    <AssetIcon name="publish-cam-lg.svg" size={40} />
+                    <div>
+                      <p className="publish-drop-title">Grabar o subir video</p>
+                      <p className="publish-drop-copy">Requerido para aprobar urgencia médica</p>
+                    </div>
+                    <button type="button" className="publish-outline-btn" onClick={addUrgentVideo}>
+                      <AssetIcon name="publish-upload.svg" size={16} />
+                      Subir video
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+          </section>
         )}
-        {((step === 2 && mode === "donation") || (step === 3 && mode === "adoption")) && (
-          <>
-            <h2>Necesidades de la mascota</h2>
-            {mode === "adoption" && <p className="supporting-copy">Son opcionales. Puedes publicar solo para adopción.</p>}
-            <label>Tipo<select><option>Veterinario</option><option>Medicina</option><option>Comida</option><option>Otra necesidad</option></select></label>
-            <label>Descripción<input defaultValue={String(draft.needTitle || "")} onChange={(event) => updateDraft({ needTitle: event.target.value })} /></label>
-            <label>Monto requerido<input type="number" defaultValue={String(draft.amount || "")} onChange={(event) => updateDraft({ amount: event.target.value })} /></label>
-            <label className="check-row"><input type="checkbox" />Marcar como urgente</label>
-            <button type="button" className="secondary-button">Agregar otra necesidad</button>
-          </>
+
+        {step === reviewStep && (
+          <section className="publish-section publish-review">
+            <div className="publish-review-block">
+              <div className="publish-review-head">
+                <h3>Fotos</h3>
+                <button type="button" className="publish-edit-link" onClick={() => setStep(1)}>Editar</button>
+              </div>
+              <div className="publish-photo-grid compact">
+                {photos.map((src) => (
+                  <article className="publish-photo-thumb" key={src}>
+                    <img src={src} alt="" />
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="publish-review-block">
+              <div className="publish-review-head">
+                <h3>Información básica</h3>
+                <button type="button" className="publish-edit-link" onClick={() => setStep(2)}>Editar</button>
+              </div>
+              <article className="publish-review-card">
+                <div><span>Nombre</span><strong>{String(draft.petName || "Sin nombre")}</strong></div>
+                <div><span>Edad</span><strong>{String(draft.age || "—")}</strong></div>
+                <div><span>Historia</span><strong>{String(draft.story || "—")}</strong></div>
+                <div><span>Lista para adopción</span><strong>{mode === "adoption" ? "Sí" : "No"}</strong></div>
+              </article>
+            </div>
+
+            {mode === "adoption" ? (
+              <>
+                <article className="publish-trait-card">
+                  <h3>Salud</h3>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.vaccinated)} readOnly /><span>Vacunado</span></label>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.sterilized)} readOnly /><span>Esterilizado</span></label>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.specialCare)} readOnly /><span>Requiere cuidados especiales</span></label>
+                </article>
+                <article className="publish-trait-card">
+                  <h3>Social</h3>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialDogs)} readOnly /><span>Social con perros</span></label>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialCats)} readOnly /><span>Social con gatos</span></label>
+                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialChildren)} readOnly /><span>Social con niños</span></label>
+                </article>
+              </>
+            ) : (
+              <div className="publish-review-block">
+                <div className="publish-review-head">
+                  <h3>Necesidades</h3>
+                  <button type="button" className="publish-edit-link" onClick={() => setStep(3)}>Editar</button>
+                </div>
+                {needItems.length ? (
+                  <div className="publish-needs-list compact">
+                    {needItems.map((item) => (
+                      <article className="publish-need-row" key={item.id}>
+                        <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
+                        <div>
+                          <strong>{item.title}</strong>
+                          <p>
+                            ${item.amount}
+                            {item.detail ? ` • ${item.detail}` : ""}
+                          </p>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="publish-hint">Sin necesidades agregadas.</p>
+                )}
+              </div>
+            )}
+          </section>
         )}
-        {((step === 3 && mode === "donation") || (step === 4 && mode === "adoption")) && (
-          <>
-            <h2>Revisa tu publicación</h2>
-            <article className="summary-card">
-              <div><span>Mascota</span><strong>{String(draft.petName || "Sin nombre")}</strong></div>
-              <div><span>Objetivo</span><strong>{mode === "adoption" ? "Dar en adopción" : "Recibir donaciones"}</strong></div>
-              <div><span>Necesidad</span><strong>{String(draft.needTitle || (mode === "adoption" ? "Sin necesidades" : "Por completar"))}</strong></div>
-              <div><span>Estado inicial</span><strong>En revisión</strong></div>
-            </article>
-            <p className="supporting-copy">Al enviar, el caso aparecerá en Mis Casos con estado En revisión.</p>
-          </>
-        )}
-        <div className="publish-actions">
-          <button type="button" className="text-action" onClick={() => { updateDraft({ publishMode: mode }); navigate("/rescuer/cases"); }}>Guardar borrador</button>
-          <button className="primary-button">{step === (mode === "adoption" ? 4 : 3) ? "Enviar a revisión" : "Continuar"}</button>
-        </div>
-      </form>
-    </div>
+      </div>
+
+      <footer className="publish-case-footer">
+        <button
+          type="button"
+          className="purple-button publish-continue"
+          disabled={continueDisabled}
+          onClick={goNext}
+        >
+          {continueLabel}
+        </button>
+        <button type="button" className="publish-draft-link" onClick={saveDraft}>
+          Guardar borrador
+        </button>
+      </footer>
+    </ScreenShell>
   );
 }
 
 function EvidenceFlow() {
   const navigate = useNavigate();
   const { caseId = "luna", needId = "luna-food" } = useParams();
-  const [step, setStep] = useState<"choice" | "upload" | "review" | "done">("choice");
-  if (step === "done") return <StaticSimulated title="Evidencia enviada" back={`/rescuer/cases/${caseId}`}><div className="center-state"><h1>Evidencia en revisión</h1><p>Al aprobarse, se publicará y notificará a quienes apoyaron este caso.</p><button className="primary-button" onClick={() => navigate(`/rescuer/food/${caseId}/${needId}`)}>Continuar ciclo de comida</button></div></StaticSimulated>;
-  return (
-    <div className="plain-screen rescuer-theme">
-      <TopBar title="Gestionar necesidad fondeada" back={`/rescuer/cases/${caseId}`} />
-      <div className="content-pad form-stack">
-        {step === "choice" && <><h2>¿Cómo cubrirás esta necesidad?</h2><button className="choice-card selected" onClick={() => setStep("upload")}><strong>Recibir fondos</strong><span>Sube evidencia para solicitar liberación.</span></button><button className="choice-card" onClick={() => setStep("upload")}><strong>Comprar</strong><span>Simula una compra externa y vuelve para cargar evidencia.</span></button><SimulatedBanner /></>}
-        {step === "upload" && <><h2>Sube evidencia</h2><label className="upload-field">Ticket o recibo<input required type="file" /></label><label className="upload-field">Foto o video con la mascota<input required type="file" /></label><label>Descripción<textarea placeholder="Explica cómo se utilizó el apoyo" /></label><button className="primary-button" onClick={() => setStep("review")}>Revisar evidencia</button></>}
-        {step === "review" && <><h2>Confirma la evidencia</h2><article className="summary-card"><div><span>Necesidad</span><strong>Alimento</strong></div><div><span>Ticket</span><strong>ticket-compra.jpg</strong></div><div><span>Evidencia</span><strong>video-luna.mp4</strong></div></article><button className="primary-button" onClick={() => setStep("done")}>Enviar a revisión</button><button className="secondary-button" onClick={() => setStep("upload")}>Corregir</button></>}
+  const { cases, submitNeedEvidence } = usePrototypeStore();
+  const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
+  const need = item.needs.find((entry) => entry.id === needId) ?? item.needs[0];
+  const available = need?.funded ?? 0;
+  const backTo = `/rescuer/cases/${item.id}`;
+  const isFood = need?.type === "Comida";
+  const isVet = need?.type === "Veterinario";
+  const unlockSteps = isFood
+    ? (["receipt", "purchaseId", "petEvidence", "description"] as const)
+    : isVet
+      ? (["receipt", "vetDetails", "petEvidence", "description"] as const)
+      : (["receipt", "petEvidence", "description"] as const);
+  const totalSteps = unlockSteps.length;
+
+  const [step, setStep] = useState(1);
+  const [done, setDone] = useState(false);
+  const [toast, setToast] = useState("");
+  const [receipt, setReceipt] = useState<string | null>(null);
+  const [purchaseId, setPurchaseId] = useState("");
+  const [vetDetails, setVetDetails] = useState({
+    hospital: "",
+    hospitalPhone: "",
+    caseNumber: "",
+    vetName: "",
+    vetPhone: "",
+  });
+  const [petEvidence, setPetEvidence] = useState<string | null>(null);
+  const [petEvidenceLabel, setPetEvidenceLabel] = useState("");
+  const [description, setDescription] = useState("");
+  const receiptRef = useRef<HTMLInputElement>(null);
+  const petRef = useRef<HTMLInputElement>(null);
+
+  const currentKey = unlockSteps[step - 1];
+  const close = () => navigate(backTo);
+  const saveProgress = () => {
+    setToast("Progreso guardado");
+    window.setTimeout(() => navigate(backTo), 700);
+  };
+
+  const readImage = (file: File | undefined, setter: (src: string) => void) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setter(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const readPetEvidence = (file: File | undefined) => {
+    if (!file) return;
+    setPetEvidenceLabel(file.name);
+    if (file.type.startsWith("image/")) {
+      readImage(file, setPetEvidence);
+      return;
+    }
+    setPetEvidence("video");
+  };
+
+  const vetDetailsComplete =
+    vetDetails.hospital.trim() &&
+    vetDetails.hospitalPhone.trim() &&
+    vetDetails.caseNumber.trim() &&
+    vetDetails.vetName.trim() &&
+    vetDetails.vetPhone.trim();
+
+  const canNext =
+    currentKey === "receipt" ? Boolean(receipt) :
+    currentKey === "purchaseId" ? true :
+    currentKey === "vetDetails" ? Boolean(vetDetailsComplete) :
+    currentKey === "petEvidence" ? Boolean(petEvidence) :
+    description.trim().length > 0;
+
+  const goNext = () => {
+    if (!canNext) return;
+    if (step < totalSteps) setStep((current) => current + 1);
+    else {
+      if (need) submitNeedEvidence(item.id, need.id);
+      setDone(true);
+    }
+  };
+
+  const descriptionPlaceholder = isVet
+    ? `Ej.: ${item.name} recibió su consulta veterinaria gracias a quienes la apoyaron.`
+    : isFood
+      ? `Ej.: ${item.name} recibió su comida del mes gracias a quienes la apoyaron.`
+      : `Ej.: ${item.name} recibió el apoyo gracias a quienes la ayudaron.`;
+
+  if (!need) {
+    return (
+      <div className="plain-screen rescuer-theme">
+        <div className="modal-backdrop center" onClick={close}>
+          <div className="unlock-dialog" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
+              <Icon name="icon-x-muted.svg" size={16} />
+            </button>
+            <h2>No encontramos esta necesidad</h2>
+            <p>Vuelve al caso e inténtalo de nuevo.</p>
+            <button type="button" className="purple-button" onClick={close}>Volver al caso</button>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="plain-screen rescuer-theme unlock-screen">
+      <div className="modal-backdrop center" onClick={close}>
+        {done ? (
+          <div className="unlock-dialog unlock-success" onClick={(event) => event.stopPropagation()} role="dialog" aria-labelledby="unlock-success-title">
+            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
+              <Icon name="icon-x-muted.svg" size={16} />
+            </button>
+            <span className="unlock-success-icon" aria-hidden="true">✓</span>
+            <h2 id="unlock-success-title">Has subido tu evidencia para revisión.</h2>
+            <p>Gracias por tu esfuerzo, nuestro equipo revisará tu solicitud y regresará contigo.</p>
+            <button type="button" className="purple-button" onClick={close}>Entendido</button>
+          </div>
+        ) : (
+          <div className="unlock-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-labelledby="unlock-title">
+            <button
+              type="button"
+              className="unlock-back"
+              onClick={() => (step > 1 ? setStep((current) => current - 1) : close())}
+              aria-label={step > 1 ? "Paso anterior" : "Cerrar"}
+            >
+              <AssetIcon name="back.svg" size={20} />
+            </button>
+            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
+              <Icon name="icon-x-muted.svg" size={16} />
+            </button>
+
+            <header className="unlock-head">
+              <h2 id="unlock-title"><span aria-hidden="true">{needEmoji(need.type)}</span> Desbloquea las donaciones</h2>
+              <p className="unlock-step">Paso {step} de {totalSteps}</p>
+              <p className="unlock-lead">
+                Por favor compártenos evidencia – recibos, facturas, vouchers – de la necesidad cubierta para que el equipo de DopMi pueda revisarlo. Al ser aprobada recibirás el dinero que utilizaste para cubrir esta necesidad.
+              </p>
+            </header>
+
+            <article className="unlock-need">
+              <strong>{need.title}</strong>
+              <small>Disponible: ${available}</small>
+            </article>
+
+            {currentKey === "receipt" && (
+              <section className="unlock-section">
+                <h3>Foto del recibo</h3>
+                <p>Sube una foto clara del ticket o comprobante.</p>
+                <input
+                  ref={receiptRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(event) => readImage(event.target.files?.[0], setReceipt)}
+                />
+                {receipt ? (
+                  <div className="unlock-preview">
+                    <img src={receipt} alt="Recibo subido" />
+                    <button type="button" className="secondary-button compact" onClick={() => receiptRef.current?.click()}>
+                      Cambiar foto
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="unlock-drop" onClick={() => receiptRef.current?.click()}>
+                    <AssetIcon name="publish-upload.svg" size={28} />
+                    <strong>Toca para subir foto</strong>
+                    <small>JPEG o PNG, máximo 10 MB</small>
+                  </button>
+                )}
+              </section>
+            )}
+
+            {currentKey === "purchaseId" && (
+              <section className="unlock-section">
+                <h3>ID de compra / transacción</h3>
+                <p>Si compraste la comida usando el enlace de DopMi, agrega el ID de compra para validar cashback o DopMi Coins pendientes.</p>
+                <input
+                  className="unlock-input"
+                  value={purchaseId}
+                  onChange={(event) => setPurchaseId(event.target.value)}
+                  placeholder="ej. AMZ-2025-12345"
+                  autoComplete="off"
+                />
+                <div className="unlock-hint">
+                  Usar el enlace de DopMi puede generar cashback o DopMi Coins pendientes al confirmar la compra.
+                </div>
+              </section>
+            )}
+
+            {currentKey === "vetDetails" && (
+              <section className="unlock-section unlock-vet-fields">
+                <label className="unlock-field">
+                  <span>Nombre del hospital veterinario <em>*</em></span>
+                  <input
+                    className="unlock-input"
+                    value={vetDetails.hospital}
+                    onChange={(event) => setVetDetails({ ...vetDetails, hospital: event.target.value })}
+                    placeholder="Nombre del hospital"
+                    autoComplete="organization"
+                  />
+                </label>
+                <label className="unlock-field">
+                  <span>Teléfono del hospital veterinario <em>*</em></span>
+                  <input
+                    className="unlock-input"
+                    type="tel"
+                    value={vetDetails.hospitalPhone}
+                    onChange={(event) => setVetDetails({ ...vetDetails, hospitalPhone: event.target.value })}
+                    placeholder="+52 55 1234 5678"
+                    autoComplete="tel"
+                  />
+                </label>
+                <label className="unlock-field">
+                  <span>Número del caso de atención veterinaria <em>*</em></span>
+                  <input
+                    className="unlock-input"
+                    value={vetDetails.caseNumber}
+                    onChange={(event) => setVetDetails({ ...vetDetails, caseNumber: event.target.value })}
+                    placeholder="Número de caso o expediente"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="unlock-field">
+                  <span>Veterinario que atendió <em>*</em></span>
+                  <input
+                    className="unlock-input"
+                    value={vetDetails.vetName}
+                    onChange={(event) => setVetDetails({ ...vetDetails, vetName: event.target.value })}
+                    placeholder="Nombre completo del veterinario"
+                    autoComplete="name"
+                  />
+                </label>
+                <label className="unlock-field">
+                  <span>Teléfono del veterinario <em>*</em></span>
+                  <input
+                    className="unlock-input"
+                    type="tel"
+                    value={vetDetails.vetPhone}
+                    onChange={(event) => setVetDetails({ ...vetDetails, vetPhone: event.target.value })}
+                    placeholder="+52 55 1234 5678"
+                    autoComplete="tel"
+                  />
+                </label>
+              </section>
+            )}
+
+            {currentKey === "petEvidence" && (
+              <section className="unlock-section">
+                <h3>Foto o video de evidencia</h3>
+                <p>Esta evidencia se mostrará a los donantes como prueba visual del impacto.</p>
+                <input
+                  ref={petRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/*,video/*"
+                  onChange={(event) => readPetEvidence(event.target.files?.[0])}
+                />
+                {petEvidence ? (
+                  <div className="unlock-preview">
+                    {petEvidence === "video" ? (
+                      <div className="unlock-file-chip">
+                        <AssetIcon name="onb-camera.svg" size={20} />
+                        <strong>{petEvidenceLabel || "Video subido"}</strong>
+                      </div>
+                    ) : (
+                      <img src={petEvidence} alt="Evidencia con la mascota" />
+                    )}
+                    <button type="button" className="secondary-button compact" onClick={() => petRef.current?.click()}>
+                      Cambiar archivo
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="unlock-drop" onClick={() => petRef.current?.click()}>
+                    <AssetIcon name="publish-upload.svg" size={28} />
+                    <strong>Toca para subir foto o video</strong>
+                    <small>Muestra a la mascota con el producto o recibiendo cuidado</small>
+                  </button>
+                )}
+              </section>
+            )}
+
+            {currentKey === "description" && (
+              <section className="unlock-section">
+                <h3>Describe la evidencia</h3>
+                <p>Esta información será pública para donantes y para la comunidad.</p>
+                <textarea
+                  className="unlock-textarea"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder={descriptionPlaceholder}
+                  rows={4}
+                />
+                <p className="unlock-note">Ninguna donación se liberará sin evidencia revisada y aprobada previamente por DopMi.</p>
+              </section>
+            )}
+
+            <div className="unlock-actions">
+              <button type="button" className="secondary-button" onClick={saveProgress}>Guardar progreso</button>
+              <button type="button" className="purple-button" disabled={!canNext} onClick={goNext}>
+                {step === totalSteps ? "Enviar a revisión" : "Siguiente"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </div>
   );
 }
@@ -2722,13 +4072,15 @@ function FoodCycle() {
 
 function RescuerMessages() {
   const navigate = useNavigate();
-  const messages = usePrototypeStore((state) => state.messages);
+  const { messages, emptyStates } = usePrototypeStore();
   const last = messages[messages.length - 1];
-  const threads = [
-    { id: "ana", initial: "A", name: "Ana P.", about: "re: Luna", preview: last?.text ?? "", time: last?.time ?? "5m", unread: last?.author === "donor" ? 1 : 0 },
-    { id: "carlos", initial: "C", name: "Carlos M.", about: "re: Rocky", preview: "¿Puedo visitarlo este fin de semana?", time: "1h", unread: 0 },
-    { id: "lucia", initial: "L", name: "Lucía G.", about: "re: Milo", preview: "¡Gracias por la actualización!", time: "Ayer", unread: 0 },
-  ];
+  const threads = emptyStates
+    ? []
+    : [
+        { id: "ana", initial: "A", name: "Ana P.", about: "re: Luna", preview: last?.text ?? "", time: last?.time ?? "5m", unread: last?.author === "donor" ? 1 : 0 },
+        { id: "carlos", initial: "C", name: "Carlos M.", about: "re: Rocky", preview: "¿Puedo visitarlo este fin de semana?", time: "1h", unread: 0 },
+        { id: "lucia", initial: "L", name: "Lucía G.", about: "re: Milo", preview: "¡Gracias por la actualización!", time: "Ayer", unread: 0 },
+      ];
   return (
     <ScreenShell mode="rescuer">
       <header className="rescuer-header with-icon">
@@ -2736,23 +4088,39 @@ function RescuerMessages() {
         <h1>Mensajes</h1>
       </header>
       <div className="content-pad">
-        <p className="section-lead">Conversa con adoptantes y donantes</p>
-        <div className="thread-list">
-          {threads.map((thread) => (
-            <button className="thread-row" key={thread.id} onClick={() => navigate("/messages/luna")}>
-              <span className="thread-avatar">{thread.initial}</span>
-              <span className="thread-main">
-                <span className="thread-head">
-                  <strong>{thread.name}</strong>
-                  <time>{thread.time}</time>
-                </span>
-                <small>{thread.about}</small>
-                <p>{thread.preview}</p>
-              </span>
-              {thread.unread > 0 && <span className="thread-badge">{thread.unread}</span>}
+        <p className="section-lead">Habla con adoptantes</p>
+        {threads.length === 0 ? (
+          <article className="rh-empty-card messages-empty-card">
+            <span className="rh-empty-icon">
+              <Icon name="rtab-messages.svg" size={32} />
+            </span>
+            <h3>No tienes mensajes</h3>
+            <p>
+              Cuando adoptantes te escriban sobre tus mascotas, verás las conversaciones aquí.
+            </p>
+            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
+              <AssetIcon name="empty-publish-plus.svg" size={16} />
+              Publicar caso
             </button>
-          ))}
-        </div>
+          </article>
+        ) : (
+          <div className="thread-list">
+            {threads.map((thread) => (
+              <button className="thread-row" key={thread.id} onClick={() => navigate("/messages/luna")}>
+                <span className="thread-avatar">{thread.initial}</span>
+                <span className="thread-main">
+                  <span className="thread-head">
+                    <strong>{thread.name}</strong>
+                    <time>{thread.time}</time>
+                  </span>
+                  <small>{thread.about}</small>
+                  <p>{thread.preview}</p>
+                </span>
+                {thread.unread > 0 && <span className="thread-badge">{thread.unread}</span>}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </ScreenShell>
   );
@@ -2761,7 +4129,12 @@ function RescuerMessages() {
 function RescuerProfile() {
   const navigate = useNavigate();
   const verification = usePrototypeStore((state) => state.verification);
-  const setAccountMode = usePrototypeStore((state) => state.setAccountMode);
+  const profile = usePrototypeStore((state) => state.rescuerProfile);
+  const avatar = (
+    <span className={`avatar large purple ${profile.avatar ? "has-photo" : ""}`}>
+      {profile.avatar ? <img src={profile.avatar} alt="" /> : profile.name.charAt(0)}
+    </span>
+  );
   return (
     <ScreenShell mode="rescuer">
       <div className="content-pad profile-page">
@@ -2772,43 +4145,43 @@ function RescuerProfile() {
           <article className="public-card">
             <div className="public-card-head">
               <h2>Perfil público</h2>
-              <button className="icon-button" onClick={() => navigate("/rescuer/settings")} aria-label="Editar perfil público">
+              <button className="icon-button" onClick={() => navigate("/rescuer/profile/edit")} aria-label="Editar perfil público">
                 <Icon name="icon-edit.svg" size={18} />
               </button>
             </div>
             <div className="public-card-id">
-              <span className="avatar large purple">M</span>
+              {avatar}
               <div>
-                <strong>{rescuerAccount.name}</strong>
+                <strong>{profile.name}</strong>
                 <span className="status-chip green">Verificado</span>
               </div>
             </div>
             <div className="field-row">
               <Icon name="location.svg" size={16} />
-              <span className="nav-row-text"><small>Dirección</small><strong>{rescuerAccount.address}</strong></span>
+              <span className="nav-row-text"><small>Dirección</small><strong>{profile.address}</strong></span>
             </div>
             <div className="field-row">
               <Icon name="icon-phone.svg" size={16} />
-              <span className="nav-row-text"><small>Teléfono</small><strong>{rescuerAccount.phone}</strong></span>
+              <span className="nav-row-text"><small>Teléfono</small><strong>{profile.phone}</strong></span>
             </div>
             <div className="field-row">
               <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{rescuerAccount.email}</strong></span>
+              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
             </div>
             <div className="field-row column">
               <small>Descripción</small>
-              <p>{rescuerAccount.description}</p>
+              <p>{profile.description}</p>
             </div>
           </article>
         ) : (
           <article className="public-card">
             <div className="public-card-id">
-              <span className="avatar large purple">M</span>
-              <strong>{rescuerAccount.name}</strong>
+              {avatar}
+              <strong>{profile.name}</strong>
             </div>
             <div className="field-row">
               <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{rescuerAccount.email}</strong></span>
+              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
             </div>
           </article>
         )}
@@ -2821,39 +4194,204 @@ function RescuerProfile() {
             <Chevron />
           </button>
         </section>
-        <article className="switch-card">
-          <div>
-            <strong>Volver a modo donante</strong>
-            <small>Conserva los datos de ambos perfiles</small>
-          </div>
-          <button
-            className="switch on"
-            role="switch"
-            aria-checked="true"
-            aria-label="Volver a modo donante"
-            onClick={() => {
-              setAccountMode("donor");
-              navigate("/adoption");
-            }}
-          >
-            <i />
-          </button>
-        </article>
       </div>
     </ScreenShell>
   );
 }
 
+function RescuerEditPublicProfile() {
+  const navigate = useNavigate();
+  const { rescuerProfile, updateRescuerProfile } = usePrototypeStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState({
+    name: rescuerProfile.name,
+    address: rescuerProfile.address,
+    phone: rescuerProfile.phone,
+    email: rescuerProfile.email,
+    description: rescuerProfile.description,
+    avatar: rescuerProfile.avatar ?? "",
+  });
+  const [toast, setToast] = useState("");
+  const canSave =
+    form.name.trim() &&
+    form.address.trim() &&
+    form.phone.trim() &&
+    form.email.trim() &&
+    form.description.trim();
+
+  const pickPhoto = (file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setForm((current) => ({ ...current, avatar: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (!canSave) return;
+    updateRescuerProfile({
+      name: form.name.trim(),
+      address: form.address.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+      description: form.description.trim(),
+      avatar: form.avatar || undefined,
+    });
+    setToast("Perfil actualizado");
+    window.setTimeout(() => navigate("/rescuer/profile"), 500);
+  };
+
+  return (
+    <div className="plain-screen rescuer-theme">
+      <TopBar title="Editar perfil público" back="/rescuer/profile" />
+      <div className="content-pad form-stack edit-public-profile">
+        <p className="section-lead">Estos datos se muestran en tu perfil público para adoptantes y donantes.</p>
+        <input
+          ref={fileRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => pickPhoto(event.target.files?.[0])}
+        />
+        <button type="button" className="photo-card profile-photo-card" onClick={() => fileRef.current?.click()}>
+          <span className={`avatar large purple ${form.avatar ? "has-photo" : ""}`}>
+            {form.avatar ? <img src={form.avatar} alt="" /> : (form.name.trim().charAt(0) || "M")}
+            <span className="avatar-camera purple">
+              <AssetIcon name="onb-camera.svg" size={12} />
+            </span>
+          </span>
+          <span className="nav-row-text">
+            <strong>Foto de perfil</strong>
+            <small>Cambia tu foto de perfil</small>
+          </span>
+        </button>
+        <label className="publish-field">
+          <span>Nombre</span>
+          <input
+            value={form.name}
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
+            placeholder="Tu nombre o el de tu refugio"
+            autoComplete="name"
+          />
+        </label>
+        <label className="publish-field">
+          <span>Dirección</span>
+          <input
+            value={form.address}
+            onChange={(event) => setForm({ ...form, address: event.target.value })}
+            placeholder="Calle, colonia, ciudad"
+            autoComplete="street-address"
+          />
+        </label>
+        <label className="publish-field">
+          <span>Teléfono</span>
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(event) => setForm({ ...form, phone: event.target.value })}
+            placeholder="+52 55 1234 5678"
+            autoComplete="tel"
+          />
+        </label>
+        <label className="publish-field">
+          <span>Email</span>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            placeholder="correo@ejemplo.com"
+            autoComplete="email"
+          />
+        </label>
+        <label className="publish-field">
+          <span>Descripción</span>
+          <textarea
+            value={form.description}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+            placeholder="Cuenta quién eres y cómo ayudas a las mascotas"
+            rows={5}
+          />
+        </label>
+        <button type="button" className="purple-button" disabled={!canSave} onClick={save}>
+          Guardar cambios
+        </button>
+        <button type="button" className="secondary-button" onClick={() => navigate("/rescuer/profile")}>
+          Cancelar
+        </button>
+      </div>
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+    </div>
+  );
+}
+
 function RescuerSettings() {
   const navigate = useNavigate();
-  const { verification, setAccountMode } = usePrototypeStore();
+  const { verification, setAccountMode, rescuerProfile, updateRescuerProfile } = usePrototypeStore();
   const verified = verification === "verified";
+  const [editField, setEditField] = useState<"instagram" | "facebook" | "clabe" | null>(null);
+  const [draft, setDraft] = useState("");
+  const [toast, setToast] = useState("");
   const statusCard = {
     unverified: { title: "No verificada", copy: "Completa tu verificación para desbloquear donaciones y reembolsos.", cta: "Iniciar verificación" },
     review: { title: "Verificación en proceso", copy: "Estamos revisando tu información. Te avisaremos en cuanto termine.", cta: "Ver estado" },
     rejected: { title: "Verificación con errores", copy: "Hay información que debes corregir para continuar.", cta: "Corregir información" },
     verified: { title: "Cuenta verificada", copy: "Tu cuenta está activa y puede recibir donaciones.", cta: "" },
   }[verification];
+
+  const openEdit = (field: "instagram" | "facebook" | "clabe") => {
+    setEditField(field);
+    setDraft(rescuerProfile[field]);
+  };
+
+  const saveEdit = () => {
+    if (!editField) return;
+    const value = draft.trim();
+    if (!value) return;
+    if (editField === "clabe" && !/^\d{18}$/.test(value)) return;
+    updateRescuerProfile({ [editField]: value });
+    setEditField(null);
+    setToast(
+      editField === "instagram"
+        ? "Instagram actualizado"
+        : editField === "facebook"
+          ? "Facebook actualizado"
+          : "CLABE actualizada",
+    );
+  };
+
+  const editMeta = editField
+    ? {
+        instagram: {
+          title: "Editar Instagram",
+          label: "Usuario de Instagram",
+          placeholder: "@tuusuario",
+          hint: "Usa el @ de tu cuenta pública.",
+          inputMode: "text" as const,
+          maxLength: 40,
+          canSave: Boolean(draft.trim()),
+        },
+        facebook: {
+          title: "Editar Facebook",
+          label: "Perfil de Facebook",
+          placeholder: "Nombre del perfil",
+          hint: "El nombre como aparece en tu página o perfil.",
+          inputMode: "text" as const,
+          maxLength: 60,
+          canSave: Boolean(draft.trim()),
+        },
+        clabe: {
+          title: "Editar CLABE",
+          label: "CLABE interbancaria",
+          placeholder: "18 dígitos",
+          hint: "Debe tener exactamente 18 números.",
+          inputMode: "numeric" as const,
+          maxLength: 18,
+          canSave: /^\d{18}$/.test(draft.trim()),
+        },
+      }[editField]
+    : null;
+
   return (
     <ScreenShell mode="rescuer">
       <TopBar title="Configuración" back="/rescuer/profile" />
@@ -2874,37 +4412,28 @@ function RescuerSettings() {
         </article>
         {verified ? (
           <>
-            <h2 className="settings-heading">Información personal modificable</h2>
-            <article className="public-card">
-              <div className="field-row">
-                <Icon name="icon-phone.svg" size={16} />
-                <span className="nav-row-text"><small>Teléfono</small><strong>{rescuerAccount.phone}</strong></span>
-              </div>
-              <div className="field-row">
-                <Icon name="icon-mail.svg" size={16} />
-                <span className="nav-row-text"><small>Email</small><strong>{rescuerAccount.email}</strong></span>
-              </div>
-              <div className="field-row">
-                <Icon name="location.svg" size={16} />
-                <span className="nav-row-text"><small>Dirección del refugio</small><strong>{rescuerAccount.address}</strong></span>
-              </div>
-            </article>
             <h2 className="settings-heading">Redes sociales</h2>
             <article className="card-row">
               <span className="row-tile gray"><Icon name="icon-instagram.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Instagram</small><strong>{rescuerAccount.instagram}</strong></span>
-              <button className="icon-button" aria-label="Editar Instagram"><Icon name="icon-edit.svg" size={16} /></button>
+              <span className="nav-row-text"><small>Instagram</small><strong>{rescuerProfile.instagram}</strong></span>
+              <button className="icon-button" onClick={() => openEdit("instagram")} aria-label="Editar Instagram">
+                <Icon name="icon-edit.svg" size={16} />
+              </button>
             </article>
             <article className="card-row">
               <span className="row-tile gray"><Icon name="icon-facebook.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Facebook</small><strong>{rescuerAccount.facebook}</strong></span>
-              <button className="icon-button" aria-label="Editar Facebook"><Icon name="icon-edit.svg" size={16} /></button>
+              <span className="nav-row-text"><small>Facebook</small><strong>{rescuerProfile.facebook}</strong></span>
+              <button className="icon-button" onClick={() => openEdit("facebook")} aria-label="Editar Facebook">
+                <Icon name="icon-edit.svg" size={16} />
+              </button>
             </article>
             <p className="field-hint">Vincula tus cuentas para comprobar que eres el dueño. Es ideal agregar ambas.</p>
             <h2 className="settings-heading">Datos bancarios</h2>
             <article className="card-row">
-              <span className="nav-row-text"><small>CLABE</small><strong>{rescuerAccount.clabe}</strong></span>
-              <button className="icon-button" aria-label="Editar CLABE"><Icon name="icon-edit.svg" size={16} /></button>
+              <span className="nav-row-text"><small>CLABE</small><strong>{rescuerProfile.clabe}</strong></span>
+              <button className="icon-button" onClick={() => openEdit("clabe")} aria-label="Editar CLABE">
+                <Icon name="icon-edit.svg" size={16} />
+              </button>
             </article>
             <p className="field-hint">La CLABE solo es visible para ti y nunca se muestra a los donantes.</p>
           </>
@@ -2936,6 +4465,37 @@ function RescuerSettings() {
           <Chevron />
         </button>
       </div>
+      {editField && editMeta ? (
+        <div className="modal-backdrop center" onClick={() => setEditField(null)}>
+          <div className="dialog-card settings-edit-dialog" onClick={(event) => event.stopPropagation()}>
+            <button className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">×</button>
+            <h2>{editMeta.title}</h2>
+            <label className="dialog-field">
+              <span>{editMeta.label}</span>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(event) => {
+                  const next = editField === "clabe" ? event.target.value.replace(/\D/g, "").slice(0, 18) : event.target.value;
+                  setDraft(next);
+                }}
+                placeholder={editMeta.placeholder}
+                inputMode={editMeta.inputMode}
+                maxLength={editMeta.maxLength}
+                autoComplete="off"
+              />
+            </label>
+            <p className="field-hint">{editMeta.hint}</p>
+            <button type="button" className="purple-button" disabled={!editMeta.canSave} onClick={saveEdit}>
+              Guardar
+            </button>
+            <button type="button" className="secondary-button" onClick={() => setEditField(null)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </ScreenShell>
   );
 }
@@ -3189,6 +4749,7 @@ export default function App() {
           <Route path="/impact/support" element={<ImpactSupport />} />
           <Route path="/impact/success" element={<ImpactSuccess />} />
           <Route path="/impact/error" element={<ImpactError />} />
+          <Route path="/messages" element={<DonorMessages />} />
           <Route path="/messages/:threadId" element={<Messages />} />
           <Route path="/notifications" element={<NotificationList />} />
           <Route path="/history" element={<History />} />
@@ -3210,6 +4771,7 @@ export default function App() {
           <Route path="/rescuer/food/:caseId/:needId" element={<FoodCycle />} />
           <Route path="/rescuer/messages" element={<RescuerMessages />} />
           <Route path="/rescuer/profile" element={<RescuerProfile />} />
+          <Route path="/rescuer/profile/edit" element={<RescuerEditPublicProfile />} />
           <Route path="/rescuer/settings" element={<RescuerSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
