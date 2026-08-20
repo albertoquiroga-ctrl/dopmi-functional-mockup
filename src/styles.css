@@ -500,6 +500,23 @@ textarea { min-height: 112px; resize: vertical; }
 .need-summary { padding: 16px; display: grid; gap: 12px; }
 .need-summary > div:first-child, .split-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
 .need-summary b, .split-meta strong, .impact-amount { color: var(--amount); }
+.public-adoption-actions {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.public-adoption-actions .primary-button {
+  min-height: 44px;
+  box-shadow: 0 4px 10px rgba(247, 203, 45, 0.35);
+}
+.public-activity {
+  display: grid;
+  gap: 12px;
+}
+.public-activity .section-lead {
+  margin: 0 0 4px;
+}
 .progress { height: 8px; border-radius: 99px; background: #fff2b5; overflow: hidden; }
 .progress i { display: block; height: 100%; border-radius: inherit; background: var(--yellow); }
 .card-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -1858,6 +1875,158 @@ textarea { min-height: 112px; resize: vertical; }
 /* Case detail (donación) — card resumen como en adopción */
 .detail-screen .case-summary-card { margin-top: -28px; }
 .detail-screen .detail-content { padding-bottom: 24px; }
+.donor-case-detail .detail-content { padding-bottom: 96px; }
+.mission-funding-card .split-meta strong { color: var(--amount); }
+.progress.tall { height: 12px; }
+
+.donor-need-card {
+  gap: 12px;
+  padding: 16px;
+  overflow: hidden;
+}
+.donor-need-card .need-card-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.donor-need-card .need-card-copy { flex: 1; min-width: 0; }
+.donor-need-card .need-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.donor-need-card .need-card-title-row strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 500;
+}
+.need-type-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.need-type-row small {
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+.need-price-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.need-price-row b { color: var(--amount); font-size: 14px; font-weight: 600; }
+.need-expand {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+}
+.donor-need-card.open .need-expand .icon-mask {
+  transform: rotate(-90deg);
+}
+.need-expand .icon-mask {
+  transform: rotate(90deg);
+  transition: transform .15s ease;
+}
+.donor-need-card .split-meta strong { color: var(--amount); }
+.need-donate-btn {
+  min-height: 36px;
+  border-radius: 999px;
+  font-size: 14px;
+  box-shadow: 0 4px 10px rgba(247, 203, 45, 0.35);
+}
+.need-donate-btn.funded,
+.need-donate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.need-details {
+  display: grid;
+  gap: 12px;
+  margin: 4px -16px -16px;
+  padding: 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(242, 240, 234, 0.35);
+}
+.need-details h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.need-product-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: white;
+}
+.need-product-row > span { font-size: 24px; line-height: 1; }
+.need-product-row strong { display: block; font-size: 14px; font-weight: 500; }
+.need-product-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.need-product-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.need-product-meta b { font-size: 14px; }
+.need-facts-card,
+.need-totals-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: white;
+}
+.need-facts-card div,
+.need-totals-card div { display: grid; gap: 2px; }
+.need-facts-card small,
+.need-totals-card small { color: var(--muted); font-size: 12px; }
+.need-facts-card strong,
+.need-totals-card strong { font-size: 14px; font-weight: 600; }
+.need-totals-card {
+  grid-template-columns: 1fr 1fr;
+}
+.need-totals-card strong.amount { color: var(--amount); }
+.donor-story-stack .story-media.tall { height: 220px; }
+.story-when.dark {
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+}
+.story-when.dark .icon-mask { background-color: white; }
+.story-tag.yellow-tag {
+  background: rgba(247, 203, 45, 0.95);
+  color: var(--ink);
+}
+.donor-story-stack .story-need {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f2f0ea;
+  color: var(--ink);
+}
+.donor-story-stack .story-body small {
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.donor-donate-bar {
+  bottom: 0;
+}
 
 .edit-case-dialog {
   text-align: left; max-height: min(88%, 760px); padding: 20px 18px 18px; border-radius: 16px; gap: 18px;

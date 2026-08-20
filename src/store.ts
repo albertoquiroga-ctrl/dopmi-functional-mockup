@@ -333,7 +333,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 9,
+      version: 10,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
       migrate: (persisted) => ({
         ...(persisted as PrototypeState),

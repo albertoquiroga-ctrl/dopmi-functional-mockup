@@ -46,9 +46,9 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: true, sterilized: false, specialCare: "Seguimiento de crecimiento" },
     social: { dogs: true, cats: true, children: true },
     needs: [
-      { id: "luna-vet", title: "Consulta inicial", type: "Veterinario", requested: 40, funded: 25, urgent: true, status: "active" },
-      { id: "luna-food", title: "Alimento cachorro 1.5 kg", type: "Comida", requested: 18, funded: 18, recurring: true, status: "funded" },
-      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 30, funded: 20, status: "active" },
+      { id: "luna-food", title: "Alimento cachorro 1.5 kg", type: "Comida", requested: 18, funded: 12, recurring: true, status: "active" },
+      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 15, funded: 15, urgent: true, status: "funded" },
+      { id: "luna-vet", title: "Consulta inicial", type: "Veterinario", requested: 40, funded: 25, status: "active" },
     ],
   },
   {

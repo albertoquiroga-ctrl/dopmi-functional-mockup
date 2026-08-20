@@ -1012,23 +1012,115 @@ function DonationHome() {
   );
 }
 
-function NeedCard({ need, caseId }: { need: Need; caseId: string }) {
+function NeedCard({ need, caseId, defaultOpen = false }: { need: Need; caseId: string; defaultOpen?: boolean }) {
   const navigate = useNavigate();
+  const [open, setOpen] = useState(defaultOpen);
   const remaining = Math.max(0, need.requested - need.funded);
+  const fullyFunded = remaining === 0 || need.status === "funded" || need.status === "completed" || need.status === "evidence";
+  const pct = need.requested ? Math.min(100, Math.round((need.funded / need.requested) * 100)) : 0;
+  const typeLabel =
+    need.type === "Comida" ? "comida" : need.type === "Medicina" ? "medicina" : need.type === "Veterinario" ? "veterinario" : "otra";
+
   return (
-    <article className="need-card">
-      <div className="need-card-title">
-        <span className={`need-symbol ${need.type.toLowerCase()}`}>
-          <Icon name={need.type === "Comida" ? "tab-donate.svg" : need.type === "Medicina" ? "notif-donation.svg" : "icon-shield.svg"} size={22} />
-        </span>
-        <div><strong>{need.title}</strong><small>{need.type}</small></div>
-        <b>${need.requested}</b>
+    <article className={`need-card donor-need-card ${open ? "open" : ""}`}>
+      <div className="need-card-head">
+        <span className={`need-symbol soft ${typeLabel}`}>{needEmoji(need.type)}</span>
+        <div className="need-card-copy">
+          <div className="need-card-title-row">
+            <div>
+              <strong>{need.title}</strong>
+              <span className="need-type-row">
+                <small>{typeLabel}</small>
+                {need.urgent ? <span className="urgent-inline">Urgente</span> : null}
+              </span>
+            </div>
+            <div className="need-price-row">
+              <b>${need.requested}</b>
+              <button
+                type="button"
+                className="need-expand"
+                aria-expanded={open}
+                aria-label={open ? "Ocultar detalle" : "Ver detalle"}
+                onClick={() => setOpen((value) => !value)}
+              >
+                <Chevron />
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="split-meta"><span>${need.requested} total</span><strong>${remaining} por recaudar</strong></div>
-      <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
-      <button className="primary-button" disabled={remaining === 0} onClick={() => navigate(`/donate/${caseId}/${need.id}`)}>
-        {remaining === 0 ? "Necesidad fondeada" : "Donar"}
+      <div className="split-meta">
+        <span>${need.requested} total</span>
+        <strong>${remaining} por recaudar</strong>
+      </div>
+      <div className="progress"><i style={{ width: `${pct}%` }} /></div>
+      <button
+        type="button"
+        className={`primary-button need-donate-btn ${fullyFunded ? "funded" : ""}`}
+        disabled={fullyFunded}
+        onClick={() => navigate(`/donate/${caseId}/${need.id}`)}
+      >
+        {fullyFunded ? "Completamente fondeada" : "Donar"}
       </button>
+      {open ? (
+        <div className="need-details">
+          <h3>Detalle de la necesidad</h3>
+          {need.type === "Comida" ? (
+            <>
+              <div className="need-product-row">
+                <span aria-hidden="true">🍖</span>
+                <div>
+                  <strong>{need.title}</strong>
+                  <small>Alimento para cachorro</small>
+                  <div className="need-product-meta">
+                    <b>${need.requested} MXN</b>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : need.type === "Medicina" ? (
+            <div className="need-facts-card">
+              <div>
+                <small>Medicina</small>
+                <strong>{need.title}</strong>
+              </div>
+              <div>
+                <small>Costo a cubrir</small>
+                <strong>${need.requested} MXN</strong>
+              </div>
+              <div>
+                <small>Propósito del tratamiento</small>
+                <strong>Desparasitación inicial</strong>
+              </div>
+            </div>
+          ) : (
+            <div className="need-facts-card">
+              <div>
+                <small>Tipo de servicio</small>
+                <strong>Consulta</strong>
+              </div>
+              <div>
+                <small>Costo</small>
+                <strong>${need.requested} MXN</strong>
+              </div>
+            </div>
+          )}
+          <div className="need-totals-card">
+            <div>
+              <small>Total necesario</small>
+              <strong>${need.requested}</strong>
+            </div>
+            <div>
+              <small>Recaudado</small>
+              <strong className="amount">${need.funded}</strong>
+            </div>
+            <div>
+              <small>Por recaudar</small>
+              <strong>${remaining}</strong>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -1036,57 +1128,161 @@ function NeedCard({ need, caseId }: { need: Need; caseId: string }) {
 function CaseDetail() {
   const { caseId = "luna" } = useParams();
   const navigate = useNavigate();
-  const { cases, savedPetIds, savedRescuerIds, toggleSavedPet, toggleSavedRescuer } = usePrototypeStore();
+  const { cases, savedPetIds, toggleSavedPet } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const total = item.needs.reduce((sum, need) => sum + need.requested, 0);
   const funded = item.needs.reduce((sum, need) => sum + need.funded, 0);
+  const missionPct = Math.round((funded / Math.max(total, 1)) * 100);
   const [report, setReport] = useState(false);
   const [toast, setToast] = useState("");
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const photos =
+    item.id === "luna"
+      ? ["/assets/luna-detail.png", item.image, "/assets/guardian-luna.jpg", item.image]
+      : item.id === "milo"
+        ? [item.image, "/assets/guardian-milo.jpg", item.image, item.image]
+        : [item.image, item.image, item.image, item.image];
+  const stories = [
+    {
+      id: "s1",
+      when: "Hace 1 día",
+      tag: "Recuperación",
+      text: `${item.name} recibió sus primeras vacunas hoy. Ya come con más ganas y duerme tranquila.`,
+      thanks: "Gracias a Ana P.",
+      image: photos[0],
+      need: item.needs.find((n) => n.type === "Medicina")
+        ? `${item.needs.find((n) => n.type === "Medicina")!.title} · $${item.needs.find((n) => n.type === "Medicina")!.requested}`
+        : item.needs[0]
+          ? `${item.needs[0].title} · $${item.needs[0].requested}`
+          : undefined,
+    },
+    {
+      id: "s2",
+      when: "Hace 3 días",
+      tag: "Rescate",
+      text: `Encontramos a ${item.name} abandonada. Empezamos el protocolo de rescate y búsqueda de apoyo.`,
+      thanks: "Gracias a Lucía G.",
+      image: photos[1] ?? item.image,
+      need: undefined,
+    },
+  ];
+  const firstActive = item.needs.find((need) => need.status === "active" && need.funded < need.requested)?.id;
+
   return (
-    <div className="plain-screen detail-screen">
-      <div className="detail-hero compact">
-        <img src={item.id === "luna" ? `${A}luna-detail.png` : item.image} alt={item.name} />
-        <button className="hero-back" onClick={() => navigate("/donate")} aria-label="Volver"><AssetIcon name="back-light.svg" /></button>
-        <button className="hero-share" onClick={() => setToast("Enlace del caso copiado")} aria-label="Compartir">
-          <Icon name="icon-share.svg" size={20} />
-        </button>
-      </div>
-      <div className="detail-content">
-        <article className="info-card case-summary-card">
-          <div className="title-row">
-            <h1>{item.name}, {item.age}</h1>
-            <span className="distance-pill">
-              <Icon name="location.svg" size={12} />
-              {item.distance}
-            </span>
-          </div>
-          <p>{item.story}</p>
-        </article>
-        <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${item.id}`)}>
-          <span className="avatar yellow">{item.rescuer.charAt(0)}</span>
-          <span>
-            <strong>
-              {item.rescuer}
-              <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" />
-            </strong>
-            <small>{item.location}</small>
+    <ScreenShell
+      overlay={
+        <>
+          {report ? (
+            <ReportDialog
+              title="Reportar caso"
+              onClose={(sent) => {
+                setReport(false);
+                if (sent) setToast("Reporte enviado, lo revisaremos pronto");
+              }}
+            />
+          ) : null}
+          {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+        </>
+      }
+    >
+      <div className="detail-screen donor-case-detail">
+        <div className="detail-hero compact">
+          <img src={photos[photoIndex]} alt={item.name} />
+          <button className="hero-back" onClick={() => navigate("/donate")} aria-label="Volver">
+            <AssetIcon name="back-light.svg" />
+          </button>
+          <span className="hero-counter">
+            {photoIndex + 1} / {photos.length}
           </span>
-        </button>
-        <article className="funding-card">
-          <h3>Progreso total de la misión</h3>
-          <div className="split-meta"><span>Financiamiento</span><strong>{Math.round((funded / Math.max(total, 1)) * 100)}%</strong></div>
-          <div className="progress"><i style={{ width: `${(funded / Math.max(total, 1)) * 100}%` }} /></div>
-        </article>
-        <h2>Necesidades activas</h2>
-        <div className="needs-stack">{item.needs.map((need) => <NeedCard key={need.id} need={need} caseId={item.id} />)}</div>
-        <button className="report-link" onClick={() => setReport(true)}>
-          <Icon name="icon-alert-circle.svg" size={16} />
-          Reportar
-        </button>
-        <button className="secondary-button" onClick={() => toggleSavedRescuer(item.rescuer)}>
-          {savedRescuerIds.includes(item.rescuer) ? "Quitar rescatista de guardados" : "Guardar rescatista"}
-        </button>
-        <div className="adoption-detail-bar case-detail-bar">
+          <div className="hero-dots">
+            {photos.map((_, index) => (
+              <button
+                key={index}
+                type="button"
+                className={index === photoIndex ? "active" : ""}
+                aria-label={`Foto ${index + 1}`}
+                onClick={() => setPhotoIndex(index)}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="detail-content">
+          <article className="info-card case-summary-card">
+            <div className="title-row">
+              <h1>
+                {item.name}, {item.age}
+              </h1>
+              <span className="distance-pill">
+                <Icon name="location.svg" size={12} />
+                {item.distance}
+              </span>
+            </div>
+            <p>{item.story}</p>
+          </article>
+
+          <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${item.id}`)}>
+            <span className="avatar yellow">{item.rescuer.charAt(0)}</span>
+            <span>
+              <strong>
+                {item.rescuer}
+                <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" />
+              </strong>
+              <small>{item.location}</small>
+            </span>
+          </button>
+
+          <article className="funding-card mission-funding-card">
+            <h3>Progreso total de la misión</h3>
+            <div className="split-meta">
+              <span>Financiamiento</span>
+              <strong>{missionPct}%</strong>
+            </div>
+            <div className="progress tall"><i style={{ width: `${missionPct}%` }} /></div>
+          </article>
+
+          <h2>Necesidades activas</h2>
+          <div className="needs-stack">
+            {item.needs.map((need) => (
+              <NeedCard key={need.id} need={need} caseId={item.id} defaultOpen={need.id === firstActive} />
+            ))}
+          </div>
+
+          <button className="report-link" onClick={() => setReport(true)}>
+            <Icon name="icon-alert-circle.svg" size={16} />
+            Reportar
+          </button>
+
+          <h2>La historia hasta ahora</h2>
+          <div className="story-stack donor-story-stack">
+            {stories.map((entry) => (
+              <article className="story-card" key={entry.id}>
+                <div className="story-media tall">
+                  <img src={entry.image} alt="" />
+                  <span className="story-when dark">
+                    <Icon name="icon-clock.svg" size={12} />
+                    {entry.when}
+                  </span>
+                  <span className="story-tag yellow-tag">{entry.tag}</span>
+                </div>
+                <div className="story-body">
+                  <p>{entry.text}</p>
+                  {entry.need ? (
+                    <span className="story-need">
+                      <span aria-hidden="true">{needEmoji(item.needs.find((n) => entry.need?.startsWith(n.title))?.type ?? "Medicina")}</span>
+                      {entry.need}
+                    </span>
+                  ) : null}
+                  <small>
+                    <Icon name="icon-star.svg" size={14} />
+                    {entry.thanks}
+                  </small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div className="adoption-detail-bar case-detail-bar donor-donate-bar">
           <button
             className={`round-save ${savedPetIds.includes(item.id) ? "selected" : ""}`}
             onClick={() => toggleSavedPet(item.id)}
@@ -1097,30 +1293,20 @@ function CaseDetail() {
           <button
             className="primary-button adopt-cta"
             onClick={() => {
-              const need = item.needs.find((entry) => entry.status === "active") ?? item.needs[0];
+              const need = item.needs.find((entry) => entry.status === "active" && entry.funded < entry.requested) ?? item.needs[0];
               if (need) navigate(`/donate/${item.id}/${need.id}`);
             }}
           >
-            Donar ahora
+            Donar
           </button>
         </div>
       </div>
-      {report ? (
-        <ReportDialog
-          title="Reportar caso"
-          onClose={(sent) => {
-            setReport(false);
-            if (sent) setToast("Reporte enviado, lo revisaremos pronto");
-          }}
-        />
-      ) : null}
-      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-    </div>
+    </ScreenShell>
   );
 }
 
 function DonationFlow() {
-  const { caseId = "luna", needId = "luna-vet" } = useParams();
+  const { caseId = "luna", needId = "luna-food" } = useParams();
   const navigate = useNavigate();
   const { cases, paymentOutcome, donate } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
@@ -1638,10 +1824,8 @@ function DonorMessages() {
       ];
   return (
     <ScreenShell>
+      <TopBar title="Mensajes" back="/adoption" />
       <div className="content-pad donor-messages">
-        <header className="page-head">
-          <h1>Mensajes</h1>
-        </header>
         <p className="section-lead">Habla con rescatistas</p>
         {threads.length === 0 ? (
           <article className="empty-card donor-empty-card messages-empty-card">
@@ -4589,7 +4773,7 @@ function ReportDialog({ title, onClose }: { title: string; onClose: (sent: boole
 function PublicRescuerProfile() {
   const navigate = useNavigate();
   const { caseId = "" } = useParams();
-  const { cases, savedRescuerIds, toggleSavedRescuer } = usePrototypeStore();
+  const { cases, savedRescuerIds, toggleSavedRescuer, savedPetIds, toggleSavedPet } = usePrototypeStore();
   const fromCase = cases.find((item) => item.id === caseId);
   const name = fromCase?.rescuer ?? decodeURIComponent(caseId);
   const rescuer = rescuers.find((item) => item.name === name) ?? rescuers[0];
@@ -4652,19 +4836,30 @@ function PublicRescuerProfile() {
         </div>
         {tab === "adoption" ? (
           adoptionList.length ? (
-            adoptionList.map((item) => (
-              <article className="case-card" key={item.id}>
-                <div className="case-image">
-                  <img src={item.image} alt={item.name} />
-                  <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
-                </div>
-                <div className="need-summary">
-                  <div className="card-actions">
-                    <button className="primary-button" onClick={() => navigate(item.link)}>Ver ficha</button>
+            adoptionList.map((item) => {
+              const isSaved = savedPetIds.includes(item.id);
+              return (
+                <article className="case-card" key={item.id}>
+                  <div className="case-image">
+                    <img src={item.image} alt={item.name} />
+                    <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
                   </div>
-                </div>
-              </article>
-            ))
+                  <div className="need-summary public-adoption-actions">
+                    <button
+                      type="button"
+                      className={`round-save ${isSaved ? "selected" : ""}`}
+                      onClick={() => toggleSavedPet(item.id)}
+                      aria-label={isSaved ? "Quitar de guardados" : "Guardar"}
+                    >
+                      <Icon name="icon-bookmark.svg" size={20} />
+                    </button>
+                    <button type="button" className="primary-button" onClick={() => navigate(item.link)}>
+                      Conoce la historia de {item.name}
+                    </button>
+                  </div>
+                </article>
+              );
+            })
           ) : (
             <p className="empty-inline">Este rescatista no tiene mascotas en adopción por ahora.</p>
           )
@@ -4694,17 +4889,97 @@ function PublicRescuerProfile() {
           )
         ) : null}
         {tab === "activity" ? (
-          <div className="activity-stack">
-            {ownCases.map((item) => (
-              <article className="activity-card" key={item.id}>
-                <img src={item.image} alt={item.name} />
-                <div>
-                  <strong>Actualización de {item.name}</strong>
-                  <small>Evidencia publicada · hace 2 días</small>
+          (() => {
+            const whenToDays = (when: string) => {
+              const normalized = when.toLowerCase();
+              if (normalized.includes("hoy")) return 0;
+              const match = normalized.match(/hace\s+(\d+)\s+(día|dias|días|hora|horas|semana|semanas|mes|meses)/);
+              if (!match) return 999;
+              const n = Number(match[1]);
+              const unit = match[2];
+              if (unit.startsWith("hora")) return n / 24;
+              if (unit.startsWith("día") || unit.startsWith("dia")) return n;
+              if (unit.startsWith("semana")) return n * 7;
+              if (unit.startsWith("mes")) return n * 30;
+              return 999;
+            };
+            const stories = [
+              ...ownCases.flatMap((item, index) => {
+                const med = item.needs.find((need) => need.type === "Medicina");
+                const food = item.needs.find((need) => need.type === "Comida");
+                return [
+                  {
+                    id: `${item.id}-recovery`,
+                    when: index === 0 ? "Hace 1 día" : "Hace 3 días",
+                    tag: "Recuperación",
+                    text: `${item.name} recibió apoyo con las donaciones. Ya muestra mejoría y sigue en seguimiento.`,
+                    thanks: "Gracias a Ana P.",
+                    image: item.id === "luna" ? "/assets/luna-detail.png" : item.image,
+                    need: med ? `${med.title} · $${med.requested}` : food ? `${food.title} · $${food.requested}` : undefined,
+                    needType: (med?.type ?? food?.type ?? "Medicina") as Need["type"],
+                  },
+                  {
+                    id: `${item.id}-rescue`,
+                    when: "Hace 1 semana",
+                    tag: "Rescate",
+                    text: `Publicamos evidencia del rescate de ${item.name} para que la comunidad vea el avance.`,
+                    thanks: "Gracias a Lucía G.",
+                    image: item.image,
+                    need: undefined,
+                    needType: "Otra" as Need["type"],
+                  },
+                ];
+              }),
+              ...adoptionPets
+                .filter((item) => item.rescuer === rescuer.name)
+                .flatMap((pet) =>
+                  pet.journey.map((entry) => ({
+                    id: `${pet.id}-${entry.id}`,
+                    when: entry.when,
+                    tag: entry.tag,
+                    text: entry.text,
+                    thanks: entry.thanks,
+                    image: pet.image,
+                    need: entry.need,
+                    needType: "Otra" as Need["type"],
+                  })),
+                ),
+            ].sort((a, b) => whenToDays(a.when) - whenToDays(b.when));
+            if (!stories.length) {
+              return <p className="empty-inline">Aún no hay evidencias publicadas.</p>;
+            }
+            return (
+              <section className="public-activity">
+                <p className="section-lead">Evidencias de donaciones recibidas y avances del rescate.</p>
+                <div className="story-stack donor-story-stack">
+                  {stories.map((entry) => (
+                    <article className="story-card" key={entry.id}>
+                      <div className="story-media tall">
+                        <img src={entry.image} alt="" />
+                        <span className="story-when dark">
+                          <Icon name="icon-clock.svg" size={12} />
+                          {entry.when}
+                        </span>
+                      </div>
+                      <div className="story-body">
+                        <p>{entry.text}</p>
+                        {entry.need ? (
+                          <span className="story-need">
+                            <span aria-hidden="true">{needEmoji(entry.needType)}</span>
+                            {entry.need}
+                          </span>
+                        ) : null}
+                        <small>
+                          <Icon name="icon-star.svg" size={14} />
+                          {entry.thanks}
+                        </small>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              </article>
-            ))}
-          </div>
+              </section>
+            );
+          })()
         ) : null}
       </div>
       {report ? (
