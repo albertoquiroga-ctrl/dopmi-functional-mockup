@@ -561,7 +561,7 @@ function Welcome({ mode }: { mode: AccountMode }) {
       <div className="welcome-hero">
         <img className="header-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={144} height={48} />
         <div className="welcome-copy">
-          <h1>¡Guau guau!</h1>
+          <h1>¡Woof woof!</h1>
           <p>
             Gracias por hacer la diferencia.
             <br />
