@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.tools/
+.DS_Store
+coverage/
+.figma-refs/
+playwright-report/
+test-results/
