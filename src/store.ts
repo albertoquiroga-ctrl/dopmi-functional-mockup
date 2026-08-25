@@ -19,6 +19,14 @@ export type RescuerProfile = {
   avatar?: string;
 };
 
+export type DonorProfile = {
+  name: string;
+  email: string;
+  phone: string;
+  city: string;
+  avatar?: string;
+};
+
 export type Donation = {
   id: string;
   caseId: string;
@@ -52,12 +60,14 @@ type PrototypeState = {
   draft: Record<string, string | boolean | string[]>;
   emptyStates: boolean;
   rescuerProfile: RescuerProfile;
+  donorProfile: DonorProfile;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
   setPaymentOutcome: (outcome: PaymentOutcome) => void;
   setEmptyStates: (value: boolean) => void;
   updateRescuerProfile: (values: Partial<RescuerProfile>) => void;
+  updateDonorProfile: (values: Partial<DonorProfile>) => void;
   toggleSavedPet: (id: string) => void;
   toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
@@ -97,6 +107,12 @@ const initialState = {
   draft: {} as Record<string, string | boolean | string[]>,
   emptyStates: false,
   rescuerProfile: { ...rescuerAccount },
+  donorProfile: {
+    name: "Alberto Quiroga",
+    email: "alberto@email.com",
+    phone: "+52 55 1234 5678",
+    city: "Ciudad de México",
+  },
 };
 
 export const usePrototypeStore = create<PrototypeState>()(
@@ -116,6 +132,10 @@ export const usePrototypeStore = create<PrototypeState>()(
       updateRescuerProfile: (values) =>
         set((state) => ({
           rescuerProfile: { ...state.rescuerProfile, ...values },
+        })),
+      updateDonorProfile: (values) =>
+        set((state) => ({
+          donorProfile: { ...state.donorProfile, ...values },
         })),
       toggleSavedPet: (id) =>
         set((state) => ({
@@ -333,7 +353,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 10,
+      version: 13,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
       migrate: (persisted) => ({
         ...(persisted as PrototypeState),
@@ -342,6 +362,13 @@ export const usePrototypeStore = create<PrototypeState>()(
         emptyStates: false,
         guardianImpactReady: false,
         rescuerProfile: { ...rescuerAccount },
+        donorProfile: {
+          name: "Alberto Quiroga",
+          email: "alberto@email.com",
+          phone: "+52 55 1234 5678",
+          city: "Ciudad de México",
+          ...(persisted as { donorProfile?: Partial<DonorProfile> }).donorProfile,
+        },
       }),
     },
   ),

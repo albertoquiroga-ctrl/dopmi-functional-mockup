@@ -312,6 +312,24 @@ export type Notification = {
 
 export const initialNotifications: Notification[] = [
   {
+    id: "n-guardian",
+    kind: "donation",
+    title: "Ya eres Guardián",
+    body: "Tu aportación mensual es de $50 MXN.",
+    time: "Ahora",
+    target: "/impact",
+    read: false,
+  },
+  {
+    id: "n-donation",
+    kind: "donation",
+    title: "Donación enviada exitosamente",
+    body: "Tu aportación de $120 MXN a Luna ya aparece en el caso.",
+    time: "Hace 1 h",
+    target: "/case/luna",
+    read: false,
+  },
+  {
     id: "n1",
     kind: "message",
     title: "Nuevo mensaje de Rescatista",

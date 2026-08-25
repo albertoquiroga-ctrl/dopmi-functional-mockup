@@ -615,7 +615,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
             </span>
           </label>
         ) : (
-          <button type="button" className="inline-link" onClick={() => navigate("/forgot-password")}>
+          <button type="button" className="inline-link" onClick={() => navigate(`/forgot-password?mode=${mode}`)}>
             Olvidé mi contraseña
           </button>
         )}
@@ -629,6 +629,190 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
           </button>
         </p>
       </form>
+    </div>
+  );
+}
+
+type ForgotStep = "request" | "sent" | "reset" | "done";
+
+function forgotStepFromPath(pathname: string): ForgotStep {
+  if (pathname.endsWith("/sent")) return "sent";
+  if (pathname.endsWith("/reset")) return "reset";
+  if (pathname.endsWith("/done")) return "done";
+  return "request";
+}
+
+function ForgotPasswordFlow() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const modeParam = new URLSearchParams(location.search).get("mode");
+  const mode: AccountMode = modeParam === "rescuer" ? "rescuer" : "donor";
+  const loginPath = `/login/${mode}`;
+  const qs = `?mode=${mode}`;
+  const step = forgotStepFromPath(location.pathname);
+  const stateEmail = (location.state as { email?: string } | null)?.email ?? "";
+
+  const [email, setEmail] = useState(stateEmail);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    if (stateEmail) setEmail(stateEmail);
+  }, [stateEmail]);
+
+  const go = (next: ForgotStep, nextEmail = email) => {
+    const path =
+      next === "request"
+        ? `/forgot-password${qs}`
+        : next === "sent"
+          ? `/forgot-password/sent${qs}`
+          : next === "reset"
+            ? `/forgot-password/reset${qs}`
+            : `/forgot-password/done${qs}`;
+    navigate(path, { state: { email: nextEmail } });
+  };
+
+  const backForStep =
+    step === "request"
+      ? loginPath
+      : step === "sent"
+        ? () => go("request")
+        : step === "reset"
+          ? () => go("sent")
+          : () => go("reset");
+
+  const submitRequest = (event: FormEvent) => {
+    event.preventDefault();
+    const value = email.trim();
+    if (!value) return;
+    go("sent", value);
+  };
+
+  const submitReset = (event: FormEvent) => {
+    event.preventDefault();
+    if (password.length < 6) {
+      setError("Usa al menos 6 caracteres.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+    setError("");
+    go("done");
+  };
+
+  return (
+    <div className="plain-screen auth-flow">
+      <BrandHeader back={backForStep} />
+      <SimulatedBanner />
+      {step === "request" ? (
+        <form className="form-stack auth-form" onSubmit={submitRequest}>
+          <div className="auth-form-head">
+            <h1>Recuperar contraseña</h1>
+            <p>Escribe el correo de tu cuenta y te enviaremos un enlace para crear una nueva.</p>
+          </div>
+          <label>
+            Correo electrónico
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="tu@email.com"
+              autoComplete="email"
+            />
+          </label>
+          <button type="submit" className="primary-button">
+            Enviar
+          </button>
+          <button type="button" className="inline-link auth-back-link" onClick={() => navigate(loginPath)}>
+            Volver a iniciar sesión
+          </button>
+        </form>
+      ) : null}
+
+      {step === "sent" ? (
+        <div className="form-stack auth-form">
+          <div className="auth-form-head">
+            <h1>Revisa tu correo</h1>
+            <p>
+              Si hay una cuenta con <strong>{email || "tu correo"}</strong>, te enviamos un enlace para restablecer tu
+              contraseña. Revisa también la carpeta de spam.
+            </p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => go("reset")}>
+            Abrir enlace del correo
+          </button>
+          <button
+            type="button"
+            className="inline-link auth-back-link"
+            onClick={() => setToast("Enlace reenviado")}
+          >
+            Reenviar enlace
+          </button>
+          <button type="button" className="inline-link auth-back-link" onClick={() => navigate(loginPath)}>
+            Volver a iniciar sesión
+          </button>
+        </div>
+      ) : null}
+
+      {step === "reset" ? (
+        <form className="form-stack auth-form" onSubmit={submitReset}>
+          <div className="auth-form-head">
+            <h1>Crea una nueva contraseña</h1>
+            <p>Debe tener al menos 6 caracteres.</p>
+          </div>
+          <label>
+            Nueva contraseña
+            <input
+              required
+              type="password"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError("");
+              }}
+              placeholder="Mínimo 6 caracteres"
+              autoComplete="new-password"
+            />
+          </label>
+          <label>
+            Confirmar contraseña
+            <input
+              required
+              type="password"
+              value={confirm}
+              onChange={(event) => {
+                setConfirm(event.target.value);
+                setError("");
+              }}
+              placeholder="Confirma tu contraseña"
+              autoComplete="new-password"
+            />
+          </label>
+          {error ? <p className="field-error">{error}</p> : null}
+          <button type="submit" className="primary-button">
+            Guardar contraseña
+          </button>
+        </form>
+      ) : null}
+
+      {step === "done" ? (
+        <div className="form-stack auth-form">
+          <div className="auth-form-head">
+            <h1>Contraseña actualizada</h1>
+            <p>Ya puedes iniciar sesión con tu nueva contraseña.</p>
+          </div>
+          <button type="button" className="primary-button" onClick={() => navigate(loginPath)}>
+            Iniciar sesión
+          </button>
+        </div>
+      ) : null}
+
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </div>
   );
 }
@@ -1609,23 +1793,20 @@ function Impact() {
               <p>Actualmente no hay registro de donaciones.</p>
             </article>
           ) : (
-            <>
-              {stories.map((item) => (
-                <article className="impact-card" key={item.name}>
-                  <img src={`${A}${item.image}`} alt={item.name} />
-                  <div>
-                    <div className="title-row"><strong>{item.name}</strong><span>{item.type}</span></div>
-                    <p>{item.copy}</p>
-                    <div className="impact-meta"><small>Por {item.author}</small><small>{item.time}</small></div>
-                    <div className="impact-foot">
-                      <span className="impact-amount">${item.amount} MXN</span>
-                      <button className="secondary-button compact"><Icon name="icon-share.svg" size={14} />Compartir</button>
-                    </div>
+            stories.map((item) => (
+              <article className="impact-card" key={item.name}>
+                <img src={`${A}${item.image}`} alt={item.name} />
+                <div>
+                  <div className="title-row"><strong>{item.name}</strong><span>{item.type}</span></div>
+                  <p>{item.copy}</p>
+                  <div className="impact-meta"><small>Por {item.author}</small><small>{item.time}</small></div>
+                  <div className="impact-foot">
+                    <span className="impact-amount">${item.amount} MXN</span>
+                    <button className="secondary-button compact"><Icon name="icon-share.svg" size={14} />Compartir</button>
                   </div>
-                </article>
-              ))}
-              <button className="secondary-button" onClick={() => navigate("/settings/billing")}>Administrar suscripción</button>
-            </>
+                </div>
+              </article>
+            ))
           )}
         </div>
       </ScreenShell>
@@ -1653,12 +1834,20 @@ function Impact() {
 
 function ImpactSupport() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { paymentOutcome, setGuardian } = usePrototypeStore();
   const presets = [50, 200, 500];
   const [amount, setAmount] = useState(50);
   const [custom, setCustom] = useState(false);
   const [method, setMethod] = useState<"card" | "apple" | "google">("card");
   const total = `$${amount.toFixed(2)} MXN`;
+  const backPath =
+    typeof location.state === "object" &&
+    location.state &&
+    "from" in location.state &&
+    typeof (location.state as { from?: unknown }).from === "string"
+      ? (location.state as { from: string }).from
+      : "/impact";
   const confirm = () => {
     if (paymentOutcome === "error") {
       navigate(`/impact/error?amount=${amount}`);
@@ -1669,7 +1858,7 @@ function ImpactSupport() {
   };
   return (
     <div className="plain-screen">
-      <TopBar back="/impact" />
+      <TopBar back={backPath} />
       <div className="content-pad support-flow">
         <div className="support-intro">
           <h1>Elige tu apoyo</h1>
@@ -1870,45 +2059,75 @@ const notificationIcons: Record<NotificationKind, string> = {
 
 function NotificationList() {
   const navigate = useNavigate();
-  const { notifications, markNotificationRead } = usePrototypeStore();
+  const { notifications, markNotificationRead, emptyStates } = usePrototypeStore();
+  const items = emptyStates ? [] : notifications;
   return (
     <div className="plain-screen">
       <TopBar title="Notificaciones" back="/profile" />
       <div className="content-pad notification-stack">
-        {notifications.map((item) => (
-          <button
-            key={item.id}
-            className={`notification-card ${item.read ? "" : "unread"}`}
-            onClick={() => {
-              markNotificationRead(item.id);
-              navigate(item.target);
-            }}
-          >
-            <span className={`notif-chip ${item.kind ?? "case"}`}>
-              <AssetIcon name={notificationIcons[item.kind] ?? notificationIcons.case} size={20} />
+        {items.length === 0 ? (
+          <article className="empty-card donor-empty-card notifications-empty">
+            <span className="empty-chip yellow">
+              <Icon name="icon-bell.svg" size={28} />
             </span>
-            <span className="notif-body">
-              <span className="notif-head">
-                <strong>{item.title}</strong>
-                <time>{item.time}</time>
+            <h2>No tienes notificaciones</h2>
+            <p>Cuando haya novedades de donaciones, mensajes o casos, aparecerán aquí.</p>
+            <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+              Ir a Donar
+            </button>
+          </article>
+        ) : (
+          items.map((item) => (
+            <button
+              key={item.id}
+              className={`notification-card ${item.read ? "" : "unread"}`}
+              onClick={() => {
+                markNotificationRead(item.id);
+                navigate(item.target);
+              }}
+            >
+              <span className={`notif-chip ${item.kind ?? "case"}`}>
+                <AssetIcon name={notificationIcons[item.kind] ?? notificationIcons.case} size={20} />
               </span>
-              <p>{item.body}</p>
-            </span>
-          </button>
-        ))}
+              <span className="notif-body">
+                <span className="notif-head">
+                  <strong>{item.title}</strong>
+                  <time>{item.time}</time>
+                </span>
+                <p>{item.body}</p>
+              </span>
+            </button>
+          ))
+        )}
       </div>
     </div>
   );
 }
 
 function History() {
+  const navigate = useNavigate();
   const rows = useDonationLogRows();
   return (
     <div className="plain-screen">
       <TopBar title="Historial de donaciones" back="/profile" />
       <div className="content-pad log-section">
-        <p>Cada aportación registrada con su caso, concepto y estado.</p>
-        <DonationLogTable rows={rows} />
+        {rows.length ? (
+          <>
+            <p>Cada aportación registrada con su caso, concepto y estado.</p>
+            <DonationLogTable rows={rows} />
+          </>
+        ) : (
+          <article className="empty-card donor-empty-card donation-log-empty">
+            <span className="empty-chip yellow">
+              <Icon name="tab-donate.svg" size={28} />
+            </span>
+            <h2>Aún no tienes donaciones</h2>
+            <p>Cuando apoyes un caso, verás aquí el registro de tus aportaciones.</p>
+            <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+              Ir a Donar
+            </button>
+          </article>
+        )}
       </div>
     </div>
   );
@@ -1941,7 +2160,8 @@ function DonationLogTable({ rows }: { rows: { id: string; date: string; caseId: 
 }
 
 function useDonationLogRows(limit?: number) {
-  const { donations, cases } = usePrototypeStore();
+  const { donations, cases, emptyStates } = usePrototypeStore();
+  if (emptyStates) return [];
   const live = donations.map((donation) => {
     const item = cases.find((entry) => entry.id === donation.caseId) ?? cases[0];
     const need = item.needs.find((entry) => entry.id === donation.needId);
@@ -1961,7 +2181,7 @@ function useDonationLogRows(limit?: number) {
 
 function DonorProfile() {
   const navigate = useNavigate();
-  const { savedPetIds, savedRescuerIds, notifications, setAccountMode, guardianActive } = usePrototypeStore();
+  const { savedPetIds, savedRescuerIds, notifications, setAccountMode, guardianActive, donorProfile } = usePrototypeStore();
   const unread = notifications.filter((item) => !item.read).length;
   const rows = useDonationLogRows(5);
   const switchToRescuer = () => {
@@ -1977,17 +2197,34 @@ function DonorProfile() {
         </header>
 
         <article className="member-card">
-          <span className="member-avatar">A</span>
+          <span className={`member-avatar ${donorProfile.avatar ? "has-photo" : ""}`}>
+            {donorProfile.avatar ? <img src={donorProfile.avatar} alt="" /> : donorProfile.name.charAt(0)}
+          </span>
           <div>
-            <strong>Alberto Quiroga</strong>
+            <strong>{donorProfile.name}</strong>
             <span>{guardianActive ? "Guardián" : "Miembro de la Comunidad"}</span>
           </div>
         </article>
 
         <section className="log-section">
           <h2>Registro de donaciones</h2>
-          <DonationLogTable rows={rows} />
-          <button className="ghost-button" onClick={() => navigate("/history")}>Ver más</button>
+          {rows.length ? (
+            <>
+              <DonationLogTable rows={rows} />
+              <button className="ghost-button" onClick={() => navigate("/history")}>Ver más</button>
+            </>
+          ) : (
+            <article className="empty-card donor-empty-card donation-log-empty">
+              <span className="empty-chip yellow">
+                <Icon name="tab-donate.svg" size={28} />
+              </span>
+              <h2>Aún no tienes donaciones</h2>
+              <p>Cuando apoyes un caso, verás aquí el registro de tus aportaciones.</p>
+              <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+                Ir a Donar
+              </button>
+            </article>
+          )}
         </section>
 
         <section className="list-stack">
@@ -2038,15 +2275,48 @@ function DonorProfile() {
 
 function SavedPets() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, cases } = usePrototypeStore();
+  const { savedPetIds, toggleSavedPet, cases, emptyStates } = usePrototypeStore();
   const [tab, setTab] = useState<"donation" | "adoption">("adoption");
-  const items = tab === "adoption" ? adoptionPets.filter((item) => savedPetIds.includes(item.id)) : cases.filter((item) => savedPetIds.includes(item.id));
+  const items = emptyStates
+    ? []
+    : tab === "adoption"
+      ? adoptionPets.filter((item) => savedPetIds.includes(item.id))
+      : cases.filter((item) => savedPetIds.includes(item.id));
+  const explorePath = tab === "donation" ? "/donate" : "/adoption";
   return (
     <div className="plain-screen">
       <TopBar title="Mascotas guardadas" back="/profile" />
       <div className="content-pad">
-        <div className="segmented-control"><button className={tab === "donation" ? "active" : ""} onClick={() => setTab("donation")}>Casos de donación</button><button className={tab === "adoption" ? "active" : ""} onClick={() => setTab("adoption")}>En adopción</button></div>
-        {!items.length ? <div className="empty-state"><h2>Aún no guardas mascotas</h2><p>Usa el marcador en cards y detalles para encontrarlas aquí.</p><button className="primary-button" onClick={() => navigate(tab === "adoption" ? "/adoption" : "/donate")}>Explorar</button></div> : items.map((item) => <article className="saved-row" key={item.id}><img src={item.image} alt="" /><button onClick={() => navigate(tab === "adoption" ? `/adoption/${item.id}` : `/case/${item.id}`)}><strong>{item.name}</strong><span>Ver detalle</span></button><button className="icon-button" onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button></article>)}
+        <div className="segmented-control">
+          <button className={tab === "donation" ? "active" : ""} onClick={() => setTab("donation")}>
+            Casos de donación
+          </button>
+          <button className={tab === "adoption" ? "active" : ""} onClick={() => setTab("adoption")}>
+            En adopción
+          </button>
+        </div>
+        {!items.length ? (
+          <div className="empty-state">
+            <h2>Aún no guardas mascotas</h2>
+            <p>Usa el marcador en cards y detalles para encontrarlas aquí.</p>
+            <button type="button" className="primary-button" onClick={() => navigate(explorePath)}>
+              Explorar
+            </button>
+          </div>
+        ) : (
+          items.map((item) => (
+            <article className="saved-row" key={item.id}>
+              <img src={item.image} alt="" />
+              <button onClick={() => navigate(tab === "adoption" ? `/adoption/${item.id}` : `/case/${item.id}`)}>
+                <strong>{item.name}</strong>
+                <span>Ver detalle</span>
+              </button>
+              <button className="icon-button" onClick={() => toggleSavedPet(item.id)}>
+                <AssetIcon name="bookmark.svg" />
+              </button>
+            </article>
+          ))
+        )}
       </div>
     </div>
   );
@@ -2107,14 +2377,55 @@ function Settings() {
 }
 
 function BasicInfo() {
-  const [saved, setSaved] = useState(false);
+  const navigate = useNavigate();
+  const { donorProfile, updateDonorProfile } = usePrototypeStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [form, setForm] = useState({
+    name: donorProfile.name,
+    email: donorProfile.email,
+    phone: donorProfile.phone,
+    city: donorProfile.city,
+    avatar: donorProfile.avatar ?? "",
+  });
+  const [toast, setToast] = useState("");
+  const canSave = form.name.trim() && form.email.trim() && form.phone.trim() && form.city.trim();
+
+  const pickPhoto = (file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setForm((current) => ({ ...current, avatar: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (!canSave) return;
+    updateDonorProfile({
+      name: form.name.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      city: form.city.trim(),
+      avatar: form.avatar || undefined,
+    });
+    setToast("Cambios guardados");
+    window.setTimeout(() => navigate("/settings"), 500);
+  };
+
   return (
     <div className="plain-screen">
       <TopBar title="Información básica" back="/settings" />
       <div className="content-pad form-stack">
-        <div className="photo-card">
-          <span className="avatar large">
-            A
+        <input
+          ref={fileRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => pickPhoto(event.target.files?.[0])}
+        />
+        <button type="button" className="photo-card profile-photo-card" onClick={() => fileRef.current?.click()}>
+          <span className={`avatar large ${form.avatar ? "has-photo" : ""}`}>
+            {form.avatar ? <img src={form.avatar} alt="" /> : (form.name.trim().charAt(0) || "A")}
             <span className="avatar-camera">
               <AssetIcon name="onb-camera.svg" size={12} />
             </span>
@@ -2123,14 +2434,38 @@ function BasicInfo() {
             <strong>Foto de perfil</strong>
             <small>Cambia tu foto de perfil</small>
           </span>
-        </div>
-        <label>Nombre<input defaultValue="Alberto" /></label>
-        <label>Correo electrónico<input defaultValue="alberto@email.com" /></label>
-        <label>Teléfono<input defaultValue="+52 55 1234 5678" /></label>
-        <label>Ciudad / estado<input defaultValue="Ciudad de México" /></label>
-        <button className="primary-button" onClick={() => setSaved(true)}>Guardar cambios</button>
+        </button>
+        <label>
+          Nombre
+          <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} autoComplete="name" />
+        </label>
+        <label>
+          Correo electrónico
+          <input
+            type="email"
+            value={form.email}
+            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            autoComplete="email"
+          />
+        </label>
+        <label>
+          Teléfono
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(event) => setForm({ ...form, phone: event.target.value })}
+            autoComplete="tel"
+          />
+        </label>
+        <label>
+          Ciudad / estado
+          <input value={form.city} onChange={(event) => setForm({ ...form, city: event.target.value })} autoComplete="address-level2" />
+        </label>
+        <button type="button" className="primary-button" disabled={!canSave} onClick={save}>
+          Guardar cambios
+        </button>
       </div>
-      {saved ? <Toast text="Cambios guardados" onDone={() => setSaved(false)} /> : null}
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </div>
   );
 }
@@ -2201,12 +2536,14 @@ function Toast({ text, onDone }: { text: string; onDone: () => void }) {
 }
 
 function Billing() {
-  const { guardianActive, guardianAmount, setGuardian } = usePrototypeStore();
+  const navigate = useNavigate();
+  const { guardianActive, guardianAmount, setGuardian, emptyStates } = usePrototypeStore();
   const [dialog, setDialog] = useState<"none" | "amount" | "cancel">("none");
   const [choice, setChoice] = useState(guardianAmount);
   const [toast, setToast] = useState("");
   const [justChanged, setJustChanged] = useState(false);
   const plan = subscriptionPlans.find((item) => item.amount === guardianAmount) ?? subscriptionPlans[1];
+  const history = emptyStates ? [] : paymentHistory;
   return (
     <div className="plain-screen">
       <TopBar title="Suscripción y pagos" back="/settings" />
@@ -2239,7 +2576,12 @@ function Billing() {
               <strong>Suscripción mensual</strong>
               <span className="status-chip">Sin Subscripción</span>
             </div>
-            <button className="primary-button" onClick={() => { setGuardian(true, 50); setToast("Suscripción activada"); }}>Suscribirme</button>
+            <button
+              className="primary-button"
+              onClick={() => navigate("/impact/support", { state: { from: "/settings/billing" } })}
+            >
+              Suscribirme
+            </button>
           </article>
         )}
         {justChanged ? (
@@ -2252,20 +2594,30 @@ function Billing() {
           </>
         ) : null}
         <h2 className="settings-heading">Historial de pagos</h2>
-        <div className="history-card">
-          {paymentHistory.map((row) => (
-            <div className="history-row" key={row.id}>
-              <span className="nav-row-text">
-                <strong>{row.date}</strong>
-                <small>{row.method}</small>
-              </span>
-              <span className="nav-row-text right">
-                <strong>{row.amount}</strong>
-                <small className="paid">Pagado</small>
-              </span>
-            </div>
-          ))}
-        </div>
+        {history.length ? (
+          <div className="history-card">
+            {history.map((row) => (
+              <div className="history-row" key={row.id}>
+                <span className="nav-row-text">
+                  <strong>{row.date}</strong>
+                  <small>{row.method}</small>
+                </span>
+                <span className="nav-row-text right">
+                  <strong>{row.amount}</strong>
+                  <small className="paid">Pagado</small>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <article className="empty-card donor-empty-card billing-history-empty">
+            <span className="empty-chip yellow">
+              <Icon name="icon-star.svg" size={28} />
+            </span>
+            <h2>Aún no hay pagos</h2>
+            <p>Cuando se cobren tus suscripciones, verás aquí el historial.</p>
+          </article>
+        )}
       </div>
       {dialog === "amount" ? (
         <div className="modal-backdrop center">
@@ -4709,8 +5061,8 @@ function HelpCenter() {
 
 function SavedRescuers() {
   const navigate = useNavigate();
-  const { savedRescuerIds, toggleSavedRescuer } = usePrototypeStore();
-  const saved = rescuers.filter((item) => savedRescuerIds.includes(item.name));
+  const { savedRescuerIds, toggleSavedRescuer, emptyStates } = usePrototypeStore();
+  const saved = emptyStates ? [] : rescuers.filter((item) => savedRescuerIds.includes(item.name));
   return (
     <div className="plain-screen">
       <TopBar title="Rescatistas guardados" back="/profile" icon="icon-bookmark.svg" />
@@ -4743,7 +5095,9 @@ function SavedRescuers() {
             </span>
             <h2>Aún no guardas rescatistas</h2>
             <p>Guarda perfiles desde el detalle de un caso.</p>
-            <button className="primary-button" onClick={() => navigate("/donate")}>Explorar casos</button>
+            <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+              Explorar casos
+            </button>
           </div>
         )}
       </div>
@@ -5011,7 +5365,10 @@ export default function App() {
           <Route path="/login/rescuer" element={<Login mode="rescuer" />} />
           <Route path="/signup/donor" element={<Login mode="donor" signup />} />
           <Route path="/signup/rescuer" element={<Login mode="rescuer" signup />} />
-          <Route path="/forgot-password" element={<StaticSimulated title="Recuperar contraseña" back="/login/donor"><div className="form-stack"><h1>Recupera el acceso</h1><p>Te enviaremos un enlace simulado a tu correo.</p><label>Correo<input type="email" placeholder="nombre@correo.com" /></label><button className="primary-button">Enviar enlace</button></div></StaticSimulated>} />
+          <Route path="/forgot-password" element={<ForgotPasswordFlow />} />
+          <Route path="/forgot-password/sent" element={<ForgotPasswordFlow />} />
+          <Route path="/forgot-password/reset" element={<ForgotPasswordFlow />} />
+          <Route path="/forgot-password/done" element={<ForgotPasswordFlow />} />
           <Route path="/terms" element={<StaticSimulated title="Términos y Condiciones" back="/signup/donor"><div className="legal-copy"><h1>Términos de uso de DopMi</h1><p>Contenido provisional para validar la apertura, lectura y retorno al registro. El texto legal final requiere aprobación del equipo.</p><h2>Uso del prototipo</h2><p>No se procesan pagos, documentos ni verificaciones reales.</p></div></StaticSimulated>} />
           <Route path="/adoption" element={<AdoptionHome />} />
           <Route path="/adoption/:petId" element={<AdoptionDetail />} />

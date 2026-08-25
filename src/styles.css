@@ -165,6 +165,17 @@ button.header-slot:hover { background: rgba(21,17,13,.06); }
 .auth-flow { display: flex; flex-direction: column; overflow-y: auto; }
 .auth-form-head h1 { margin: 6px 0 4px; font-size: 30px; }
 .auth-form-head p { margin: 0; }
+.auth-form-head strong { color: var(--ink); font-weight: 600; }
+.auth-back-link {
+  justify-self: center;
+  text-align: center;
+}
+.field-error {
+  margin: -4px 0 0;
+  color: #b51224;
+  font-size: 13px;
+  font-weight: 500;
+}
 /* Tipo de Cuenta (selección de rol) */
 .intent-screen {
   background: linear-gradient(#faf5ff 0%, #fff 100%);
@@ -317,10 +328,32 @@ textarea { min-height: 112px; resize: vertical; }
 .check-row input { width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0; }
 .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.or-divider { height: 1px; background: var(--line); position: relative; margin: 8px 0; }
+.or-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: auto;
+  background: none;
+  margin: 8px 0;
+}
+.or-divider::before,
+.or-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line);
+}
 .or-divider span {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
-  background: white; padding: 0 10px; color: var(--muted); font-size: 12px; text-transform: uppercase;
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .upload-field { padding: 16px; border: 1px dashed #c8c2bb; border-radius: 18px; background: #fff; }
 .upload-field.invalid { border-color: #e21d2f; background: #fff5f5; }
@@ -925,11 +958,36 @@ textarea { min-height: 112px; resize: vertical; }
 .billing-meta:first-of-type { margin-top: 4px; }
 .billing-meta strong { color: var(--ink); font-weight: 500; }
 .notice-card { margin: 0; padding: 14px 16px; border-radius: 16px; background: #fffbeb; border: 1px solid #f6e6a8; font-size: 14px; }
-.history-card { border: 1px solid var(--line); border-radius: 18px; background: white; overflow: hidden; }
-.history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
-.history-row:last-child { border-bottom: 0; }
+.history-card {
+  display: grid;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+}
 .nav-row-text.right { text-align: right; justify-items: end; }
 .nav-row-text small.paid { color: #157347; }
+.billing-history-empty {
+  padding: 28px 20px;
+  text-align: center;
+}
+.billing-history-empty h2 {
+  margin: 8px 0 0;
+  font-size: 18px;
+}
+.billing-history-empty p {
+  margin: 6px 0 0;
+}
 
 .modal-backdrop.center {
   align-items: center;
@@ -1470,13 +1528,29 @@ textarea { min-height: 112px; resize: vertical; }
 .member-card.purple strong { color: var(--on-brand); }
 .member-card.purple span { color: var(--on-brand-muted); }
 .member-avatar {
+  position: relative;
   width: 64px; height: 64px; border-radius: 50%; background: #fff; color: var(--yellow-ink);
   display: grid; place-items: center; font-size: 24px; font-weight: 700; flex: 0 0 auto;
+}
+.member-avatar.has-photo {
+  padding: 0;
+  color: transparent;
+  overflow: hidden;
+}
+.member-avatar.has-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
 }
 .member-card.purple .member-avatar { color: var(--purple); }
 
 .log-section { display: grid; gap: 12px; }
 .log-section h2 { margin: 0; }
+.donation-log-empty {
+  width: 100%;
+}
 .log-table { border: 1px solid var(--line); border-radius: 24px; overflow: hidden; background: white; }
 .log-head, .log-row {
   display: grid; grid-template-columns: 62px 1fr auto; align-items: center; gap: 10px;
@@ -1532,6 +1606,9 @@ textarea { min-height: 112px; resize: vertical; }
 .switch.on i { transform: translateX(13px); }
 
 .notification-stack { display: grid; gap: 8px; }
+.notifications-empty {
+  margin-top: 8px;
+}
 .notification-card {
   width: 100%; display: flex; align-items: flex-start; gap: 12px; padding: 16px;
   border: 1px solid var(--line); border-radius: 24px; background: white; text-align: left; cursor: pointer;
