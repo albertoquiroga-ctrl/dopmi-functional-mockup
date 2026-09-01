@@ -4,9 +4,12 @@ import {
   adoptionPets,
   donationLog,
   donorFaqs,
+  mergeAdoptionListings,
   paymentHistory,
   rescuerFaqs,
   rescuers,
+  rescuerDisplayName,
+  rescuerPaymentMovements,
   savedCards,
   subscriptionPlans,
   type Need,
@@ -14,13 +17,27 @@ import {
   type PetCase,
 } from "./data";
 import { usePrototypeStore, type AccountMode, type Verification } from "./store";
+import { PublishFlow as PublishFlowWizard } from "./publish/PublishFlow";
+import {
+  PERSONALITY_OPTIONS,
+  type AdoptionAgeBand,
+  type AdoptionEnergy,
+  type AdoptionSize,
+  type PersonalityTrait,
+} from "./publish/types";
+import { LocationMap } from "./components/LocationMap";
+import { CasePublicView, caseToViewModel } from "./components/CasePublicView";
+import { AdoptionPublicView } from "./components/AdoptionPublicView";
 
 const A = "/assets/";
 
 const caseStatusLabel: Record<PetCase["caseStatus"], string> = {
   draft: "Borrador",
   review: "En revisión",
-  active: "Activo",
+  needs_corrections: "Requiere correcciones",
+  approved_stripe_pending: "Aprobado · Acción pendiente",
+  active: "Esperando donaciones",
+  funded: "Meta cumplida",
   rejected: "Rechazado",
   closed: "Cerrado",
 };
@@ -185,11 +202,13 @@ function TestPanel() {
     verification,
     accountMode,
     emptyStates,
+    cases,
     setPaymentOutcome,
     setVerification,
     setAccountMode,
     setEmptyStates,
     resetPrototype,
+    approveCaseForPublish,
   } = usePrototypeStore();
   const [open, setOpen] = useState(false);
 
@@ -235,7 +254,7 @@ function TestPanel() {
             </select>
           </label>
           <label className="test-toggle-row">
-            <span>Empty states</span>
+            <span>Empty states (incl. movimientos)</span>
             <button
               type="button"
               className={`switch ${emptyStates ? "on" : ""}`}
@@ -252,7 +271,17 @@ function TestPanel() {
           <div className="test-shortcuts">
             <button onClick={() => navigate("/donate")}>Donación</button>
             <button onClick={() => navigate("/rescuer/publish")}>Publicar</button>
+            <button onClick={() => navigate("/rescuer/profile/payments")}>Pagos</button>
             <button onClick={() => navigate("/notifications")}>Notificaciones</button>
+            <button
+              onClick={() => {
+                cases
+                  .filter((item) => item.caseStatus === "review")
+                  .forEach((item) => approveCaseForPublish(item.id));
+              }}
+            >
+              Aprobar casos en revisión
+            </button>
           </div>
           <button
             className="link-danger"
@@ -580,30 +609,132 @@ function Welcome({ mode }: { mode: AccountMode }) {
   );
 }
 
+
 function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }) {
   const navigate = useNavigate();
+  const { setPhoneVerification, phoneVerification, setAccountMode } = usePrototypeStore();
   const [accepted, setAccepted] = useState(false);
-  const enter = () => navigate(mode === "donor" ? "/adoption" : "/rescuer");
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    enter();
+  const [step, setStep] = useState<"form" | "phone" | "code" | "done">("form");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const demoCode = "123456";
+
+  const finish = () => {
+    setAccountMode(mode);
+    setPhoneVerification({ status: "verified", phone });
+    navigate(mode === "donor" ? "/adoption" : "/rescuer");
   };
+
+  const submitForm = (event: FormEvent) => {
+    event.preventDefault();
+    setStep("phone");
+  };
+
+  const sendCode = (event: FormEvent) => {
+    event.preventDefault();
+    if (!phone.trim()) return;
+    setPhoneVerification({ status: "code_sent", phone: phone.trim() });
+    setError("");
+    setStep("code");
+  };
+
+  const verifyCode = (event: FormEvent) => {
+    event.preventDefault();
+    if (code.trim() === "000000") {
+      setError("El código expiró. Solicita uno nuevo.");
+      setPhoneVerification({ status: "expired", phone });
+      return;
+    }
+    if (code.trim() !== demoCode) {
+      setError("Código incorrecto. Intenta de nuevo.");
+      setPhoneVerification({ status: "wrong_code", phone });
+      return;
+    }
+    setError("");
+    setStep("done");
+  };
+
+  if (step === "phone") {
+    return (
+      <div className="plain-screen auth-flow">
+        <BrandHeader back={() => setStep("form")} />
+        <form className="form-stack auth-form" onSubmit={sendCode}>
+          <div className="auth-form-head">
+            <h1>Verifica tu celular</h1>
+            <p>Te enviaremos un código de 6 dígitos por SMS (simulado).</p>
+          </div>
+          <label>
+            Número
+            <input required type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+52 55 1234 5678" />
+          </label>
+          <button className="primary-button" type="submit">Enviar código</button>
+        </form>
+      </div>
+    );
+  }
+
+  if (step === "code") {
+    return (
+      <div className="plain-screen auth-flow">
+        <BrandHeader back={() => setStep("phone")} />
+        <form className="form-stack auth-form" onSubmit={verifyCode}>
+          <div className="auth-form-head">
+            <h1>Ingresa el código</h1>
+            <p>Enviado a {phone}. Usa 123456 para éxito, 000000 para expirado.</p>
+          </div>
+          <label>
+            Código
+            <input required inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} placeholder="6 dígitos" />
+          </label>
+          {error ? <p className="field-error">{error}</p> : null}
+          <button className="primary-button" type="submit">Verificar</button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              setError("");
+              setCode("");
+              setPhoneVerification({ status: "code_sent", phone });
+            }}
+          >
+            Reenviar código
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  if (step === "done") {
+    return (
+      <div className="plain-screen auth-flow">
+        <BrandHeader />
+        <div className="form-stack auth-form">
+          <div className="auth-form-head">
+            <h1>Celular verificado</h1>
+            <p>Tu número quedó confirmado. Ya puedes continuar.</p>
+          </div>
+          <button className="primary-button" type="button" onClick={finish}>Continuar</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="plain-screen auth-flow">
       <BrandHeader back={`/welcome/${mode}`} />
-      <form className="form-stack auth-form" onSubmit={submit}>
+      <form className="form-stack auth-form" onSubmit={submitForm}>
         <div className="auth-form-head">
           <h1>{signup ? "Crear cuenta" : "Iniciar sesión"}</h1>
           <p>{signup ? "Únete a la comunidad de DopMi" : "Bienvenido de vuelta"}</p>
         </div>
-        {signup && <label>Nombre completo *<input required placeholder="Tu nombre" /></label>}
+        {signup ? <label>Nombre completo *<input required placeholder="Tu nombre" /></label> : null}
         <label>Correo electrónico{signup ? " *" : ""}<input required type="email" placeholder="tu@email.com" /></label>
-        {signup && <label>Teléfono (opcional)<input inputMode="tel" placeholder="+52 123 456 7890" /></label>}
         <label>
           Contraseña{signup ? " *" : ""}
           <input required type="password" placeholder={signup ? "Mínimo 6 caracteres" : "Tu contraseña"} />
         </label>
-        {signup && <label>Confirmar contraseña *<input required type="password" placeholder="Confirma tu contraseña" /></label>}
+        {signup ? <label>Confirmar contraseña *<input required type="password" placeholder="Confirma tu contraseña" /></label> : null}
         {signup ? (
           <label className="check-row">
             <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
@@ -619,9 +750,11 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
             Olvidé mi contraseña
           </button>
         )}
-        <button className="primary-button" disabled={signup && !accepted}>{signup ? "Crear cuenta" : "Iniciar sesión"}</button>
+        <button className="primary-button" disabled={signup && !accepted} type="submit">
+          {signup ? "Continuar" : "Iniciar sesión"}
+        </button>
         <div className="or-divider"><span>O continúa con</span></div>
-        <SocialButtons variant="outline" onPick={enter} />
+        <SocialButtons variant="outline" onPick={() => setStep("phone")} />
         <p className="auth-switch">
           {signup ? "¿Ya tienes cuenta? " : "¿No tienes cuenta? "}
           <button type="button" className="inline-link" onClick={() => navigate(signup ? `/login/${mode}` : `/signup/${mode}`)}>
@@ -633,14 +766,6 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
   );
 }
 
-type ForgotStep = "request" | "sent" | "reset" | "done";
-
-function forgotStepFromPath(pathname: string): ForgotStep {
-  if (pathname.endsWith("/sent")) return "sent";
-  if (pathname.endsWith("/reset")) return "reset";
-  if (pathname.endsWith("/done")) return "done";
-  return "request";
-}
 
 function ForgotPasswordFlow() {
   const navigate = useNavigate();
@@ -827,28 +952,61 @@ function StaticSimulated({ title, children, back }: { title: string; children: R
   );
 }
 
+function LegalTermsPage() {
+  const accountMode = usePrototypeStore((state) => state.accountMode);
+  const back = accountMode === "rescuer" ? "/rescuer/profile/legal" : "/signup/donor";
+  return (
+    <StaticSimulated title="Términos y Condiciones" back={back}>
+      <div className="legal-copy">
+        <h1>Términos de uso de DopMi</h1>
+        <p>Contenido provisional para validar la apertura, lectura y retorno. El texto legal final requiere aprobación del equipo.</p>
+        <h2>Uso del prototipo</h2>
+        <p>No se procesan pagos, documentos ni verificaciones reales.</p>
+      </div>
+    </StaticSimulated>
+  );
+}
+
+function LegalPrivacyPage() {
+  const accountMode = usePrototypeStore((state) => state.accountMode);
+  const back = accountMode === "rescuer" ? "/rescuer/profile/legal" : "/settings";
+  return (
+    <StaticSimulated title="Aviso de privacidad" back={back}>
+      <div className="legal-copy">
+        <h1>Aviso de privacidad</h1>
+        <p>Contenido provisional. DopMi trata los datos del prototipo solo para validar la experiencia; no se procesan datos reales.</p>
+      </div>
+    </StaticSimulated>
+  );
+}
+
 function AdoptionHome() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, notifications, emptyStates } = usePrototypeStore();
+  const { savedPetIds, toggleSavedPet, notifications, emptyStates, cases } = usePrototypeStore();
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftSex, setDraftSex] = useState<Array<"Macho" | "Hembra">>([]);
   const [draftType, setDraftType] = useState<Array<"Perro" | "Gato">>([]);
+  const [draftNameQuery, setDraftNameQuery] = useState("");
+  const [nameQuery, setNameQuery] = useState("");
   const [sexFilter, setSexFilter] = useState<Array<"Macho" | "Hembra">>([]);
   const [typeFilter, setTypeFilter] = useState<Array<"Perro" | "Gato">>([]);
   const unread = notifications.filter((item) => !item.read).length;
-  const filtersActive = sexFilter.length > 0 || typeFilter.length > 0;
+  const filtersActive = sexFilter.length > 0 || typeFilter.length > 0 || Boolean(nameQuery.trim());
 
+  const allPets = useMemo(() => mergeAdoptionListings(adoptionPets, cases), [cases]);
   const pets = emptyStates
     ? []
-    : adoptionPets.filter((pet) => {
+    : allPets.filter((pet) => {
         const sexOk = !sexFilter.length || sexFilter.includes(pet.sex);
         const typeOk = !typeFilter.length || typeFilter.includes(pet.type);
-        return sexOk && typeOk;
+        const nameOk = !nameQuery.trim() || pet.name.toLowerCase().includes(nameQuery.trim().toLowerCase());
+        return sexOk && typeOk && nameOk;
       });
 
   const openFilters = () => {
     setDraftSex(sexFilter);
     setDraftType(typeFilter);
+    setDraftNameQuery(nameQuery);
     setFilterOpen(true);
   };
 
@@ -859,14 +1017,17 @@ function AdoptionHome() {
   const applyFilters = () => {
     setSexFilter(draftSex);
     setTypeFilter(draftType);
+    setNameQuery(draftNameQuery);
     setFilterOpen(false);
   };
 
   const clearFilters = () => {
     setDraftSex([]);
     setDraftType([]);
+    setDraftNameQuery("");
     setSexFilter([]);
     setTypeFilter([]);
+    setNameQuery("");
     setFilterOpen(false);
   };
 
@@ -883,6 +1044,17 @@ function AdoptionHome() {
                 <p>Filtra las mascotas disponibles para adopción</p>
               </header>
               <div className="adoption-filter-grid">
+                <section>
+                  <h3>Buscar por nombre</h3>
+                  <label className="filter-search">
+                    <span className="visually-hidden">Nombre de la mascota</span>
+                    <input
+                      value={draftNameQuery}
+                      onChange={(event) => setDraftNameQuery(event.target.value)}
+                      placeholder="Nombre de la mascota"
+                    />
+                  </label>
+                </section>
                 <section>
                   <h3>Sexo</h3>
                   <div className="filter-options">
@@ -936,6 +1108,16 @@ function AdoptionHome() {
       }
     >
       <div className="adoption-feed">
+        {filtersActive ? (
+          <div className="filter-chip-row">
+            {nameQuery.trim() ? (
+              <button type="button" className="filter-chip" onClick={() => setNameQuery("")}>
+                Nombre: {nameQuery.trim()} ×
+              </button>
+            ) : null}
+            <button type="button" className="text-button" onClick={clearFilters}>Limpiar filtros</button>
+          </div>
+        ) : null}
         {!pets.length ? (
           <section className="adoption-empty">
             <div className="adoption-empty-top">
@@ -964,36 +1146,39 @@ function AdoptionHome() {
             </article>
           </section>
         ) : null}
-        {pets.map((pet) => (
-          <section className="adoption-slide" key={pet.id}>
-            <img className="adoption-image" src={pet.image} alt={pet.name} />
-            <div className="adoption-shade" />
-            <div className="floating-actions">
-              <button onClick={openFilters} aria-label="Filtros"><AssetIcon name="filter.svg" /></button>
-              <button onClick={() => navigate("/messages")} aria-label="Mensajes">
-                <AssetIcon name="messages.svg" />
-                {unread > 0 && <span className="notification-dot">{unread}</span>}
-              </button>
-            </div>
-            <div className="swipe-hint"><AssetIcon name="swipe.svg" size={16} /><span>Desliza</span></div>
-            <div className="adoption-info">
-              <h1>{pet.name}</h1>
-              <span>{pet.sex}</span>
-              <p>{pet.story}</p>
-              <div className="meta-row"><AssetIcon name="location.svg" size={14} /> {pet.distance} · {pet.rescuer}</div>
-            </div>
-            <div className="adoption-cta">
-              <button
-                className={`round-action ${savedPetIds.includes(pet.id) ? "selected" : ""}`}
-                onClick={() => toggleSavedPet(pet.id)}
-                aria-label={savedPetIds.includes(pet.id) ? "Quitar de guardados" : "Guardar"}
-              >
-                <Icon name="icon-bookmark.svg" size={20} />
-              </button>
-              <button className="primary-button" onClick={() => navigate(`/adoption/${pet.id}`)}>Conocer más de {pet.name}</button>
-            </div>
-          </section>
-        ))}
+        {pets.map((pet) => {
+          const attrs = [pet.ageBand, pet.size, pet.energy].filter(Boolean).join(" · ");
+          return (
+            <section className="adoption-slide" key={pet.id}>
+              <img className="adoption-image" src={pet.image} alt={pet.name} />
+              <div className="adoption-shade" />
+              <div className="floating-actions">
+                <button onClick={openFilters} aria-label="Filtros"><AssetIcon name="filter.svg" /></button>
+                <button onClick={() => navigate("/messages")} aria-label="Mensajes">
+                  <AssetIcon name="messages.svg" />
+                  {unread > 0 && <span className="notification-dot">{unread}</span>}
+                </button>
+              </div>
+              <div className="swipe-hint"><AssetIcon name="swipe.svg" size={16} /><span>Desliza</span></div>
+              <div className="adoption-info">
+                <h1>{pet.name}</h1>
+                {attrs ? <span>{attrs}</span> : <span>{pet.sex}</span>}
+                <p>{pet.story}</p>
+                <div className="meta-row"><AssetIcon name="location.svg" size={14} /> {pet.location}</div>
+              </div>
+              <div className="adoption-cta">
+                <button
+                  className={`round-action ${savedPetIds.includes(pet.id) ? "selected" : ""}`}
+                  onClick={() => toggleSavedPet(pet.id)}
+                  aria-label={savedPetIds.includes(pet.id) ? "Quitar de guardados" : "Guardar"}
+                >
+                  <Icon name="icon-bookmark.svg" size={20} />
+                </button>
+                <button className="primary-button" onClick={() => navigate(`/adoption/${pet.id}`)}>Conocer más de {pet.name}</button>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </ScreenShell>
   );
@@ -1008,135 +1193,45 @@ function TraitRow({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+
 function AdoptionDetail() {
-  const { petId = "toby" } = useParams();
+  const { petId = "rocky" } = useParams();
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet } = usePrototypeStore();
-  const pet = adoptionPets.find((item) => item.id === petId) ?? adoptionPets[0];
-  const isSaved = savedPetIds.includes(pet.id);
-  const [report, setReport] = useState(false);
-  const [toast, setToast] = useState("");
-
+  const { savedPetIds, toggleSavedPet, cases } = usePrototypeStore();
+  const listings = useMemo(() => mergeAdoptionListings(adoptionPets, cases), [cases]);
+  const pet = listings.find((item) => item.id === petId) ?? listings[0];
+  const saved = savedPetIds.includes(pet.id);
   return (
-    <ScreenShell
-      overlay={
-        <>
-          {report ? (
-            <ReportDialog
-              title="Reportar publicación"
-              onClose={(sent) => {
-                setReport(false);
-                if (sent) setToast("Reporte enviado, lo revisaremos pronto");
-              }}
-            />
-          ) : null}
-          {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-        </>
-      }
-    >
-      <div className="adoption-detail">
-        <div className="detail-hero compact">
-          <img src={pet.image} alt={pet.name} />
-          <button className="hero-back" onClick={() => navigate("/adoption")} aria-label="Volver">
-            <AssetIcon name="back-light.svg" />
-          </button>
-          <button
-            className="hero-share"
-            onClick={() => setToast("Enlace copiado")}
-            aria-label="Compartir"
-          >
-            <Icon name="icon-share.svg" size={20} />
-          </button>
-        </div>
-
-        <div className="detail-content adoption-detail-content">
-          <article className="info-card case-summary-card">
-            <div className="title-row">
-              <h1>{pet.name}</h1>
-              <span className="distance-pill">
-                <Icon name="location.svg" size={12} />
-                {pet.distance}
-              </span>
-            </div>
-            <p className="pet-sex">{pet.sex}</p>
-            <p>{pet.story}</p>
-          </article>
-
-          <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(pet.rescuer)}`)}>
-            <span className="avatar yellow">{pet.rescuer.charAt(0)}</span>
-            <span>
-              <strong>
-                {pet.rescuer}
-                {pet.verified ? <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" /> : null}
-              </strong>
-              <small>{pet.location}</small>
-            </span>
-          </button>
-
-          <article className="info-card trait-card">
-            <h3>Salud</h3>
-            <TraitRow ok={pet.health.vaccinated} label="Vacunado" />
-            <TraitRow ok={pet.health.sterilized} label="Esterilizado" />
-            <TraitRow ok={pet.health.specialCare} label="Requiere cuidados especiales" />
-          </article>
-
-          <article className="info-card trait-card">
-            <h3>Social</h3>
-            <TraitRow ok={pet.social.dogs} label="Social con perros" />
-            <TraitRow ok={pet.social.cats} label="Social con gatos" />
-            <TraitRow ok={pet.social.children} label="Social con niños" />
-          </article>
-
-          <button className="report-link" onClick={() => setReport(true)}>
-            <Icon name="icon-alert-circle.svg" size={16} />
-            Reportar
-          </button>
-
-          {pet.journey.length ? (
-            <section className="journey-section">
-              <h2>Cómo llegó hasta aquí</h2>
-              <div className="story-stack">
-                {pet.journey.map((entry) => (
-                  <article className="story-card" key={entry.id}>
-                    <div className="story-media">
-                      <img src={pet.image} alt="" />
-                      <span className="story-when">
-                        <Icon name="icon-clock.svg" size={12} />
-                        {entry.when}
-                      </span>
-                      <span className="story-tag light">{entry.tag}</span>
-                    </div>
-                    <div className="story-body">
-                      <p>{entry.text}</p>
-                      {entry.need ? <span className="story-need">{entry.need}</span> : null}
-                      <small>
-                        <span className="avatar tiny yellow">{entry.thanksInitial}</span>
-                        {entry.thanks}
-                      </small>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </div>
-
-        <div className="adoption-detail-bar">
-          <button
-            className={`round-save ${isSaved ? "selected" : ""}`}
-            onClick={() => toggleSavedPet(pet.id)}
-            aria-label={isSaved ? "Quitar de guardados" : "Guardar"}
-          >
-            <Icon name="icon-bookmark.svg" size={20} />
-          </button>
-          <button className="primary-button adopt-cta" onClick={() => navigate("/messages/luna")}>
-            {pet.sex === "Hembra" ? "Quiero adoptarla" : "Quiero adoptarlo"}
-          </button>
-        </div>
-      </div>
+    <ScreenShell mode="donor">
+      <AdoptionPublicView
+        data={{
+          id: pet.id,
+          name: pet.name,
+          sex: pet.sex,
+          species: pet.type,
+          image: pet.image,
+          story: pet.story,
+          location: pet.location,
+          rescuer: pet.rescuer,
+          distance: pet.distance,
+          verified: pet.verified,
+          ageBand: pet.ageBand,
+          age: pet.ageBand,
+          size: pet.size,
+          energy: pet.energy,
+          personality: pet.personality,
+          health: pet.health,
+          social: pet.social,
+        }}
+        onBack={() => navigate("/adoption")}
+        onOpenRescuer={() => navigate(`/rescuer-profile/${encodeURIComponent(pet.rescuer)}`)}
+        saved={saved}
+        onToggleSave={() => toggleSavedPet(pet.id)}
+      />
     </ScreenShell>
   );
 }
+
 
 function DonationHome() {
   const navigate = useNavigate();
@@ -1175,7 +1270,7 @@ function DonationHome() {
               <article className="case-card" key={item.id}>
                 <div className="case-image">
                   <img src={item.image} alt={item.name} />
-                  {item.needs.some((entry) => entry.urgent && entry.status === "active") && <span className="urgent-badge">Urgente</span>}
+                  {null}
                   <button className={savedPetIds.includes(item.id) ? "selected" : ""} onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button>
                   <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
                 </div>
@@ -1215,7 +1310,7 @@ function NeedCard({ need, caseId, defaultOpen = false }: { need: Need; caseId: s
               <strong>{need.title}</strong>
               <span className="need-type-row">
                 <small>{typeLabel}</small>
-                {need.urgent ? <span className="urgent-inline">Urgente</span> : null}
+                {null}
               </span>
             </div>
             <div className="need-price-row">
@@ -1309,185 +1404,24 @@ function NeedCard({ need, caseId, defaultOpen = false }: { need: Need; caseId: s
   );
 }
 
+
 function CaseDetail() {
   const { caseId = "luna" } = useParams();
   const navigate = useNavigate();
   const { cases, savedPetIds, toggleSavedPet } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
-  const total = item.needs.reduce((sum, need) => sum + need.requested, 0);
-  const funded = item.needs.reduce((sum, need) => sum + need.funded, 0);
-  const missionPct = Math.round((funded / Math.max(total, 1)) * 100);
-  const [report, setReport] = useState(false);
-  const [toast, setToast] = useState("");
-  const [photoIndex, setPhotoIndex] = useState(0);
-  const photos =
-    item.id === "luna"
-      ? ["/assets/luna-detail.png", item.image, "/assets/guardian-luna.jpg", item.image]
-      : item.id === "milo"
-        ? [item.image, "/assets/guardian-milo.jpg", item.image, item.image]
-        : [item.image, item.image, item.image, item.image];
-  const stories = [
-    {
-      id: "s1",
-      when: "Hace 1 día",
-      tag: "Recuperación",
-      text: `${item.name} recibió sus primeras vacunas hoy. Ya come con más ganas y duerme tranquila.`,
-      thanks: "Gracias a Ana P.",
-      image: photos[0],
-      need: item.needs.find((n) => n.type === "Medicina")
-        ? `${item.needs.find((n) => n.type === "Medicina")!.title} · $${item.needs.find((n) => n.type === "Medicina")!.requested}`
-        : item.needs[0]
-          ? `${item.needs[0].title} · $${item.needs[0].requested}`
-          : undefined,
-    },
-    {
-      id: "s2",
-      when: "Hace 3 días",
-      tag: "Rescate",
-      text: `Encontramos a ${item.name} abandonada. Empezamos el protocolo de rescate y búsqueda de apoyo.`,
-      thanks: "Gracias a Lucía G.",
-      image: photos[1] ?? item.image,
-      need: undefined,
-    },
-  ];
-  const firstActive = item.needs.find((need) => need.status === "active" && need.funded < need.requested)?.id;
-
   return (
-    <ScreenShell
-      overlay={
-        <>
-          {report ? (
-            <ReportDialog
-              title="Reportar caso"
-              onClose={(sent) => {
-                setReport(false);
-                if (sent) setToast("Reporte enviado, lo revisaremos pronto");
-              }}
-            />
-          ) : null}
-          {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-        </>
-      }
-    >
-      <div className="detail-screen donor-case-detail">
-        <div className="detail-hero compact">
-          <img src={photos[photoIndex]} alt={item.name} />
-          <button className="hero-back" onClick={() => navigate("/donate")} aria-label="Volver">
-            <AssetIcon name="back-light.svg" />
-          </button>
-          <span className="hero-counter">
-            {photoIndex + 1} / {photos.length}
-          </span>
-          <div className="hero-dots">
-            {photos.map((_, index) => (
-              <button
-                key={index}
-                type="button"
-                className={index === photoIndex ? "active" : ""}
-                aria-label={`Foto ${index + 1}`}
-                onClick={() => setPhotoIndex(index)}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="detail-content">
-          <article className="info-card case-summary-card">
-            <div className="title-row">
-              <h1>
-                {item.name}, {item.age}
-              </h1>
-              <span className="distance-pill">
-                <Icon name="location.svg" size={12} />
-                {item.distance}
-              </span>
-            </div>
-            <p>{item.story}</p>
-          </article>
-
-          <button className="rescuer-card" onClick={() => navigate(`/rescuer-profile/${item.id}`)}>
-            <span className="avatar yellow">{item.rescuer.charAt(0)}</span>
-            <span>
-              <strong>
-                {item.rescuer}
-                <AssetIcon name="icon-verified.svg" size={16} alt="Verificado" />
-              </strong>
-              <small>{item.location}</small>
-            </span>
-          </button>
-
-          <article className="funding-card mission-funding-card">
-            <h3>Progreso total de la misión</h3>
-            <div className="split-meta">
-              <span>Financiamiento</span>
-              <strong>{missionPct}%</strong>
-            </div>
-            <div className="progress tall"><i style={{ width: `${missionPct}%` }} /></div>
-          </article>
-
-          <h2>Necesidades activas</h2>
-          <div className="needs-stack">
-            {item.needs.map((need) => (
-              <NeedCard key={need.id} need={need} caseId={item.id} defaultOpen={need.id === firstActive} />
-            ))}
-          </div>
-
-          <button className="report-link" onClick={() => setReport(true)}>
-            <Icon name="icon-alert-circle.svg" size={16} />
-            Reportar
-          </button>
-
-          <h2>La historia hasta ahora</h2>
-          <div className="story-stack donor-story-stack">
-            {stories.map((entry) => (
-              <article className="story-card" key={entry.id}>
-                <div className="story-media tall">
-                  <img src={entry.image} alt="" />
-                  <span className="story-when dark">
-                    <Icon name="icon-clock.svg" size={12} />
-                    {entry.when}
-                  </span>
-                  <span className="story-tag yellow-tag">{entry.tag}</span>
-                </div>
-                <div className="story-body">
-                  <p>{entry.text}</p>
-                  {entry.need ? (
-                    <span className="story-need">
-                      <span aria-hidden="true">{needEmoji(item.needs.find((n) => entry.need?.startsWith(n.title))?.type ?? "Medicina")}</span>
-                      {entry.need}
-                    </span>
-                  ) : null}
-                  <small>
-                    <Icon name="icon-star.svg" size={14} />
-                    {entry.thanks}
-                  </small>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <div className="adoption-detail-bar case-detail-bar donor-donate-bar">
-          <button
-            className={`round-save ${savedPetIds.includes(item.id) ? "selected" : ""}`}
-            onClick={() => toggleSavedPet(item.id)}
-            aria-label={savedPetIds.includes(item.id) ? "Quitar de guardados" : "Guardar"}
-          >
-            <Icon name="icon-bookmark.svg" size={20} />
-          </button>
-          <button
-            className="primary-button adopt-cta"
-            onClick={() => {
-              const need = item.needs.find((entry) => entry.status === "active" && entry.funded < entry.requested) ?? item.needs[0];
-              if (need) navigate(`/donate/${item.id}/${need.id}`);
-            }}
-          >
-            Donar
-          </button>
-        </div>
-      </div>
+    <ScreenShell mode="donor">
+      <CasePublicView
+        data={caseToViewModel(item)}
+        onBack={() => navigate(-1)}
+        onDonateNeed={(needId) => navigate(`/donate/${item.id}/${needId}`)}
+        onOpenRescuer={() => navigate(`/rescuer-profile/${item.id}`)}
+      />
     </ScreenShell>
   );
 }
+
 
 function DonationFlow() {
   const { caseId = "luna", needId = "luna-food" } = useParams();
@@ -2277,10 +2211,11 @@ function SavedPets() {
   const navigate = useNavigate();
   const { savedPetIds, toggleSavedPet, cases, emptyStates } = usePrototypeStore();
   const [tab, setTab] = useState<"donation" | "adoption">("adoption");
+  const adoptionList = useMemo(() => mergeAdoptionListings(adoptionPets, cases), [cases]);
   const items = emptyStates
     ? []
     : tab === "adoption"
-      ? adoptionPets.filter((item) => savedPetIds.includes(item.id))
+      ? adoptionList.filter((item) => savedPetIds.includes(item.id))
       : cases.filter((item) => savedPetIds.includes(item.id));
   const explorePath = tab === "donation" ? "/donate" : "/adoption";
   return (
@@ -2309,7 +2244,13 @@ function SavedPets() {
               <img src={item.image} alt="" />
               <button onClick={() => navigate(tab === "adoption" ? `/adoption/${item.id}` : `/case/${item.id}`)}>
                 <strong>{item.name}</strong>
-                <span>Ver detalle</span>
+                <span>
+                  {tab === "adoption" && "ageBand" in item && item.ageBand
+                    ? [item.ageBand, "size" in item ? item.size : null, "energy" in item ? item.energy : null]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : "Ver detalle"}
+                </span>
               </button>
               <button className="icon-button" onClick={() => toggleSavedPet(item.id)}>
                 <AssetIcon name="bookmark.svg" />
@@ -2342,6 +2283,7 @@ function SettingsRow({ icon, title, subtitle, onClick }: { icon: string; title: 
 function Settings() {
   const navigate = useNavigate();
   const { accountMode, setAccountMode } = usePrototypeStore();
+  if (accountMode === "rescuer") return <Navigate to="/rescuer/profile" replace />;
   const switchMode = () => {
     const next = accountMode === "donor" ? "rescuer" : "donor";
     setAccountMode(next);
@@ -2693,58 +2635,34 @@ const rescuerActivity = [
 
 function RescuerHome() {
   const navigate = useNavigate();
-  const { verification, setVerification, emptyStates } = usePrototypeStore();
+  const { verification, setVerification, emptyStates, pendingActions: storePending } = usePrototypeStore();
   const verified = verification === "verified";
   const showEmptyPending = emptyStates;
   const pendingActions = showEmptyPending
     ? []
-    : verified
-      ? [
-          {
-            id: "messages",
-            tone: "message" as const,
-            icon: "icon-chat-yellow.svg",
-            title: "Responde mensajes pendientes",
-            copy: "Tienes conversaciones que necesitan respuesta.",
-            detail: "3 mensajes pendientes",
-            cta: "Ir a mensajes",
-            badge: "3",
-            target: "/rescuer/messages",
-          },
-          {
-            id: "evidence-draft",
-            tone: "danger" as const,
-            icon: "icon-camera-red.svg",
-            title: "Termina una evidencia pendiente",
-            copy: "Ya empezaste este formulario. Complétalo para enviarlo.",
-            detail: "Caso: Rocky · Necesidad: Veterinario · Progreso: incompleto",
-            cta: "Continuar evidencia",
-            target: "/rescuer/evidence/rocky/rocky-vet",
-          },
-          {
-            id: "evidence-new",
-            tone: "purple" as const,
-            icon: "icon-receipt-purple.svg",
-            title: "Sube evidencia de una necesidad cubierta",
-            copy: "Completa el formulario para comprobar cómo se usó el dinero.",
-            detail: "Caso: Luna · Necesidad: Alimento · Monto cubierto: $450 MXN",
-            cta: "Llenar evidencia",
-            target: "/rescuer/evidence/luna/luna-food",
-          },
-        ]
-      : [
-          {
-            id: "messages",
-            tone: "message" as const,
-            icon: "icon-chat-yellow.svg",
-            title: "Responde mensajes pendientes",
-            copy: "Tienes conversaciones que necesitan respuesta.",
-            detail: "3 mensajes pendientes",
-            cta: "Ir a mensajes",
-            badge: "3",
-            target: "/rescuer/messages",
-          },
-        ];
+    : [
+        ...storePending.map((item) => ({
+          id: item.id,
+          tone: "purple" as const,
+          icon: "icon-receipt-purple.svg",
+          title: item.title,
+          copy: item.body,
+          detail: "",
+          cta: item.kind === "stripe" ? "Vincular Stripe" : "Ver",
+          target: "/rescuer/profile/payments",
+        })),
+        {
+          id: "messages",
+          tone: "message" as const,
+          icon: "icon-chat-yellow.svg",
+          title: "Responde mensajes pendientes",
+          copy: "Tienes conversaciones que necesitan respuesta.",
+          detail: "3 mensajes pendientes",
+          cta: "Ir a mensajes",
+          badge: "3",
+          target: "/rescuer/messages",
+        },
+      ];
 
   return (
     <ScreenShell mode="rescuer">
@@ -2766,18 +2684,18 @@ function RescuerHome() {
               </span>
             </div>
             <strong className="dopmi-wallet-balance">{showEmptyPending ? "$0" : "$68"}</strong>
-            <p>Disponible para tus mascotas</p>
+            <p>Las donaciones se transfieren vía Stripe conforme llegan</p>
             <div className="dopmi-wallet-bar">
               <i style={{ width: showEmptyPending ? "0%" : "40%" }} />
             </div>
             <div className="dopmi-wallet-stats">
               <div>
-                <span>Total de donaciones</span>
+                <span>Total recibido</span>
                 <b>{showEmptyPending ? "$0" : "$172"}</b>
               </div>
               <div>
-                <span>Usado</span>
-                <b>{showEmptyPending ? "$0" : "$69"}</b>
+                <span>Transferido</span>
+                <b>{showEmptyPending ? "$0" : "$172"}</b>
               </div>
             </div>
           </article>
@@ -2803,36 +2721,36 @@ function RescuerHome() {
               <strong>
                 {verification === "rejected"
                   ? "Corrige tu información"
-                  : "Verifica tu cuenta para recibir donaciones"}
+                  : "Verificar perfil (opcional)"}
               </strong>
             </div>
             <p>
               {verification === "rejected"
                 ? "El comprobante no es legible y falta vincular una red social."
-                : "Completa el proceso de verificación para desbloquear todas las funciones y comenzar a recibir donaciones."}
+                : "La verificación es opcional. Puedes solicitarla desde tu perfil cuando quieras."}
             </p>
-            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/verification")}>
+            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/profile")}>
               {verification === "rejected" ? "Corregir información" : "Verificarme"}
             </button>
           </article>
         ) : !verified ? (
           <button
             className={`verify-card link-card ${verification}`}
-            onClick={() => navigate("/rescuer/verification")}
+            onClick={() => navigate("/rescuer/profile")}
           >
             <div className="verify-head">
               <span className="verify-chip">
                 <Icon name="icon-shield.svg" size={24} />
               </span>
               <strong>
-                {verification === "rejected" ? "Corrige tu información" : "Verificar para recibir donaciones"}
+                {verification === "rejected" ? "Corrige tu información" : "Verificar perfil"}
               </strong>
               <Chevron />
             </div>
             <p>
               {verification === "rejected"
                 ? "El comprobante no es legible y falta vincular una red social."
-                : "Completa tu verificación para desbloquear donaciones y reembolsos."}
+                : "La verificación es opcional. Solicítala desde Perfil si quieres que DopMi revise tu evidencia."}
             </p>
             {verification === "unverified" ? <span className="bonus-badge">Bono de $350 MXN al aprobar</span> : null}
           </button>
@@ -2855,7 +2773,7 @@ function RescuerHome() {
               </span>
               <h3>No tienes acciones pendientes</h3>
               <p>
-                Cuando publiques casos, recibas mensajes o tengas evidencias por subir, tus acciones pendientes aparecerán aquí.
+                Cuando publiques casos o recibas mensajes, tus acciones pendientes aparecerán aquí.
               </p>
               <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
                 <AssetIcon name="empty-publish-plus.svg" size={16} />
@@ -2956,81 +2874,9 @@ function VerificationIntro({ onContinue, onLater }: { onContinue: () => void; on
 }
 
 function VerificationFlow() {
-  const navigate = useNavigate();
-  const { verification, setVerification } = usePrototypeStore();
-  const [intro, setIntro] = useState(verification === "unverified");
-  const [form, setForm] = useState({ name: "", phone: "", location: "", experience: "" });
-  const [socials, setSocials] = useState({ instagram: false, facebook: false });
-  const [docs, setDocs] = useState({ id: false, address: false, bank: false });
-  const filled = [form.name, form.phone, form.location, form.experience].filter(Boolean).length;
-  const linked = socials.instagram || socials.facebook ? 1 : 0;
-  const uploaded = Object.values(docs).filter(Boolean).length;
-  const progress = Math.round(((filled + linked + uploaded) / 8) * 100);
-  const complete = progress === 100;
-  if (verification === "review") return <StaticSimulated title="Verificación en revisión" back="/rescuer"><div className="center-state"><h1>Estamos revisando tu información</h1><p>La decisión se simula desde Modo prueba.</p><button className="secondary-button" onClick={() => navigate("/rescuer")}>Volver al inicio</button></div></StaticSimulated>;
-  if (verification === "verified") return <div className="plain-screen rescuer-theme"><TopBar title="Verificación" back="/rescuer" /><div className="center-state"><div className="success-icon"><AssetIcon name="check.svg" /></div><h1>Cuenta verificada</h1><p>Ya puedes publicar y administrar casos con donaciones.</p><button className="primary-button" onClick={() => navigate("/rescuer/publish")}>Publicar un caso</button></div></div>;
-  if (intro) return <VerificationIntro onContinue={() => setIntro(false)} onLater={() => navigate("/rescuer")} />;
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    setVerification("review");
-  };
-  return (
-    <div className="plain-screen rescuer-theme">
-      <TopBar title="Formulario de verificación" back="/rescuer" />
-      {verification === "rejected" && <SimulatedBanner />}
-      <form className="content-pad form-stack" onSubmit={submit}>
-        <p className="dialog-copy">Completa tu información para verificar tu cuenta de rescatista</p>
-        {verification === "rejected" && <div className="error-callout"><strong>Se requieren correcciones</strong><span>Comprobante de domicilio ilegible · Falta vincular una red social.</span></div>}
-        <h2>Información básica</h2>
-        <label>Nombre completo *<input required placeholder="Tu nombre completo" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-        <label>Teléfono *<input required placeholder="+52 123 456 7890" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></label>
-        <label>Ubicación *<input required placeholder="Ciudad, Estado" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></label>
-
-        <h2>Experiencia de rescate</h2>
-        <label>Cuéntanos sobre tu experiencia *<textarea required rows={3} placeholder="¿Cuánto tiempo llevas rescatando? ¿Cuántas mascotas has ayudado?" value={form.experience} onChange={(e) => setForm({ ...form, experience: e.target.value })} /></label>
-
-        <h2>Redes sociales</h2>
-        <p className="field-hint">Vincula al menos una red social para comprobar que eres la dueña de la cuenta. Lo ideal es vincular Instagram y Facebook.</p>
-        <article className="card-row">
-          <span className="nav-row-text"><strong>Instagram</strong><small>Vincula tu cuenta de Instagram</small></span>
-          <button type="button" className="purple-button compact" onClick={() => setSocials({ ...socials, instagram: true })}>
-            {socials.instagram ? "Vinculado" : "Vincular Instagram"}
-          </button>
-        </article>
-        <article className="card-row">
-          <span className="nav-row-text"><strong>Facebook</strong><small>Vincula tu cuenta de Facebook</small></span>
-          <button type="button" className="purple-button compact" onClick={() => setSocials({ ...socials, facebook: true })}>
-            {socials.facebook ? "Vinculado" : "Vincular Facebook"}
-          </button>
-        </article>
-
-        <h2>Documentos</h2>
-        <article className="card-row">
-          <span className="nav-row-text"><strong>Identificación oficial *</strong><small>INE, pasaporte o licencia</small></span>
-          <button type="button" className="secondary-button compact" onClick={() => setDocs({ ...docs, id: true })}>{docs.id ? "Subido" : "Subir"}</button>
-        </article>
-        <article className={`card-row ${verification === "rejected" ? "invalid" : ""}`}>
-          <span className="nav-row-text"><strong>Comprobante de domicilio *</strong><small>Recibo de luz, agua, teléfono, etc.</small></span>
-          <button type="button" className="secondary-button compact" onClick={() => setDocs({ ...docs, address: true })}>{docs.address ? "Subido" : "Subir"}</button>
-        </article>
-        <article className="card-row">
-          <span className="nav-row-text"><strong>Información bancaria *</strong><small>CLABE para recibir reembolsos</small></span>
-          <button type="button" className="secondary-button compact" onClick={() => setDocs({ ...docs, bank: true })}>{docs.bank ? "Agregada" : "Agregar"}</button>
-        </article>
-
-        <article className="progress-card">
-          <div className="progress-head">
-            <span>Progreso del formulario</span>
-            <strong>{complete ? "Completo" : "Incompleto"}</strong>
-          </div>
-          <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
-        </article>
-        <button className="primary-button">Enviar a revisión</button>
-        <button type="button" className="ghost-button" onClick={() => navigate("/rescuer")}>Guardar y continuar después</button>
-      </form>
-    </div>
-  );
+  return <Navigate to="/rescuer/profile" replace />;
 }
+
 
 function needEmoji(type: Need["type"]) {
   if (type === "Comida") return "🥣";
@@ -3056,6 +2902,14 @@ function EditCaseModal({
   const { updateCase, updateCaseStatus } = usePrototypeStore();
   const [name, setName] = useState(item.name);
   const [age, setAge] = useState(item.age);
+  const [ageBand, setAgeBand] = useState<AdoptionAgeBand | "">(item.ageBand || "");
+  const [size, setSize] = useState<AdoptionSize | "">(item.size || "");
+  const [energy, setEnergy] = useState<AdoptionEnergy | "">(item.energy || "");
+  const [personality, setPersonality] = useState<PersonalityTrait | "">(
+    item.personality && (PERSONALITY_OPTIONS as readonly string[]).includes(item.personality)
+      ? (item.personality as PersonalityTrait)
+      : "",
+  );
   const [story, setStory] = useState(item.story);
   const [adoption, setAdoption] = useState(item.adoption);
   const [needs, setNeeds] = useState(item.needs);
@@ -3063,7 +2917,21 @@ function EditCaseModal({
   const photos = [item.image, item.id === "milo" ? "/assets/guardian-milo.jpg" : item.image, item.id === "luna" ? "/assets/luna-detail.png" : item.image];
 
   const save = () => {
-    updateCase(item.id, { name, age, story, adoption, needs });
+    updateCase(item.id, {
+      name,
+      age: adoption && ageBand ? ageBand : age,
+      story,
+      adoption,
+      needs,
+      ...(adoption
+        ? {
+            ageBand: ageBand || undefined,
+            size: size || undefined,
+            energy: energy || undefined,
+            personality: personality || undefined,
+          }
+        : {}),
+    });
     onClose();
   };
 
@@ -3121,7 +2989,72 @@ function EditCaseModal({
         <section className="edit-case-section">
           <h3>Información básica</h3>
           <label>Nombre<input value={name} maxLength={25} onChange={(event) => setName(event.target.value)} /></label>
-          <label>Edad estimada<input value={age} onChange={(event) => setAge(event.target.value)} /></label>
+          {adoption ? (
+            <>
+              <div className="publish-trait-card">
+                <h3>Edad</h3>
+                <div className="publish-choice-row three">
+                  {(["Cachorro", "Adulto", "Viejo"] as AdoptionAgeBand[]).map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={`publish-choice ${ageBand === value ? "selected" : ""}`}
+                      onClick={() => setAgeBand(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="publish-trait-card">
+                <h3>Tamaño</h3>
+                <div className="publish-choice-row three">
+                  {(["Chico", "Mediano", "Grande"] as AdoptionSize[]).map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={`publish-choice ${size === value ? "selected" : ""}`}
+                      onClick={() => setSize(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="publish-trait-card">
+                <h3>Energía</h3>
+                <div className="publish-choice-row three">
+                  {(["Poco activo", "Activo", "Muy activo"] as AdoptionEnergy[]).map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={`publish-choice ${energy === value ? "selected" : ""}`}
+                      onClick={() => setEnergy(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="publish-trait-card">
+                <h3>Personalidad</h3>
+                <div className="publish-choice-row wrap">
+                  {PERSONALITY_OPTIONS.map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      className={`publish-choice ${personality === value ? "selected" : ""}`}
+                      onClick={() => setPersonality(personality === value ? "" : value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <label>Edad estimada<input value={age} onChange={(event) => setAge(event.target.value)} /></label>
+          )}
           <label>Historia del rescate<textarea rows={3} value={story} placeholder="Cuéntanos la historia..." onChange={(event) => setStory(event.target.value)} /></label>
           <div className="switch-card">
             <div>
@@ -3338,14 +3271,9 @@ function RescuerCases() {
   );
 }
 
-function RescuerNeedCard({ need, caseId }: { need: Need; caseId: string }) {
-  const navigate = useNavigate();
+function RescuerNeedCard({ need }: { need: Need }) {
   const remaining = Math.max(0, need.requested - need.funded);
-  const funded = remaining === 0 || need.status === "funded" || need.status === "evidence" || need.status === "completed";
-  const progress = need.requested ? need.funded / need.requested : 0;
-  const canUnlock = funded || progress >= 0.65;
-  const inReview = need.status === "evidence";
-  const completed = need.status === "completed";
+  const covered = remaining === 0 || need.status === "funded" || need.status === "completed";
   return (
     <article className="need-card rescuer-need-card">
       <div className="need-card-title">
@@ -3353,29 +3281,14 @@ function RescuerNeedCard({ need, caseId }: { need: Need; caseId: string }) {
         <div>
           <strong>{need.title}</strong>
           <small>{need.type}</small>
-          {need.urgent ? <span className="urgent-inline">Urgente</span> : null}
         </div>
         <b>${need.requested}</b>
       </div>
       <div className="split-meta">
-        <span>${need.requested} total</span>
-        <strong>${remaining} restantes</strong>
+        <span>${need.funded} recaudados</span>
+        <strong>{covered ? "Cubierta" : `$${remaining} restantes`}</strong>
       </div>
-      <div className="progress purple"><i style={{ width: `${Math.min(100, (need.funded / need.requested) * 100)}%` }} /></div>
-      {completed ? (
-        <button className="purple-button soft" disabled>Completada</button>
-      ) : inReview ? (
-        <button className="purple-button soft" disabled>Evidencia en revisión</button>
-      ) : canUnlock ? (
-        <div className={`card-actions ${need.type === "Comida" && funded ? "" : "single"}`}>
-          {need.type === "Comida" && funded ? (
-            <button className="secondary-button" onClick={() => navigate(`/rescuer/food/${caseId}/${need.id}`)}>Comprar</button>
-          ) : null}
-          <button className="purple-button" onClick={() => navigate(`/rescuer/evidence/${caseId}/${need.id}`)}>Desbloquear</button>
-        </div>
-      ) : (
-        <button className="purple-button soft" disabled>Esperando donaciones</button>
-      )}
+      <div className="progress purple"><i style={{ width: `${Math.min(100, (need.funded / Math.max(need.requested, 1)) * 100)}%` }} /></div>
     </article>
   );
 }
@@ -3386,13 +3299,22 @@ function RescuerCaseDetail() {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
-  const { cases, updateCaseStatus } = usePrototypeStore();
+  const { cases, updateCaseStatus, donations } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const photos = item.id === "milo"
     ? [item.image, "/assets/guardian-milo.jpg", item.image]
     : item.id === "luna"
       ? ["/assets/luna-detail.png", item.image, "/assets/guardian-luna.jpg"]
       : [item.image, item.image, item.image];
+  const subtotal = item.needs.reduce((sum, need) => sum + need.requested, 0);
+  const funded = item.needs.reduce((sum, need) => sum + need.funded, 0);
+  const fee = item.feeMxn ?? (item.needs.length ? 50 : 0);
+  const goal = subtotal + (item.needs.length ? fee : 0);
+  const pct = Math.round((funded / Math.max(goal, 1)) * 100);
+  const donationCount = donations.filter((entry) => entry.caseId === item.id).length;
+  const goalMet =
+    item.caseStatus === "funded" || (item.needs.length > 0 && item.needs.every((need) => need.funded >= need.requested));
+  const published = item.caseStatus === "active" || item.caseStatus === "funded";
   const stories = [
     {
       id: "s1",
@@ -3480,17 +3402,30 @@ function RescuerCaseDetail() {
           <p>{item.story}</p>
         </article>
 
-        <h2>Necesidades activas</h2>
+        {published ? (
+          <article className="info-card funding-card">
+            <h3>{goalMet ? "Meta cumplida" : "Esperando donaciones"}</h3>
+            <p className="publish-hint">
+              {goalMet
+                ? "La cantidad necesaria ya fue cubierta. Las donaciones se transfirieron a tu cuenta de Stripe conforme llegaron."
+                : "El caso está publicado y recibiendo apoyo. Las donaciones se van transfiriendo a tu cuenta conforme las recibes; no hace falta esperar al 100% de la meta."}
+            </p>
+            <div className="progress-track">
+              <i style={{ width: `${Math.min(pct, 100)}%` }} />
+            </div>
+            <p>
+              ${funded.toLocaleString("es-MX")} de ${goal.toLocaleString("es-MX")} MXN ({pct}%)
+            </p>
+            {donationCount ? <p className="publish-hint">{donationCount} {donationCount === 1 ? "donación recibida" : "donaciones recibidas"}</p> : null}
+          </article>
+        ) : null}
+
+        <h2>Necesidades</h2>
         <div className="needs-stack">
           {item.needs.length
-            ? item.needs.map((need) => <RescuerNeedCard key={need.id} need={need} caseId={item.id} />)
+            ? item.needs.map((need) => <RescuerNeedCard key={need.id} need={need} />)
             : <p className="supporting-copy">Este caso aún no tiene necesidades activas.</p>}
         </div>
-
-        <button className="secondary-button goodbye-video" onClick={() => setCloseOpen(true)}>
-          <Icon name="onb-camera.svg" size={18} />
-          Subir video de despedida
-        </button>
 
         <h2>La historia hasta ahora</h2>
         <div className="story-stack">
@@ -3546,7 +3481,6 @@ type DraftNeedItem = {
   title: string;
   amount: number;
   detail?: string;
-  urgent?: boolean;
   badge?: string;
 };
 
@@ -3564,1047 +3498,21 @@ const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
 };
 
 function PublishFlow() {
-  const navigate = useNavigate();
-  const { verification, draft, updateDraft, publishDraft } = usePrototypeStore();
-  const location = useLocation();
-  const correcting = location.search.includes("correct");
-  const continuing = location.search.includes("draft");
-  const needsVerification = verification !== "verified";
-  const [step, setStep] = useState(correcting || continuing ? 1 : 0);
-  const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
-  const photos = Array.isArray(draft.photos) ? (draft.photos as string[]) : [];
-  const [needItems, setNeedItems] = useState<DraftNeedItem[]>(() => {
-    try {
-      return JSON.parse(String(draft.needItemsJson || "[]")) as DraftNeedItem[];
-    } catch {
-      return [];
-    }
-  });
-  const [sheet, setSheet] = useState<"food" | "medicine" | "vet" | null>(null);
-  const [foodQuery, setFoodQuery] = useState("");
-  const [medForm, setMedForm] = useState({ name: "", amount: "", treatment: "", urgent: false });
-  const emptyVetForm = {
-    reason: "",
-    amount: "",
-    urgent: false,
-  };
-  const [vetForm, setVetForm] = useState(emptyVetForm);
-  const [urgentVideo, setUrgentVideo] = useState(Boolean(draft.urgentVideo));
-
-  const totalSteps = mode === "donation" ? 4 : 3;
-  const reviewStep = totalSteps;
-  const needsStep = mode === "donation" ? 3 : -1;
-  const hasUrgentNeed = needItems.some((item) => item.urgent);
-
-  const pickType = (nextMode: "adoption" | "donation") => {
-    if (nextMode === "donation" && needsVerification) {
-      navigate("/rescuer/verification");
-      return;
-    }
-    setMode(nextMode);
-    updateDraft({ publishMode: nextMode });
-    setStep(1);
-  };
-
-  const persistNeeds = (items: DraftNeedItem[]) => {
-    setNeedItems(items);
-    updateDraft({ needItemsJson: JSON.stringify(items) });
-  };
-
-  const saveDraft = () => {
-    updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
-    navigate("/rescuer/cases");
-  };
-
-  const addPhoto = () => {
-    if (photos.includes(`${A}publish-sample-pet.jpg`)) return;
-    updateDraft({ photos: [...photos, `${A}publish-sample-pet.jpg`] });
-  };
-
-  const removePhoto = (src: string) => {
-    updateDraft({ photos: photos.filter((item) => item !== src) });
-  };
-
-  const canContinuePhotos = photos.length > 0;
-  const canContinueInfo = Boolean(draft.sex) && Boolean(draft.species);
-
-  const goNext = () => {
-    if (step < totalSteps) {
-      setStep(step + 1);
-      return;
-    }
-    updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
-    publishDraft("review");
-    navigate("/rescuer/cases");
-  };
-
-  const addFood = (item: (typeof FOOD_CATALOG)[number]) => {
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Comida",
-        title: item.title,
-        amount: item.amount,
-        detail: "Cada mes",
-        badge: "Patrocinio habilitado",
-      },
-    ]);
-    setSheet(null);
-    setFoodQuery("");
-  };
-
-  const saveMedicine = () => {
-    const amount = Number(medForm.amount || 0);
-    if (!medForm.name.trim() || !amount) return;
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Medicina",
-        title: medForm.name.trim(),
-        amount,
-        detail: medForm.treatment.trim() || undefined,
-        urgent: medForm.urgent,
-      },
-    ]);
-    setMedForm({ name: "", amount: "", treatment: "", urgent: false });
-    setSheet(null);
-  };
-
-  const saveVet = () => {
-    const amount = Number(vetForm.amount || 0);
-    if (!vetForm.reason.trim() || !amount) return;
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Veterinario",
-        title: vetForm.reason.trim(),
-        amount,
-        urgent: vetForm.urgent,
-      },
-    ]);
-    setVetForm(emptyVetForm);
-    setSheet(null);
-  };
-
-  const addUrgentVideo = () => {
-    setUrgentVideo(true);
-    updateDraft({ urgentVideo: true });
-  };
-
-  const clearUrgentVideo = () => {
-    setUrgentVideo(false);
-    updateDraft({ urgentVideo: false });
-  };
-
-  const removeNeed = (id: string) => {
-    const next = needItems.filter((item) => item.id !== id);
-    persistNeeds(next);
-    if (!next.some((item) => item.urgent)) clearUrgentVideo();
-  };
-
-  if (step === 0 && !correcting && !continuing) {
-    return (
-      <ScreenShell mode="rescuer" className="publish-type-shell">
-        <div className="publish-type-screen">
-          <div className="intent-copy">
-            <h1>¿Qué quieres publicar?</h1>
-            <p>Selecciona el tipo de publicación que deseas crear</p>
-          </div>
-          <div className="publish-type-cards">
-            <button type="button" className="intent-card publish-type-card" onClick={() => pickType("adoption")}>
-              <span className="intent-chip publish-adopt">
-                <AssetIcon name="intent-adopter.svg" size={28} />
-              </span>
-              <span className="intent-card-text">
-                <strong>Dar en adopción</strong>
-                <p>Publica una mascota que esté lista para encontrar un hogar</p>
-              </span>
-            </button>
-            <button type="button" className="intent-card publish-type-card" onClick={() => pickType("donation")}>
-              <span className="intent-chip publish-donate">
-                <AssetIcon name="intent-donor.svg" size={28} />
-              </span>
-              <span className="intent-card-text">
-                <strong>Recibir donaciones</strong>
-                <p>Crea un caso de donación para cubrir necesidades de una mascota</p>
-                <span className="publish-verify-hint">⚠️ Requiere verificación</span>
-              </span>
-            </button>
-          </div>
-          <button type="button" className="publish-cancel" onClick={() => navigate("/rescuer")}>
-            Cancelar
-          </button>
-        </div>
-      </ScreenShell>
-    );
-  }
-
-  if (needsVerification && mode === "donation") {
-    return (
-      <StaticSimulated title="Publicar caso" back="/rescuer/publish">
-        <div className="center-state">
-          <h1>Verifica tu cuenta para publicar</h1>
-          <p>Necesitamos validar tu identidad antes de activar un caso de donaciones.</p>
-          <button className="primary-button" onClick={() => navigate("/rescuer/verification")}>Ir a verificación</button>
-        </div>
-      </StaticSimulated>
-    );
-  }
-
-  const continueDisabled =
-    step === 1
-      ? !canContinuePhotos
-      : step === 2
-        ? !canContinueInfo
-        : step === needsStep
-          ? hasUrgentNeed && !urgentVideo
-          : false;
-  const continueLabel =
-    step === reviewStep ? "Publicar caso" : step === needsStep ? "Continuar a revisión" : "Continuar";
-  const headerTitle = step === reviewStep ? "Revisa tu caso" : "Publicar caso";
-  const goPrevStep = () => setStep(step <= 1 ? 0 : step - 1);
-  const filteredFood = FOOD_CATALOG.filter((item) => {
-    const q = foodQuery.trim().toLowerCase();
-    if (!q) return true;
-    return item.title.toLowerCase().includes(q) || item.brand.toLowerCase().includes(q);
-  });
-
-  return (
-    <ScreenShell
-      mode="rescuer"
-      className="publish-case-shell"
-      overlay={
-        sheet ? (
-          <div className="modal-backdrop center" onClick={() => setSheet(null)}>
-            {sheet === "food" ? (
-              <div className="dialog-card publish-food-sheet" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <h2>Catálogo de comida</h2>
-                <label className="publish-food-search">
-                  <span className="visually-hidden">Buscar</span>
-                  <input
-                    placeholder="Buscar por nombre o marca..."
-                    value={foodQuery}
-                    onChange={(e) => setFoodQuery(e.target.value)}
-                  />
-                </label>
-                <div className="publish-food-note">
-                  Selecciona la comida que necesitas. Cuando recibas suficientes donaciones, podrás comprarla, subir evidencia y solicitar el reembolso con las donaciones recibidas.
-                </div>
-                <div className="publish-food-list">
-                  {filteredFood.map((item) => (
-                    <button type="button" className="publish-food-item" key={item.id} onClick={() => addFood(item)}>
-                      <span className="publish-food-thumb" aria-hidden>🥣</span>
-                      <span className="publish-food-meta">
-                        <strong>{item.title}</strong>
-                        <small>{item.brand}</small>
-                      </span>
-                      <span className="publish-food-price">
-                        <strong>${item.amount}</strong>
-                        <small>MXN</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : sheet === "medicine" ? (
-              <div className="dialog-card publish-med-dialog" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <header className="publish-med-head">
-                  <h2>Agregar medicina</h2>
-                  <p>Agrega los detalles de la medicina que necesita la mascota.</p>
-                </header>
-                <label className="publish-field">
-                  <span>Nombre de la medicina</span>
-                  <input
-                    placeholder="ej. Amoxicilina"
-                    value={medForm.name}
-                    onChange={(e) => setMedForm({ ...medForm, name: e.target.value })}
-                  />
-                </label>
-                <label className="publish-field">
-                  <span>Costo a cubrir</span>
-                  <span className="publish-amount-wrap">
-                    <em>$</em>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={medForm.amount}
-                      onChange={(e) => setMedForm({ ...medForm, amount: e.target.value })}
-                    />
-                  </span>
-                  <small>Monto en MXN</small>
-                </label>
-                <label className="publish-field">
-                  <span>¿Para qué tratamiento es?</span>
-                  <textarea
-                    rows={2}
-                    placeholder="ej. Infección respiratoria"
-                    value={medForm.treatment}
-                    onChange={(e) => setMedForm({ ...medForm, treatment: e.target.value })}
-                  />
-                </label>
-                <label className="publish-check publish-urgent">
-                  <input
-                    type="checkbox"
-                    checked={medForm.urgent}
-                    onChange={(e) => setMedForm({ ...medForm, urgent: e.target.checked })}
-                  />
-                  <span>
-                    Marcar como urgente
-                    <small>Se requiere evidencia de urgencia.</small>
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  className="purple-button"
-                  disabled={!medForm.name.trim() || !Number(medForm.amount)}
-                  onClick={saveMedicine}
-                >
-                  Guardar medicina
-                </button>
-                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
-                  Cancelar
-                </button>
-              </div>
-            ) : (
-              <div className="dialog-card publish-med-dialog publish-vet-dialog" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <header className="publish-med-head">
-                  <h2>Agregar servicio veterinario</h2>
-                  <p>Agrega los detalles del servicio veterinario que necesita la mascota.</p>
-                </header>
-                <label className="publish-field">
-                  <span>Motivo de consulta <em>*</em></span>
-                  <input
-                    placeholder="ej. Vacunación, revisión general"
-                    value={vetForm.reason}
-                    onChange={(e) => setVetForm({ ...vetForm, reason: e.target.value })}
-                  />
-                </label>
-                <label className="publish-field">
-                  <span>Monto de la consulta <em>*</em></span>
-                  <span className="publish-amount-wrap">
-                    <em>$</em>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={vetForm.amount}
-                      onChange={(e) => setVetForm({ ...vetForm, amount: e.target.value })}
-                    />
-                  </span>
-                  <small>Monto en MXN</small>
-                </label>
-                <label className="publish-check publish-urgent">
-                  <input
-                    type="checkbox"
-                    checked={vetForm.urgent}
-                    onChange={(e) => setVetForm({ ...vetForm, urgent: e.target.checked })}
-                  />
-                  <span>
-                    Marcar como urgente
-                    <small>Se requiere evidencia de urgencia.</small>
-                  </span>
-                </label>
-                <button
-                  type="button"
-                  className="purple-button"
-                  disabled={!vetForm.reason.trim() || !Number(vetForm.amount)}
-                  onClick={saveVet}
-                >
-                  Guardar consulta
-                </button>
-                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
-                  Cancelar
-                </button>
-              </div>
-            )}
-          </div>
-        ) : null
-      }
-    >
-      <header className="publish-case-header">
-        <button
-          type="button"
-          className="publish-header-back"
-          onClick={goPrevStep}
-          aria-label="Volver"
-        >
-          <AssetIcon name="back.svg" size={24} />
-          <h1>{headerTitle}</h1>
-        </button>
-        <PublishStepper step={step} total={totalSteps} />
-      </header>
-
-      <div className="publish-case-body">
-        {correcting && (
-          <div className="error-callout">
-            <strong>Corrige antes de reenviar</strong>
-            <span>La historia necesita más detalle y la evidencia de urgencia no permite identificar a la mascota.</span>
-          </div>
-        )}
-
-        {step === 1 && (
-          <section className="publish-section">
-            <h2>Sube fotos de la mascota</h2>
-            <div className="publish-photo-drop">
-              <AssetIcon name="publish-cam-lg.svg" size={48} />
-              <div>
-                <p className="publish-drop-title">Añade fotos de la mascota</p>
-                <p className="publish-drop-copy">Puedes subir una o varias fotos.</p>
-              </div>
-              <div className="publish-photo-actions">
-                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
-                  <AssetIcon name="publish-cam-sm.svg" size={16} />
-                  Tomar foto
-                </button>
-                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
-                  <AssetIcon name="publish-upload.svg" size={16} />
-                  Subir desde galería
-                </button>
-              </div>
-            </div>
-            {photos.length === 0 ? (
-              <p className="publish-hint">Sube al menos una foto para continuar.</p>
-            ) : (
-              <>
-                <h3>Fotos agregadas</h3>
-                <div className="publish-photo-grid">
-                  {photos.map((src, index) => (
-                    <article className="publish-photo-thumb" key={src}>
-                      <img src={src} alt={`Foto ${index + 1}`} />
-                      {index === 0 && <span className="publish-photo-badge">Principal</span>}
-                      <button type="button" className="publish-photo-remove" aria-label="Quitar foto" onClick={() => removePhoto(src)}>×</button>
-                    </article>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
-        )}
-
-        {step === 2 && (
-          <section className="publish-section">
-            <h2>Información básica</h2>
-
-            <label className="publish-field">
-              <span>Nombre de la mascota</span>
-              <input
-                placeholder="Opcional"
-                maxLength={25}
-                value={String(draft.petName || "")}
-                onChange={(e) => updateDraft({ petName: e.target.value })}
-              />
-              <small>Si aún no tiene nombre, puedes dejarlo vacío.</small>
-            </label>
-
-            <div className="publish-field">
-              <span>Sexo <em>*</em></span>
-              <div className="publish-choice-row">
-                {(["Macho", "Hembra"] as const).map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={`publish-choice ${draft.sex === value ? "selected" : ""}`}
-                    onClick={() => updateDraft({ sex: value })}
-                  >
-                    <span aria-hidden>{value === "Macho" ? "♂" : "♀"}</span>
-                    {value}
-                  </button>
-                ))}
-              </div>
-              {!draft.sex && <small>Selecciona una opción para continuar.</small>}
-            </div>
-
-            <div className="publish-field">
-              <span>Especie <em>*</em></span>
-              <div className="publish-choice-row">
-                {(["Perro", "Gato"] as const).map((value) => (
-                  <button
-                    type="button"
-                    key={value}
-                    className={`publish-choice ${draft.species === value ? "selected" : ""}`}
-                    onClick={() => updateDraft({ species: value })}
-                  >
-                    <span aria-hidden>{value === "Perro" ? "🐶" : "🐱"}</span>
-                    {value}
-                  </button>
-                ))}
-              </div>
-              {!draft.species && <small>Selecciona una opción para continuar.</small>}
-            </div>
-
-            <label className="publish-field">
-              <span>Edad</span>
-              <input
-                placeholder="ej. 3 meses"
-                value={String(draft.age || "")}
-                onChange={(e) => updateDraft({ age: e.target.value })}
-              />
-              <small>Puede ser aproximada.</small>
-            </label>
-
-            <label className="publish-field">
-              <span>Historia de rescate</span>
-              <textarea
-                placeholder="Cuenta cómo la encontraste."
-                rows={3}
-                value={String(draft.story || "")}
-                onChange={(e) => updateDraft({ story: e.target.value })}
-              />
-            </label>
-
-            {mode === "adoption" && (
-              <>
-                <article className="publish-trait-card">
-                  <h3>Salud</h3>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.vaccinated)} onChange={(e) => updateDraft({ vaccinated: e.target.checked })} />
-                    <span>Vacunado</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.sterilized)} onChange={(e) => updateDraft({ sterilized: e.target.checked })} />
-                    <span>Esterilizado</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.specialCare)} onChange={(e) => updateDraft({ specialCare: e.target.checked })} />
-                    <span>Requiere cuidados especiales</span>
-                  </label>
-                </article>
-
-                <article className="publish-trait-card">
-                  <h3>Social</h3>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialDogs)} onChange={(e) => updateDraft({ socialDogs: e.target.checked })} />
-                    <span>Social con perros</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialCats)} onChange={(e) => updateDraft({ socialCats: e.target.checked })} />
-                    <span>Social con gatos</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialChildren)} onChange={(e) => updateDraft({ socialChildren: e.target.checked })} />
-                    <span>Social con niños</span>
-                  </label>
-                </article>
-              </>
-            )}
-          </section>
-        )}
-
-        {step === needsStep && (
-          <section className="publish-section">
-            <h2>¿Qué necesita la mascota?</h2>
-            <div className="publish-needs-note">
-              <strong>Nota:</strong> Las necesidades son opcionales. Puedes publicar el caso aunque aún no agregues apoyo económico.
-            </div>
-            <button type="button" className="publish-need-card" onClick={() => setSheet("food")}>
-              <span aria-hidden>🥣</span>
-              <span>
-                <strong>Comida</strong>
-                <p>Selecciona croquetas del catálogo y define cada cuánto las necesita.</p>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="publish-need-card"
-              onClick={() => {
-                setMedForm({ name: "", amount: "", treatment: "", urgent: false });
-                setSheet("medicine");
-              }}
-            >
-              <span aria-hidden>💊</span>
-              <span>
-                <strong>Medicina</strong>
-                <p>Agrega una medicina, costo y tratamiento relacionado.</p>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="publish-need-card"
-              onClick={() => {
-                setVetForm(emptyVetForm);
-                setSheet("vet");
-              }}
-            >
-              <span aria-hidden>🩺</span>
-              <span>
-                <strong>Veterinario</strong>
-                <p>Agrega consulta o tratamiento veterinario.</p>
-              </span>
-            </button>
-
-            {needItems.length > 0 && (
-              <div className="publish-needs-list">
-                <h3>Necesidades agregadas</h3>
-                {needItems.map((item) => (
-                  <article className="publish-need-row" key={item.id}>
-                    <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <p>
-                        ${item.amount}
-                        {item.detail ? ` • ${item.detail}` : ""}
-                      </p>
-                      {item.badge ? <span className="publish-need-badge">{item.badge}</span> : null}
-                      {item.urgent ? <span className="publish-need-badge urgent">Urgente</span> : null}
-                    </div>
-                    <button type="button" className="publish-need-remove" onClick={() => removeNeed(item.id)}>
-                      Eliminar
-                    </button>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            {hasUrgentNeed && (
-              <section className="publish-urgent-video">
-                <h3>Video de evidencia de urgencia</h3>
-                <p>
-                  Agrega un video explicando la situación. Debes aparecer tú y también la mascota que necesita apoyo. El equipo DopMi revisará el caso y, si se aprueba, podremos apoyarte o priorizar tu caso para que reciba donaciones.
-                </p>
-                {urgentVideo ? (
-                  <article className="publish-urgent-video-done">
-                    <div>
-                      <strong>Video de urgencia agregado</strong>
-                      <small>Listo para revisión del equipo DopMi</small>
-                    </div>
-                    <button type="button" className="publish-need-remove" onClick={clearUrgentVideo}>
-                      Quitar
-                    </button>
-                  </article>
-                ) : (
-                  <div className="publish-photo-drop publish-urgent-drop">
-                    <AssetIcon name="publish-cam-lg.svg" size={40} />
-                    <div>
-                      <p className="publish-drop-title">Grabar o subir video</p>
-                      <p className="publish-drop-copy">Requerido para aprobar urgencia médica</p>
-                    </div>
-                    <button type="button" className="publish-outline-btn" onClick={addUrgentVideo}>
-                      <AssetIcon name="publish-upload.svg" size={16} />
-                      Subir video
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
-          </section>
-        )}
-
-        {step === reviewStep && (
-          <section className="publish-section publish-review">
-            <div className="publish-review-block">
-              <div className="publish-review-head">
-                <h3>Fotos</h3>
-                <button type="button" className="publish-edit-link" onClick={() => setStep(1)}>Editar</button>
-              </div>
-              <div className="publish-photo-grid compact">
-                {photos.map((src) => (
-                  <article className="publish-photo-thumb" key={src}>
-                    <img src={src} alt="" />
-                  </article>
-                ))}
-              </div>
-            </div>
-
-            <div className="publish-review-block">
-              <div className="publish-review-head">
-                <h3>Información básica</h3>
-                <button type="button" className="publish-edit-link" onClick={() => setStep(2)}>Editar</button>
-              </div>
-              <article className="publish-review-card">
-                <div><span>Nombre</span><strong>{String(draft.petName || "Sin nombre")}</strong></div>
-                <div><span>Edad</span><strong>{String(draft.age || "—")}</strong></div>
-                <div><span>Historia</span><strong>{String(draft.story || "—")}</strong></div>
-                <div><span>Lista para adopción</span><strong>{mode === "adoption" ? "Sí" : "No"}</strong></div>
-              </article>
-            </div>
-
-            {mode === "adoption" ? (
-              <>
-                <article className="publish-trait-card">
-                  <h3>Salud</h3>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.vaccinated)} readOnly /><span>Vacunado</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.sterilized)} readOnly /><span>Esterilizado</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.specialCare)} readOnly /><span>Requiere cuidados especiales</span></label>
-                </article>
-                <article className="publish-trait-card">
-                  <h3>Social</h3>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialDogs)} readOnly /><span>Social con perros</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialCats)} readOnly /><span>Social con gatos</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialChildren)} readOnly /><span>Social con niños</span></label>
-                </article>
-              </>
-            ) : (
-              <div className="publish-review-block">
-                <div className="publish-review-head">
-                  <h3>Necesidades</h3>
-                  <button type="button" className="publish-edit-link" onClick={() => setStep(3)}>Editar</button>
-                </div>
-                {needItems.length ? (
-                  <div className="publish-needs-list compact">
-                    {needItems.map((item) => (
-                      <article className="publish-need-row" key={item.id}>
-                        <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
-                        <div>
-                          <strong>{item.title}</strong>
-                          <p>
-                            ${item.amount}
-                            {item.detail ? ` • ${item.detail}` : ""}
-                          </p>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="publish-hint">Sin necesidades agregadas.</p>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-      </div>
-
-      <footer className="publish-case-footer">
-        <button
-          type="button"
-          className="purple-button publish-continue"
-          disabled={continueDisabled}
-          onClick={goNext}
-        >
-          {continueLabel}
-        </button>
-        <button type="button" className="publish-draft-link" onClick={saveDraft}>
-          Guardar borrador
-        </button>
-      </footer>
-    </ScreenShell>
-  );
+  return <PublishFlowWizard />;
 }
+
 
 function EvidenceFlow() {
-  const navigate = useNavigate();
-  const { caseId = "luna", needId = "luna-food" } = useParams();
-  const { cases, submitNeedEvidence } = usePrototypeStore();
-  const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
-  const need = item.needs.find((entry) => entry.id === needId) ?? item.needs[0];
-  const available = need?.funded ?? 0;
-  const backTo = `/rescuer/cases/${item.id}`;
-  const isFood = need?.type === "Comida";
-  const isVet = need?.type === "Veterinario";
-  const unlockSteps = isFood
-    ? (["receipt", "purchaseId", "petEvidence", "description"] as const)
-    : isVet
-      ? (["receipt", "vetDetails", "petEvidence", "description"] as const)
-      : (["receipt", "petEvidence", "description"] as const);
-  const totalSteps = unlockSteps.length;
-
-  const [step, setStep] = useState(1);
-  const [done, setDone] = useState(false);
-  const [toast, setToast] = useState("");
-  const [receipt, setReceipt] = useState<string | null>(null);
-  const [purchaseId, setPurchaseId] = useState("");
-  const [vetDetails, setVetDetails] = useState({
-    hospital: "",
-    hospitalPhone: "",
-    caseNumber: "",
-    vetName: "",
-    vetPhone: "",
-  });
-  const [petEvidence, setPetEvidence] = useState<string | null>(null);
-  const [petEvidenceLabel, setPetEvidenceLabel] = useState("");
-  const [description, setDescription] = useState("");
-  const receiptRef = useRef<HTMLInputElement>(null);
-  const petRef = useRef<HTMLInputElement>(null);
-
-  const currentKey = unlockSteps[step - 1];
-  const close = () => navigate(backTo);
-  const saveProgress = () => {
-    setToast("Progreso guardado");
-    window.setTimeout(() => navigate(backTo), 700);
-  };
-
-  const readImage = (file: File | undefined, setter: (src: string) => void) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") setter(reader.result);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const readPetEvidence = (file: File | undefined) => {
-    if (!file) return;
-    setPetEvidenceLabel(file.name);
-    if (file.type.startsWith("image/")) {
-      readImage(file, setPetEvidence);
-      return;
-    }
-    setPetEvidence("video");
-  };
-
-  const vetDetailsComplete =
-    vetDetails.hospital.trim() &&
-    vetDetails.hospitalPhone.trim() &&
-    vetDetails.caseNumber.trim() &&
-    vetDetails.vetName.trim() &&
-    vetDetails.vetPhone.trim();
-
-  const canNext =
-    currentKey === "receipt" ? Boolean(receipt) :
-    currentKey === "purchaseId" ? true :
-    currentKey === "vetDetails" ? Boolean(vetDetailsComplete) :
-    currentKey === "petEvidence" ? Boolean(petEvidence) :
-    description.trim().length > 0;
-
-  const goNext = () => {
-    if (!canNext) return;
-    if (step < totalSteps) setStep((current) => current + 1);
-    else {
-      if (need) submitNeedEvidence(item.id, need.id);
-      setDone(true);
-    }
-  };
-
-  const descriptionPlaceholder = isVet
-    ? `Ej.: ${item.name} recibió su consulta veterinaria gracias a quienes la apoyaron.`
-    : isFood
-      ? `Ej.: ${item.name} recibió su comida del mes gracias a quienes la apoyaron.`
-      : `Ej.: ${item.name} recibió el apoyo gracias a quienes la ayudaron.`;
-
-  if (!need) {
-    return (
-      <div className="plain-screen rescuer-theme">
-        <div className="modal-backdrop center" onClick={close}>
-          <div className="unlock-dialog" onClick={(event) => event.stopPropagation()}>
-            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
-              <Icon name="icon-x-muted.svg" size={16} />
-            </button>
-            <h2>No encontramos esta necesidad</h2>
-            <p>Vuelve al caso e inténtalo de nuevo.</p>
-            <button type="button" className="purple-button" onClick={close}>Volver al caso</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="plain-screen rescuer-theme unlock-screen">
-      <div className="modal-backdrop center" onClick={close}>
-        {done ? (
-          <div className="unlock-dialog unlock-success" onClick={(event) => event.stopPropagation()} role="dialog" aria-labelledby="unlock-success-title">
-            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
-              <Icon name="icon-x-muted.svg" size={16} />
-            </button>
-            <span className="unlock-success-icon" aria-hidden="true">✓</span>
-            <h2 id="unlock-success-title">Has subido tu evidencia para revisión.</h2>
-            <p>Gracias por tu esfuerzo, nuestro equipo revisará tu solicitud y regresará contigo.</p>
-            <button type="button" className="purple-button" onClick={close}>Entendido</button>
-          </div>
-        ) : (
-          <div className="unlock-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-labelledby="unlock-title">
-            <button
-              type="button"
-              className="unlock-back"
-              onClick={() => (step > 1 ? setStep((current) => current - 1) : close())}
-              aria-label={step > 1 ? "Paso anterior" : "Cerrar"}
-            >
-              <AssetIcon name="back.svg" size={20} />
-            </button>
-            <button type="button" className="unlock-close" onClick={close} aria-label="Cerrar">
-              <Icon name="icon-x-muted.svg" size={16} />
-            </button>
-
-            <header className="unlock-head">
-              <h2 id="unlock-title"><span aria-hidden="true">{needEmoji(need.type)}</span> Desbloquea las donaciones</h2>
-              <p className="unlock-step">Paso {step} de {totalSteps}</p>
-              <p className="unlock-lead">
-                Por favor compártenos evidencia – recibos, facturas, vouchers – de la necesidad cubierta para que el equipo de DopMi pueda revisarlo. Al ser aprobada recibirás el dinero que utilizaste para cubrir esta necesidad.
-              </p>
-            </header>
-
-            <article className="unlock-need">
-              <strong>{need.title}</strong>
-              <small>Disponible: ${available}</small>
-            </article>
-
-            {currentKey === "receipt" && (
-              <section className="unlock-section">
-                <h3>Foto del recibo</h3>
-                <p>Sube una foto clara del ticket o comprobante.</p>
-                <input
-                  ref={receiptRef}
-                  className="visually-hidden"
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  onChange={(event) => readImage(event.target.files?.[0], setReceipt)}
-                />
-                {receipt ? (
-                  <div className="unlock-preview">
-                    <img src={receipt} alt="Recibo subido" />
-                    <button type="button" className="secondary-button compact" onClick={() => receiptRef.current?.click()}>
-                      Cambiar foto
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" className="unlock-drop" onClick={() => receiptRef.current?.click()}>
-                    <AssetIcon name="publish-upload.svg" size={28} />
-                    <strong>Toca para subir foto</strong>
-                    <small>JPEG o PNG, máximo 10 MB</small>
-                  </button>
-                )}
-              </section>
-            )}
-
-            {currentKey === "purchaseId" && (
-              <section className="unlock-section">
-                <h3>ID de compra / transacción</h3>
-                <p>Si compraste la comida usando el enlace de DopMi, agrega el ID de compra para validar cashback o DopMi Coins pendientes.</p>
-                <input
-                  className="unlock-input"
-                  value={purchaseId}
-                  onChange={(event) => setPurchaseId(event.target.value)}
-                  placeholder="ej. AMZ-2025-12345"
-                  autoComplete="off"
-                />
-                <div className="unlock-hint">
-                  Usar el enlace de DopMi puede generar cashback o DopMi Coins pendientes al confirmar la compra.
-                </div>
-              </section>
-            )}
-
-            {currentKey === "vetDetails" && (
-              <section className="unlock-section unlock-vet-fields">
-                <label className="unlock-field">
-                  <span>Nombre del hospital veterinario <em>*</em></span>
-                  <input
-                    className="unlock-input"
-                    value={vetDetails.hospital}
-                    onChange={(event) => setVetDetails({ ...vetDetails, hospital: event.target.value })}
-                    placeholder="Nombre del hospital"
-                    autoComplete="organization"
-                  />
-                </label>
-                <label className="unlock-field">
-                  <span>Teléfono del hospital veterinario <em>*</em></span>
-                  <input
-                    className="unlock-input"
-                    type="tel"
-                    value={vetDetails.hospitalPhone}
-                    onChange={(event) => setVetDetails({ ...vetDetails, hospitalPhone: event.target.value })}
-                    placeholder="+52 55 1234 5678"
-                    autoComplete="tel"
-                  />
-                </label>
-                <label className="unlock-field">
-                  <span>Número del caso de atención veterinaria <em>*</em></span>
-                  <input
-                    className="unlock-input"
-                    value={vetDetails.caseNumber}
-                    onChange={(event) => setVetDetails({ ...vetDetails, caseNumber: event.target.value })}
-                    placeholder="Número de caso o expediente"
-                    autoComplete="off"
-                  />
-                </label>
-                <label className="unlock-field">
-                  <span>Veterinario que atendió <em>*</em></span>
-                  <input
-                    className="unlock-input"
-                    value={vetDetails.vetName}
-                    onChange={(event) => setVetDetails({ ...vetDetails, vetName: event.target.value })}
-                    placeholder="Nombre completo del veterinario"
-                    autoComplete="name"
-                  />
-                </label>
-                <label className="unlock-field">
-                  <span>Teléfono del veterinario <em>*</em></span>
-                  <input
-                    className="unlock-input"
-                    type="tel"
-                    value={vetDetails.vetPhone}
-                    onChange={(event) => setVetDetails({ ...vetDetails, vetPhone: event.target.value })}
-                    placeholder="+52 55 1234 5678"
-                    autoComplete="tel"
-                  />
-                </label>
-              </section>
-            )}
-
-            {currentKey === "petEvidence" && (
-              <section className="unlock-section">
-                <h3>Foto o video de evidencia</h3>
-                <p>Esta evidencia se mostrará a los donantes como prueba visual del impacto.</p>
-                <input
-                  ref={petRef}
-                  className="visually-hidden"
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(event) => readPetEvidence(event.target.files?.[0])}
-                />
-                {petEvidence ? (
-                  <div className="unlock-preview">
-                    {petEvidence === "video" ? (
-                      <div className="unlock-file-chip">
-                        <AssetIcon name="onb-camera.svg" size={20} />
-                        <strong>{petEvidenceLabel || "Video subido"}</strong>
-                      </div>
-                    ) : (
-                      <img src={petEvidence} alt="Evidencia con la mascota" />
-                    )}
-                    <button type="button" className="secondary-button compact" onClick={() => petRef.current?.click()}>
-                      Cambiar archivo
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" className="unlock-drop" onClick={() => petRef.current?.click()}>
-                    <AssetIcon name="publish-upload.svg" size={28} />
-                    <strong>Toca para subir foto o video</strong>
-                    <small>Muestra a la mascota con el producto o recibiendo cuidado</small>
-                  </button>
-                )}
-              </section>
-            )}
-
-            {currentKey === "description" && (
-              <section className="unlock-section">
-                <h3>Describe la evidencia</h3>
-                <p>Esta información será pública para donantes y para la comunidad.</p>
-                <textarea
-                  className="unlock-textarea"
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder={descriptionPlaceholder}
-                  rows={4}
-                />
-                <p className="unlock-note">Ninguna donación se liberará sin evidencia revisada y aprobada previamente por DopMi.</p>
-              </section>
-            )}
-
-            <div className="unlock-actions">
-              <button type="button" className="secondary-button" onClick={saveProgress}>Guardar progreso</button>
-              <button type="button" className="purple-button" disabled={!canNext} onClick={goNext}>
-                {step === totalSteps ? "Enviar a revisión" : "Siguiente"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-    </div>
-  );
+  const { caseId = "luna" } = useParams();
+  return <Navigate to={`/rescuer/cases/${caseId}`} replace />;
 }
+
 
 function FoodCycle() {
-  const navigate = useNavigate();
   const { caseId = "luna" } = useParams();
-  return <StaticSimulated title="Solicitar comida" back={`/rescuer/cases/${caseId}`}><div className="form-stack"><h1>¿Qué comida necesitas ahora?</h1><p>Puedes volver al catálogo o reactivar exactamente la necesidad anterior.</p><button className="primary-button" onClick={() => navigate("/rescuer/cases")}>Elegir otro producto</button><button className="secondary-button" onClick={() => navigate("/rescuer/cases")}>Misma comida</button><button className="text-action" onClick={() => navigate("/rescuer/cases")}>Salir sin reactivar</button></div></StaticSimulated>;
+  return <Navigate to={`/rescuer/cases/${caseId}`} replace />;
 }
+
 
 function RescuerMessages() {
   const navigate = useNavigate();
@@ -4662,70 +3570,125 @@ function RescuerMessages() {
   );
 }
 
+
 function RescuerProfile() {
   const navigate = useNavigate();
-  const verification = usePrototypeStore((state) => state.verification);
-  const profile = usePrototypeStore((state) => state.rescuerProfile);
-  const avatar = (
-    <span className={`avatar large purple ${profile.avatar ? "has-photo" : ""}`}>
-      {profile.avatar ? <img src={profile.avatar} alt="" /> : profile.name.charAt(0)}
-    </span>
-  );
+  const location = useLocation();
+  const { rescuerProfile, setAccountMode } = usePrototypeStore();
+  const params = new URLSearchParams(location.search);
+  if (params.get("stripe") === "1") {
+    const caseId = params.get("case");
+    return <Navigate to={caseId ? `/rescuer/profile/payments?case=${caseId}` : "/rescuer/profile/payments"} replace />;
+  }
+
+  const displayName = rescuerDisplayName(rescuerProfile) || "Rescatista";
+  const description = rescuerProfile.description?.trim();
+  const locationLabel = rescuerProfile.address?.trim();
+  const phone = rescuerProfile.phone?.trim();
+  const email = rescuerProfile.email?.trim();
+  const instagram = rescuerProfile.instagram?.trim();
+  const facebook = rescuerProfile.facebook?.trim();
+
   return (
     <ScreenShell mode="rescuer">
       <div className="content-pad profile-page">
         <header className="page-head">
           <h1>Perfil</h1>
         </header>
-        {verification === "verified" ? (
-          <article className="public-card">
-            <div className="public-card-head">
-              <h2>Perfil público</h2>
-              <button className="icon-button" onClick={() => navigate("/rescuer/profile/edit")} aria-label="Editar perfil público">
-                <Icon name="icon-edit.svg" size={18} />
-              </button>
+
+        <article className="public-card profile-peek">
+          <div className="profile-peek-identity">
+            <span className={`avatar large purple ${rescuerProfile.avatar ? "has-photo" : ""}`}>
+              {rescuerProfile.avatar ? <img src={rescuerProfile.avatar} alt="" /> : (displayName.charAt(0) || "R")}
+            </span>
+            <strong className="profile-peek-name">{displayName}</strong>
+            {description ? <p className="profile-peek-description">{description}</p> : null}
+          </div>
+
+          {(locationLabel || phone || email || instagram || facebook) ? (
+            <div className="profile-peek-contact">
+              {locationLabel ? (
+                <div className="profile-contact-item">
+                  <Icon name="location.svg" size={16} />
+                  <div>
+                    <small>Ubicación</small>
+                    <strong>{locationLabel}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {phone ? (
+                <div className="profile-contact-item">
+                  <Icon name="icon-phone.svg" size={16} />
+                  <div>
+                    <small>Teléfono</small>
+                    <strong>{phone}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {email ? (
+                <div className="profile-contact-item">
+                  <Icon name="icon-mail.svg" size={16} />
+                  <div>
+                    <small>Correo</small>
+                    <strong>{email}</strong>
+                  </div>
+                </div>
+              ) : null}
+              {instagram || facebook ? (
+                <div className="profile-contact-item">
+                  <Icon name="icon-instagram.svg" size={16} />
+                  <div>
+                    <small>Redes sociales</small>
+                    <strong>
+                      {[instagram, facebook].filter(Boolean).join(" · ")}
+                    </strong>
+                  </div>
+                </div>
+              ) : null}
             </div>
-            <div className="public-card-id">
-              {avatar}
-              <div>
-                <strong>{profile.name}</strong>
-                <span className="status-chip green">Verificado</span>
-              </div>
-            </div>
-            <div className="field-row">
-              <Icon name="location.svg" size={16} />
-              <span className="nav-row-text"><small>Dirección</small><strong>{profile.address}</strong></span>
-            </div>
-            <div className="field-row">
-              <Icon name="icon-phone.svg" size={16} />
-              <span className="nav-row-text"><small>Teléfono</small><strong>{profile.phone}</strong></span>
-            </div>
-            <div className="field-row">
-              <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
-            </div>
-            <div className="field-row column">
-              <small>Descripción</small>
-              <p>{profile.description}</p>
-            </div>
-          </article>
-        ) : (
-          <article className="public-card">
-            <div className="public-card-id">
-              {avatar}
-              <strong>{profile.name}</strong>
-            </div>
-            <div className="field-row">
-              <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
-            </div>
-          </article>
-        )}
-        <section className="list-stack">
-          <button className="nav-row" onClick={() => navigate("/rescuer/settings")}>
+          ) : null}
+
+          <button type="button" className="secondary-button" onClick={() => navigate("/rescuer/profile/edit")}>
+            Editar perfil
+          </button>
+        </article>
+
+        <section className="list-stack profile-menu">
+          <button type="button" className="nav-row" onClick={() => navigate("/help")}>
             <span className="nav-row-main">
-              <Icon name="icon-shield.svg" size={20} />
-              <strong>Configuración</strong>
+              <Icon name="icon-help.svg" size={20} />
+              <strong>Centro de ayuda</strong>
+            </span>
+            <Chevron />
+          </button>
+          <button type="button" className="nav-row" onClick={() => navigate("/rescuer/profile/payments")}>
+            <span className="nav-row-main">
+              <Icon name="icon-billing.svg" size={20} />
+              <strong>Pagos</strong>
+            </span>
+            <Chevron />
+          </button>
+          <button type="button" className="nav-row" onClick={() => navigate("/rescuer/profile/legal")}>
+            <span className="nav-row-main">
+              <Icon name="icon-doc.svg" size={20} />
+              <strong>Legal</strong>
+            </span>
+            <Chevron />
+          </button>
+        </section>
+
+        <section className="list-stack profile-session">
+          <button
+            type="button"
+            className="nav-row danger-row"
+            onClick={() => {
+              setAccountMode("donor");
+              navigate("/");
+            }}
+          >
+            <span className="nav-row-main">
+              <Icon name="icon-logout.svg" size={20} />
+              <strong>Cerrar sesión</strong>
             </span>
             <Chevron />
           </button>
@@ -4735,25 +3698,24 @@ function RescuerProfile() {
   );
 }
 
-function RescuerEditPublicProfile() {
+
+function RescuerEditProfile() {
   const navigate = useNavigate();
   const { rescuerProfile, updateRescuerProfile } = usePrototypeStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     name: rescuerProfile.name,
+    orgName: rescuerProfile.orgName || "",
+    description: rescuerProfile.description,
     address: rescuerProfile.address,
     phone: rescuerProfile.phone,
     email: rescuerProfile.email,
-    description: rescuerProfile.description,
+    instagram: rescuerProfile.instagram || "",
+    facebook: rescuerProfile.facebook || "",
     avatar: rescuerProfile.avatar ?? "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState("");
-  const canSave =
-    form.name.trim() &&
-    form.address.trim() &&
-    form.phone.trim() &&
-    form.email.trim() &&
-    form.description.trim();
 
   const pickPhoto = (file: File | undefined) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -4764,25 +3726,43 @@ function RescuerEditPublicProfile() {
     reader.readAsDataURL(file);
   };
 
+  const validate = () => {
+    const next: Record<string, string> = {};
+    if (!form.name.trim()) next.name = "Escribe tu nombre";
+    if (!form.description.trim()) next.description = "Agrega una descripción";
+    if (!form.address.trim()) next.address = "Agrega tu ubicación";
+    if (!form.phone.trim()) next.phone = "Agrega un teléfono";
+    if (!form.email.trim()) next.email = "Agrega un correo";
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
   const save = () => {
-    if (!canSave) return;
+    if (!validate()) {
+      setToast("Revisa los campos marcados");
+      return;
+    }
     updateRescuerProfile({
       name: form.name.trim(),
+      orgName: form.orgName.trim() || undefined,
+      description: form.description.trim(),
       address: form.address.trim(),
       phone: form.phone.trim(),
       email: form.email.trim(),
-      description: form.description.trim(),
+      instagram: form.instagram.trim(),
+      facebook: form.facebook.trim(),
       avatar: form.avatar || undefined,
+      profileComplete: true,
     });
     setToast("Perfil actualizado");
-    window.setTimeout(() => navigate("/rescuer/profile"), 500);
+    window.setTimeout(() => navigate("/rescuer/profile"), 450);
   };
 
   return (
     <div className="plain-screen rescuer-theme">
-      <TopBar title="Editar perfil público" back="/rescuer/profile" />
+      <TopBar title="Editar perfil" back="/rescuer/profile" />
       <div className="content-pad form-stack edit-public-profile">
-        <p className="section-lead">Estos datos se muestran en tu perfil público para adoptantes y donantes.</p>
+        <p className="section-lead">Estos datos alimentan tu perfil y la ficha pública que ven adoptantes y donantes.</p>
         <input
           ref={fileRef}
           className="visually-hidden"
@@ -4799,57 +3779,63 @@ function RescuerEditPublicProfile() {
           </span>
           <span className="nav-row-text">
             <strong>Foto de perfil</strong>
-            <small>Cambia tu foto de perfil</small>
+            <small>Cambia la foto que ven adoptantes y donantes</small>
           </span>
         </button>
+
         <label className="publish-field">
           <span>Nombre</span>
-          <input
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="Tu nombre o el de tu refugio"
-            autoComplete="name"
-          />
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tu nombre" autoComplete="name" />
+          {errors.name ? <small className="field-error">{errors.name}</small> : null}
         </label>
         <label className="publish-field">
-          <span>Dirección</span>
-          <input
-            value={form.address}
-            onChange={(event) => setForm({ ...form, address: event.target.value })}
-            placeholder="Calle, colonia, ciudad"
-            autoComplete="street-address"
-          />
-        </label>
-        <label className="publish-field">
-          <span>Teléfono</span>
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            placeholder="+52 55 1234 5678"
-            autoComplete="tel"
-          />
-        </label>
-        <label className="publish-field">
-          <span>Email</span>
-          <input
-            type="email"
-            value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
-            placeholder="correo@ejemplo.com"
-            autoComplete="email"
-          />
+          <span>Nombre del refugio / organización (opcional)</span>
+          <input value={form.orgName} onChange={(e) => setForm({ ...form, orgName: e.target.value })} placeholder="Opcional" />
+          <small className="field-hint">
+            Si agregas un nombre de refugio, este será el nombre que verán los adoptantes en tu perfil y publicaciones.
+          </small>
         </label>
         <label className="publish-field">
           <span>Descripción</span>
           <textarea
+            rows={4}
             value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-            placeholder="Cuenta quién eres y cómo ayudas a las mascotas"
-            rows={5}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Cuéntanos quién eres, qué rescates haces y qué debe saber un adoptante"
           />
+          {errors.description ? <small className="field-error">{errors.description}</small> : null}
         </label>
-        <button type="button" className="purple-button" disabled={!canSave} onClick={save}>
+        <label className="publish-field">
+          <span>Ubicación</span>
+          <input
+            value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+            placeholder="Ciudad, Estado"
+            autoComplete="address-level2"
+          />
+          {errors.address ? <small className="field-error">{errors.address}</small> : null}
+        </label>
+        <LocationMap location={form.address} compact />
+        <label className="publish-field">
+          <span>Teléfono</span>
+          <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} autoComplete="tel" />
+          {errors.phone ? <small className="field-error">{errors.phone}</small> : null}
+        </label>
+        <label className="publish-field">
+          <span>Correo</span>
+          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" />
+          {errors.email ? <small className="field-error">{errors.email}</small> : null}
+        </label>
+        <label className="publish-field">
+          <span>Instagram (opcional)</span>
+          <input value={form.instagram} onChange={(e) => setForm({ ...form, instagram: e.target.value })} placeholder="@tuusuario" />
+        </label>
+        <label className="publish-field">
+          <span>Facebook (opcional)</span>
+          <input value={form.facebook} onChange={(e) => setForm({ ...form, facebook: e.target.value })} placeholder="Tu página o perfil" />
+        </label>
+
+        <button type="button" className="purple-button" onClick={save}>
           Guardar cambios
         </button>
         <button type="button" className="secondary-button" onClick={() => navigate("/rescuer/profile")}>
@@ -4861,178 +3847,167 @@ function RescuerEditPublicProfile() {
   );
 }
 
-function RescuerSettings() {
+
+function RescuerPayments() {
   const navigate = useNavigate();
-  const { verification, setAccountMode, rescuerProfile, updateRescuerProfile } = usePrototypeStore();
-  const verified = verification === "verified";
-  const [editField, setEditField] = useState<"instagram" | "facebook" | "clabe" | null>(null);
-  const [draft, setDraft] = useState("");
+  const location = useLocation();
+  const {
+    stripeStatus,
+    completeStripeAndPublish,
+    pendingActions,
+    dismissPendingAction,
+    emptyStates,
+  } = usePrototypeStore();
+  const caseId = new URLSearchParams(location.search).get("case") || undefined;
   const [toast, setToast] = useState("");
-  const statusCard = {
-    unverified: { title: "No verificada", copy: "Completa tu verificación para desbloquear donaciones y reembolsos.", cta: "Iniciar verificación" },
-    review: { title: "Verificación en proceso", copy: "Estamos revisando tu información. Te avisaremos en cuanto termine.", cta: "Ver estado" },
-    rejected: { title: "Verificación con errores", copy: "Hay información que debes corregir para continuar.", cta: "Corregir información" },
-    verified: { title: "Cuenta verificada", copy: "Tu cuenta está activa y puede recibir donaciones.", cta: "" },
-  }[verification];
 
-  const openEdit = (field: "instagram" | "facebook" | "clabe") => {
-    setEditField(field);
-    setDraft(rescuerProfile[field]);
-  };
+  const stripeCopy =
+    stripeStatus === "linked"
+      ? {
+          title: "Stripe conectado",
+          body: "La cuenta está lista para recibir fondos de casos aprobados.",
+          cta: "Administrar Stripe",
+        }
+      : stripeStatus === "pending"
+        ? {
+            title: "Configuración pendiente",
+            body: "Continúa el proceso en Stripe para terminar de vincular tu cuenta.",
+            cta: "Continuar configuración",
+          }
+        : stripeStatus === "error"
+          ? {
+              title: "Acción requerida",
+              body: "Stripe necesita que revises tu cuenta para poder recibir donaciones.",
+              cta: "Resolver problema",
+            }
+          : {
+              title: "No vinculado",
+              body: "Conecta Stripe para recibir las donaciones de tus casos aprobados en DopMi.",
+              cta: "Vincular Stripe",
+            };
 
-  const saveEdit = () => {
-    if (!editField) return;
-    const value = draft.trim();
-    if (!value) return;
-    if (editField === "clabe" && !/^\d{18}$/.test(value)) return;
-    updateRescuerProfile({ [editField]: value });
-    setEditField(null);
-    setToast(
-      editField === "instagram"
-        ? "Instagram actualizado"
-        : editField === "facebook"
-          ? "Facebook actualizado"
-          : "CLABE actualizada",
-    );
-  };
-
-  const editMeta = editField
-    ? {
-        instagram: {
-          title: "Editar Instagram",
-          label: "Usuario de Instagram",
-          placeholder: "@tuusuario",
-          hint: "Usa el @ de tu cuenta pública.",
-          inputMode: "text" as const,
-          maxLength: 40,
-          canSave: Boolean(draft.trim()),
-        },
-        facebook: {
-          title: "Editar Facebook",
-          label: "Perfil de Facebook",
-          placeholder: "Nombre del perfil",
-          hint: "El nombre como aparece en tu página o perfil.",
-          inputMode: "text" as const,
-          maxLength: 60,
-          canSave: Boolean(draft.trim()),
-        },
-        clabe: {
-          title: "Editar CLABE",
-          label: "CLABE interbancaria",
-          placeholder: "18 dígitos",
-          hint: "Debe tener exactamente 18 números.",
-          inputMode: "numeric" as const,
-          maxLength: 18,
-          canSave: /^\d{18}$/.test(draft.trim()),
-        },
-      }[editField]
-    : null;
+  const stripeActions = pendingActions.filter((item) => item.kind === "stripe");
+  const movements = emptyStates ? [] : rescuerPaymentMovements;
 
   return (
-    <ScreenShell mode="rescuer">
-      <TopBar title="Configuración" back="/rescuer/profile" />
-      <div className="content-pad list-stack">
-        <h2 className="settings-heading first">Estado de verificación</h2>
-        <article className={`verify-card ${verification}`}>
-          <div className="verify-head">
-            <span className="verify-chip">
-              <Icon name="icon-shield.svg" size={20} />
-            </span>
-            <strong>{statusCard.title}</strong>
-            {statusCard.cta ? <Chevron /> : null}
-          </div>
-          <p>{statusCard.copy}</p>
-          {statusCard.cta ? (
-            <button className="purple-button compact self-start" onClick={() => navigate("/rescuer/verification")}>{statusCard.cta}</button>
-          ) : null}
-        </article>
-        {verified ? (
-          <>
-            <h2 className="settings-heading">Redes sociales</h2>
-            <article className="card-row">
-              <span className="row-tile gray"><Icon name="icon-instagram.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Instagram</small><strong>{rescuerProfile.instagram}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("instagram")} aria-label="Editar Instagram">
-                <Icon name="icon-edit.svg" size={16} />
-              </button>
-            </article>
-            <article className="card-row">
-              <span className="row-tile gray"><Icon name="icon-facebook.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Facebook</small><strong>{rescuerProfile.facebook}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("facebook")} aria-label="Editar Facebook">
-                <Icon name="icon-edit.svg" size={16} />
-              </button>
-            </article>
-            <p className="field-hint">Vincula tus cuentas para comprobar que eres el dueño. Es ideal agregar ambas.</p>
-            <h2 className="settings-heading">Datos bancarios</h2>
-            <article className="card-row">
-              <span className="nav-row-text"><small>CLABE</small><strong>{rescuerProfile.clabe}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("clabe")} aria-label="Editar CLABE">
-                <Icon name="icon-edit.svg" size={16} />
-              </button>
-            </article>
-            <p className="field-hint">La CLABE solo es visible para ti y nunca se muestra a los donantes.</p>
-          </>
+    <div className="plain-screen rescuer-theme">
+      <TopBar title="Pagos" back="/rescuer/profile" />
+      <div className="content-pad form-stack">
+        <p className="section-lead">
+          Vincula Stripe para recibir donaciones. No mostramos datos bancarios; Stripe los administra.
+        </p>
+
+        {stripeActions.length ? (
+          <section className="pending-actions">
+            <h2>Acciones pendientes</h2>
+            {stripeActions.map((item) => (
+              <article className="pending-card" key={item.id}>
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+                <button
+                  type="button"
+                  className="purple-button"
+                  onClick={() => {
+                    completeStripeAndPublish(item.caseId || caseId);
+                    setToast("Stripe vinculado. El caso aprobado se publica automáticamente.");
+                  }}
+                >
+                  Vincular Stripe
+                </button>
+                <button type="button" className="secondary-button" onClick={() => dismissPendingAction(item.id)}>
+                  Entendido
+                </button>
+              </article>
+            ))}
+          </section>
         ) : null}
-        <article className="switch-card">
-          <div>
-            <strong>Cambiar a usuario donante</strong>
-            <small>Cambia tu experiencia en la app</small>
-          </div>
-          <button
-            className="switch on"
-            role="switch"
-            aria-checked="true"
-            aria-label="Cambiar a usuario donante"
-            onClick={() => {
-              setAccountMode("donor");
-              navigate("/adoption");
-            }}
-          >
-            <i />
-          </button>
-        </article>
-        <SettingsRow icon="icon-help.svg" title="Centro de ayuda" onClick={() => navigate("/help")} />
-        <button className="nav-row danger-row" onClick={() => navigate("/")}>
+
+        <section className="payments-stripe-card">
+          <h2>Stripe</h2>
+          <p className="payments-stripe-status">{stripeCopy.title}</p>
+          <p className="publish-hint">{stripeCopy.body}</p>
+          <p className="publish-hint">Las donaciones se transfieren conforme llegan. No hay liberación manual al final.</p>
+          {stripeStatus !== "linked" ? (
+            <button
+              type="button"
+              className="purple-button"
+              onClick={() => {
+                completeStripeAndPublish(caseId);
+                setToast("Cuenta de Stripe vinculada.");
+              }}
+            >
+              {stripeCopy.cta}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setToast("Se abre Stripe para administrar tu cuenta (simulado).")}
+            >
+              {stripeCopy.cta}
+            </button>
+          )}
+        </section>
+
+        <section className="payments-movements">
+          <h2>Movimientos</h2>
+          {movements.length ? (
+            movements.map((item) => (
+              <article className="payments-movement-row" key={item.id}>
+                <strong>
+                  {item.caseName} — {item.needTitle}
+                </strong>
+                <b>+${item.amount.toLocaleString("es-MX")} MXN</b>
+                <div className="movement-meta">
+                  <span>{item.date}</span>
+                  <span>{item.status === "received" ? "Recibido" : "En proceso"}</span>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="payments-empty">
+              <span className="empty-chip">
+                <Icon name="icon-wallet.svg" size={22} />
+              </span>
+              <h3>Aún no tienes movimientos</h3>
+              <p>Cuando recibas donaciones, podrás consultar aquí el historial de los fondos recibidos.</p>
+            </div>
+          )}
+        </section>
+      </div>
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+    </div>
+  );
+}
+
+
+function RescuerSettings() {
+  return <Navigate to="/rescuer/profile" replace />;
+}
+
+
+function LegalHub() {
+  const navigate = useNavigate();
+  return (
+    <div className="plain-screen rescuer-theme">
+      <TopBar title="Legal" back="/rescuer/profile" />
+      <div className="content-pad list-stack">
+        <button type="button" className="nav-row" onClick={() => navigate("/terms")}>
           <span className="nav-row-main">
-            <Icon name="icon-logout.svg" size={20} />
-            <strong>Cerrar sesión</strong>
+            <Icon name="icon-doc.svg" size={20} />
+            <strong>Términos y condiciones</strong>
+          </span>
+          <Chevron />
+        </button>
+        <button type="button" className="nav-row" onClick={() => navigate("/privacy")}>
+          <span className="nav-row-main">
+            <Icon name="icon-shield.svg" size={20} />
+            <strong>Política de privacidad</strong>
           </span>
           <Chevron />
         </button>
       </div>
-      {editField && editMeta ? (
-        <div className="modal-backdrop center" onClick={() => setEditField(null)}>
-          <div className="dialog-card settings-edit-dialog" onClick={(event) => event.stopPropagation()}>
-            <button className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">×</button>
-            <h2>{editMeta.title}</h2>
-            <label className="dialog-field">
-              <span>{editMeta.label}</span>
-              <input
-                autoFocus
-                value={draft}
-                onChange={(event) => {
-                  const next = editField === "clabe" ? event.target.value.replace(/\D/g, "").slice(0, 18) : event.target.value;
-                  setDraft(next);
-                }}
-                placeholder={editMeta.placeholder}
-                inputMode={editMeta.inputMode}
-                maxLength={editMeta.maxLength}
-                autoComplete="off"
-              />
-            </label>
-            <p className="field-hint">{editMeta.hint}</p>
-            <button type="button" className="purple-button" disabled={!editMeta.canSave} onClick={saveEdit}>
-              Guardar
-            </button>
-            <button type="button" className="secondary-button" onClick={() => setEditField(null)}>
-              Cancelar
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-    </ScreenShell>
+    </div>
   );
 }
 
@@ -5042,7 +4017,7 @@ function HelpCenter() {
   const [open, setOpen] = useState<string | null>(null);
   return (
     <div className="plain-screen">
-      <TopBar title="Centro de ayuda" back="/settings" />
+      <TopBar title="Centro de ayuda" back={accountMode === "rescuer" ? "/rescuer/profile" : "/settings"} />
       <div className="content-pad list-stack">
         {faqs.map((item) => (
           <article className={`faq-row ${open === item.q ? "open" : ""}`} key={item.q}>
@@ -5071,10 +4046,10 @@ function SavedRescuers() {
           saved.map((item) => (
             <article className="card-row" key={item.name}>
               <button className="card-row-main" onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(item.name)}`)}>
-                <span className="avatar">{item.name.charAt(0)}</span>
+                <span className="avatar">{rescuerDisplayName(item).charAt(0)}</span>
                 <span className="nav-row-text">
                   <strong>
-                    {item.name}
+                    {rescuerDisplayName(item)}
                     {item.verified ? <AssetIcon name="icon-verified.svg" size={14} alt="Verificado" /> : null}
                   </strong>
                   <small>
@@ -5127,22 +4102,65 @@ function ReportDialog({ title, onClose }: { title: string; onClose: (sent: boole
 function PublicRescuerProfile() {
   const navigate = useNavigate();
   const { caseId = "" } = useParams();
-  const { cases, savedRescuerIds, toggleSavedRescuer, savedPetIds, toggleSavedPet } = usePrototypeStore();
+  const { cases, savedRescuerIds, toggleSavedRescuer, savedPetIds, toggleSavedPet, rescuerProfile } = usePrototypeStore();
   const fromCase = cases.find((item) => item.id === caseId);
   const name = fromCase?.rescuer ?? decodeURIComponent(caseId);
-  const rescuer = rescuers.find((item) => item.name === name) ?? rescuers[0];
+  const catalog = rescuers.find((item) => item.name === name) ?? rescuers.find((item) => item.name === "María R.") ?? rescuers[0];
+  const isLiveProfile =
+    name === rescuerProfile.name ||
+    catalog.name === rescuerProfile.name ||
+    Boolean(rescuerProfile.orgName?.trim() && name === rescuerProfile.orgName.trim()) ||
+    Boolean(catalog.orgName && catalog.orgName === rescuerProfile.orgName);
+  const rescuer = isLiveProfile
+    ? {
+        name: rescuerProfile.name,
+        city: rescuerProfile.address,
+        bio: rescuerProfile.description,
+        orgName: rescuerProfile.orgName,
+        phone: rescuerProfile.phone,
+        email: rescuerProfile.email,
+        verified: true,
+        publishedCases: catalog.publishedCases,
+        social: {
+          instagram: rescuerProfile.instagram || "",
+          facebook: rescuerProfile.facebook || "",
+        },
+        avatar: rescuerProfile.avatar,
+      }
+    : { ...catalog, avatar: undefined as string | undefined };
   const [tab, setTab] = useState<"adoption" | "cases" | "activity">("cases");
   const [report, setReport] = useState(false);
   const [toast, setToast] = useState("");
-  const saved = savedRescuerIds.includes(rescuer.name);
-  const ownCases = cases.filter((item) => item.rescuer === rescuer.name);
+  const saved = savedRescuerIds.includes(rescuer.name) || savedRescuerIds.includes(catalog.name);
+  const ownCases = cases.filter((item) => item.rescuer === rescuer.name || item.rescuer === catalog.name);
   const adoptionList = [
-    ...ownCases.filter((item) => item.adoption).map((item) => ({ id: item.id, name: item.name, age: item.age, image: item.image, distance: item.distance, link: `/case/${item.id}` })),
+    ...ownCases
+      .filter((item) => item.adoption)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        attrs: [item.ageBand || item.age, item.size, item.energy].filter(Boolean).join(" · "),
+        image: item.image,
+        distance: item.distance,
+        link: `/adoption/${item.id}`,
+      })),
     ...adoptionPets
-      .filter((item) => item.rescuer === rescuer.name)
-      .map((item) => ({ id: item.id, name: item.name, age: item.sex, image: item.image, distance: item.distance, link: `/adoption/${item.id}` })),
+      .filter((item) => (item.rescuer === rescuer.name || item.rescuer === catalog.name) && !ownCases.some((entry) => entry.id === item.id))
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        attrs: [item.ageBand, item.size, item.energy].filter(Boolean).join(" · "),
+        image: item.image,
+        distance: item.distance,
+        link: `/adoption/${item.id}`,
+      })),
   ];
   const donationCases = ownCases.filter((item) => item.needs.length);
+  const displayName = rescuerDisplayName(rescuer);
+  const phone = rescuer.phone?.trim();
+  const email = rescuer.email?.trim();
+  const instagram = rescuer.social.instagram?.trim();
+  const facebook = rescuer.social.facebook?.trim();
   return (
     <div className="plain-screen">
       <TopBar
@@ -5160,28 +4178,50 @@ function PublicRescuerProfile() {
       />
       <div className="content-pad rescuer-public">
         <div className="public-profile">
-          <span className="avatar xl">{rescuer.name.charAt(0)}</span>
+          <span className={`avatar xl ${rescuer.avatar ? "has-photo" : ""}`}>
+            {rescuer.avatar ? <img src={rescuer.avatar} alt="" /> : displayName.charAt(0)}
+          </span>
           <h1>
-            {rescuer.name}
+            {displayName}
             {rescuer.verified ? <AssetIcon name="icon-verified.svg" size={20} alt="Verificado" /> : null}
           </h1>
-          <p className="public-city">
-            <Icon name="location.svg" size={14} /> {rescuer.city}
-          </p>
-          <strong className="public-count">{rescuer.publishedCases} casos publicados</strong>
-          <p className="public-bio">{rescuer.bio}</p>
+          {rescuer.bio ? <p className="public-bio">{rescuer.bio}</p> : null}
+          {rescuer.city ? (
+            <p className="public-city">
+              <Icon name="location.svg" size={14} /> {rescuer.city}
+            </p>
+          ) : null}
+          {phone ? (
+            <p className="public-city">
+              <Icon name="icon-phone.svg" size={14} /> {phone}
+            </p>
+          ) : null}
+          {email ? (
+            <p className="public-city">
+              <Icon name="icon-mail.svg" size={14} /> {email}
+            </p>
+          ) : null}
+          <strong className="public-count">{Math.max(rescuer.publishedCases, ownCases.length)} casos publicados</strong>
         </div>
-        <h2 className="settings-heading first">Redes sociales</h2>
-        <div className="social-links">
-          <button onClick={() => setToast(`Instagram ${rescuer.social.instagram} (simulado)`)}>
-            <Icon name="icon-instagram.svg" size={18} />
-            Instagram
-          </button>
-          <button onClick={() => setToast(`Facebook ${rescuer.social.facebook} (simulado)`)}>
-            <Icon name="icon-facebook.svg" size={18} />
-            Facebook
-          </button>
-        </div>
+        {instagram || facebook ? (
+          <>
+            <h2 className="settings-heading first">Redes sociales</h2>
+            <div className="social-links">
+              {instagram ? (
+                <button type="button" onClick={() => setToast(`Instagram ${instagram} (simulado)`)}>
+                  <Icon name="icon-instagram.svg" size={18} />
+                  Instagram
+                </button>
+              ) : null}
+              {facebook ? (
+                <button type="button" onClick={() => setToast(`Facebook ${facebook} (simulado)`)}>
+                  <Icon name="icon-facebook.svg" size={18} />
+                  Facebook
+                </button>
+              ) : null}
+            </div>
+          </>
+        ) : null}
         <div className="profile-tabs">
           <button className={tab === "adoption" ? "active" : ""} onClick={() => setTab("adoption")}>En adopción</button>
           <button className={tab === "cases" ? "active" : ""} onClick={() => setTab("cases")}>Casos</button>
@@ -5196,7 +4236,7 @@ function PublicRescuerProfile() {
                 <article className="case-card" key={item.id}>
                   <div className="case-image">
                     <img src={item.image} alt={item.name} />
-                    <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
+                    <div className="case-title"><strong>{item.name}, {item.attrs || item.distance}</strong><span>{item.distance}</span></div>
                   </div>
                   <div className="need-summary public-adoption-actions">
                     <button
@@ -5224,7 +4264,7 @@ function PublicRescuerProfile() {
               <article className="case-card" key={item.id}>
                 <div className="case-image">
                   <img src={item.image} alt={item.name} />
-                  <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
+                  <div className="case-title"><strong>{item.name}, {item.attrs || item.distance}</strong><span>{item.distance}</span></div>
                 </div>
                 {item.needs.slice(0, 1).map((need) => (
                   <div className="need-summary" key={need.id}>
@@ -5285,7 +4325,7 @@ function PublicRescuerProfile() {
                 ];
               }),
               ...adoptionPets
-                .filter((item) => item.rescuer === rescuer.name)
+                .filter((item) => item.rescuer === rescuer.name || item.rescuer === catalog.name)
                 .flatMap((pet) =>
                   pet.journey.map((entry) => ({
                     id: `${pet.id}-${entry.id}`,
@@ -5369,7 +4409,8 @@ export default function App() {
           <Route path="/forgot-password/sent" element={<ForgotPasswordFlow />} />
           <Route path="/forgot-password/reset" element={<ForgotPasswordFlow />} />
           <Route path="/forgot-password/done" element={<ForgotPasswordFlow />} />
-          <Route path="/terms" element={<StaticSimulated title="Términos y Condiciones" back="/signup/donor"><div className="legal-copy"><h1>Términos de uso de DopMi</h1><p>Contenido provisional para validar la apertura, lectura y retorno al registro. El texto legal final requiere aprobación del equipo.</p><h2>Uso del prototipo</h2><p>No se procesan pagos, documentos ni verificaciones reales.</p></div></StaticSimulated>} />
+          <Route path="/terms" element={<LegalTermsPage />} />
+          <Route path="/privacy" element={<LegalPrivacyPage />} />
           <Route path="/adoption" element={<AdoptionHome />} />
           <Route path="/adoption/:petId" element={<AdoptionDetail />} />
           <Route path="/donate" element={<DonationHome />} />
@@ -5403,7 +4444,9 @@ export default function App() {
           <Route path="/rescuer/food/:caseId/:needId" element={<FoodCycle />} />
           <Route path="/rescuer/messages" element={<RescuerMessages />} />
           <Route path="/rescuer/profile" element={<RescuerProfile />} />
-          <Route path="/rescuer/profile/edit" element={<RescuerEditPublicProfile />} />
+          <Route path="/rescuer/profile/edit" element={<RescuerEditProfile />} />
+          <Route path="/rescuer/profile/payments" element={<RescuerPayments />} />
+          <Route path="/rescuer/profile/legal" element={<LegalHub />} />
           <Route path="/rescuer/settings" element={<RescuerSettings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

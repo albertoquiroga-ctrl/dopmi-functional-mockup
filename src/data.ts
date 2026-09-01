@@ -4,28 +4,56 @@ export type Need = {
   type: "Veterinario" | "Medicina" | "Comida" | "Otra";
   requested: number;
   funded: number;
-  urgent?: boolean;
   recurring?: boolean;
   status: "active" | "funded" | "evidence" | "completed";
+  brand?: string;
+  weightKg?: number;
+  units?: number;
+  ticketSpend?: number;
+  medicineName?: string;
+  treatment?: string;
+  clinicName?: string;
+  consultReason?: string;
+  clinicPhone?: string;
+  ticketPhoto?: string;
 };
+
+export type CaseStatus =
+  | "draft"
+  | "review"
+  | "needs_corrections"
+  | "approved_stripe_pending"
+  | "active"
+  | "funded"
+  | "rejected"
+  | "closed";
 
 export type PetCase = {
   id: string;
   name: string;
   breed?: string;
   age: string;
-  sex: "Macho" | "Hembra";
-  species: "Perro" | "Gato";
+  sex?: "Macho" | "Hembra";
+  species?: "Perro" | "Gato";
   image: string;
+  photos?: string[];
   story: string;
   location: string;
   rescuer: string;
   distance: string;
   adoption: boolean;
-  caseStatus: "draft" | "review" | "active" | "rejected" | "closed";
+  caseStatus: CaseStatus;
   health: { vaccinated: boolean; sterilized: boolean; specialCare: string };
   social: { dogs: boolean; cats: boolean; children: boolean };
   needs: Need[];
+  feeMxn?: number;
+  contextVideo?: string;
+  thankYouVideo?: string;
+  categoryEvidence?: Array<{ category: string; photo?: string; caption?: string }>;
+  size?: "Chico" | "Mediano" | "Grande";
+  ageBand?: "Cachorro" | "Adulto" | "Viejo";
+  energy?: "Poco activo" | "Activo" | "Muy activo";
+  personality?: string;
 };
 
 export const initialCases: PetCase[] = [
@@ -33,21 +61,25 @@ export const initialCases: PetCase[] = [
     id: "luna",
     name: "Luna",
     breed: "Mestiza",
-    age: "3 meses",
+    age: "Cachorro",
     sex: "Hembra",
     species: "Perro",
     image: "/assets/luna-card.png",
     story: "La encontraron abandonada en un parque. Es dulce, juguetona y busca una familia para siempre.",
-    location: "Monterrey, MX",
+    location: "San Pedro Garza García, NL",
     rescuer: "María R.",
     distance: "1.2 km",
     adoption: true,
     caseStatus: "active",
+    ageBand: "Cachorro",
+    size: "Chico",
+    energy: "Muy activo",
+    personality: "Alegre",
     health: { vaccinated: true, sterilized: false, specialCare: "Seguimiento de crecimiento" },
     social: { dogs: true, cats: true, children: true },
     needs: [
       { id: "luna-food", title: "Alimento cachorro 1.5 kg", type: "Comida", requested: 18, funded: 12, recurring: true, status: "active" },
-      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 15, funded: 15, urgent: true, status: "funded" },
+      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 15, funded: 15, status: "funded" },
       { id: "luna-vet", title: "Consulta inicial", type: "Veterinario", requested: 40, funded: 25, status: "active" },
     ],
   },
@@ -68,7 +100,7 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: true, sterilized: true, specialCare: "Curación diaria" },
     social: { dogs: false, cats: true, children: true },
     needs: [
-      { id: "milo-med", title: "Spray para heridas", type: "Medicina", requested: 12, funded: 8, urgent: true, status: "active" },
+      { id: "milo-med", title: "Spray para heridas", type: "Medicina", requested: 12, funded: 8, status: "active" },
       { id: "milo-food", title: "Pack comida húmeda x12", type: "Comida", requested: 22, funded: 22, recurring: true, status: "funded" },
       { id: "milo-vet", title: "Tratamiento de pata", type: "Veterinario", requested: 80, funded: 45, status: "active" },
     ],
@@ -90,14 +122,14 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: false, sterilized: true, specialCare: "Revisión de cadera" },
     social: { dogs: true, cats: false, children: true },
     needs: [
-      { id: "nina-vet", title: "Estudios de cadera", type: "Veterinario", requested: 95, funded: 45, urgent: true, status: "active" },
+      { id: "nina-vet", title: "Estudios de cadera", type: "Veterinario", requested: 95, funded: 45, status: "active" },
     ],
   },
   {
     id: "rocky",
     name: "Rocky",
     breed: "Pastor mestizo",
-    age: "4 años",
+    age: "Adulto",
     sex: "Macho",
     species: "Perro",
     image: "/assets/rocky.png",
@@ -107,10 +139,14 @@ export const initialCases: PetCase[] = [
     distance: "3.4 km",
     adoption: true,
     caseStatus: "active",
+    ageBand: "Adulto",
+    size: "Grande",
+    energy: "Activo",
+    personality: "Cariñoso",
     health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
     social: { dogs: true, cats: false, children: true },
     needs: [
-      { id: "rocky-vet", title: "Veterinario", type: "Veterinario", requested: 80, funded: 80, urgent: true, status: "funded" },
+      { id: "rocky-vet", title: "Veterinario", type: "Veterinario", requested: 80, funded: 80, status: "funded" },
     ],
   },
   {
@@ -148,7 +184,7 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: false, sterilized: false, specialCare: "En evaluación" },
     social: { dogs: true, cats: true, children: true },
     needs: [
-      { id: "nube-med", title: "Medicina", type: "Medicina", requested: 320, funded: 0, urgent: false, status: "active" },
+      { id: "nube-med", title: "Medicina", type: "Medicina", requested: 320, funded: 0, status: "active" },
     ],
   },
   {
@@ -168,7 +204,7 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: true, sterilized: false, specialCare: "Cirugía pendiente" },
     social: { dogs: true, cats: true, children: true },
     needs: [
-      { id: "toby-vet", title: "Cirugía de emergencia", type: "Veterinario", requested: 240, funded: 0, urgent: true, status: "active" },
+      { id: "toby-vet", title: "Cirugía de emergencia", type: "Veterinario", requested: 240, funded: 0, status: "active" },
     ],
   },
 ];
@@ -185,6 +221,10 @@ export const adoptionPets = [
     rescuer: "Patricia V.",
     location: "Monterrey, MX",
     verified: true,
+    ageBand: "Adulto" as const,
+    size: "Grande" as const,
+    energy: "Activo" as const,
+    personality: "Cariñoso",
     health: { vaccinated: true, sterilized: true, specialCare: false },
     social: { dogs: true, cats: false, children: true },
     journey: [
@@ -210,6 +250,10 @@ export const adoptionPets = [
     rescuer: "Diego F.",
     location: "Querétaro, MX",
     verified: true,
+    ageBand: "Adulto" as const,
+    size: "Mediano" as const,
+    energy: "Poco activo" as const,
+    personality: "Tranquilo",
     health: { vaccinated: true, sterilized: false, specialCare: false },
     social: { dogs: true, cats: true, children: true },
     journey: [
@@ -224,16 +268,91 @@ export const adoptionPets = [
       },
     ],
   },
+  {
+    id: "luna",
+    name: "Luna",
+    sex: "Hembra" as const,
+    type: "Perro" as const,
+    image: "/assets/luna-card.png",
+    story: "La encontraron abandonada en un parque. Es dulce, juguetona y busca una familia para siempre.",
+    distance: "1.2 km",
+    rescuer: "María R.",
+    location: "San Pedro Garza García, NL",
+    verified: true,
+    ageBand: "Cachorro" as const,
+    size: "Chico" as const,
+    energy: "Muy activo" as const,
+    personality: "Alegre",
+    health: { vaccinated: true, sterilized: false, specialCare: true },
+    social: { dogs: true, cats: true, children: true },
+    journey: [] as Array<{
+      id: string;
+      when: string;
+      tag: string;
+      text: string;
+      thanks: string;
+      thanksInitial: string;
+      need: string;
+    }>,
+  },
 ];
+
+export type AdoptionListing = (typeof adoptionPets)[number];
+
+export function petCaseToAdoptionListing(item: PetCase): AdoptionListing {
+  return {
+    id: item.id,
+    name: item.name,
+    sex: item.sex === "Hembra" ? "Hembra" : "Macho",
+    type: item.species === "Gato" ? "Gato" : "Perro",
+    image: item.image,
+    story: item.story,
+    distance: item.distance,
+    rescuer: item.rescuer,
+    location: item.location,
+    verified: false,
+    ageBand: item.ageBand || (["Cachorro", "Adulto", "Viejo"].includes(item.age) ? (item.age as AdoptionListing["ageBand"]) : undefined),
+    size: item.size,
+    energy: item.energy,
+    personality: item.personality || undefined,
+    health: {
+      vaccinated: item.health.vaccinated,
+      sterilized: item.health.sterilized,
+      specialCare: Boolean(item.health.specialCare && item.health.specialCare !== "Ninguno"),
+    },
+    social: item.social,
+    journey: [],
+  };
+}
+
+export function mergeAdoptionListings(staticPets: AdoptionListing[], cases: PetCase[]): AdoptionListing[] {
+  const fromCases = cases
+    .filter(
+      (item) =>
+        item.adoption &&
+        item.caseStatus !== "draft" &&
+        item.caseStatus !== "closed" &&
+        item.caseStatus !== "rejected",
+    )
+    .map(petCaseToAdoptionListing);
+  const byId = new Map<string, AdoptionListing>();
+  staticPets.forEach((pet) => byId.set(pet.id, pet));
+  fromCases.forEach((pet) => byId.set(pet.id, { ...byId.get(pet.id), ...pet, journey: byId.get(pet.id)?.journey || [] }));
+  return Array.from(byId.values());
+}
 
 export type Rescuer = {
   name: string;
   city: string;
   bio: string;
+  orgName?: string;
+  phone?: string;
+  email?: string;
   verified: boolean;
   publishedCases: number;
   social: { instagram: string; facebook: string };
 };
+
 
 export const rescuers: Rescuer[] = [
   {
@@ -246,11 +365,14 @@ export const rescuers: Rescuer[] = [
   },
   {
     name: "María R.",
-    city: "Monterrey, MX",
-    bio: "Rescata perritos de calle desde 2019. Trabaja con una clínica veterinaria aliada en Monterrey.",
+    city: "Ciudad de México, CDMX",
+    bio: "Refugio dedicado al rescate y rehabilitación de animales en situación de calle. Trabajamos con amor y compromiso para darles una segunda oportunidad.",
+    orgName: "Patitas del Centro",
+    phone: "+52 55 1234 5678",
+    email: "maria@rescatista.com",
     verified: true,
     publishedCases: 1,
-    social: { instagram: "@maria.rescata", facebook: "Maria Rescata" },
+    social: { instagram: "@maria.rescata", facebook: "Maria Rescatista" },
   },
   {
     name: "Carlos Ruiz",
@@ -272,6 +394,7 @@ export const rescuers: Rescuer[] = [
     name: "Refugio Patitas",
     city: "Guadalupe, MX",
     bio: "Refugio comunitario con 12 años apoyando animales en situación de calle.",
+    orgName: "Refugio Patitas",
     verified: false,
     publishedCases: 1,
     social: { instagram: "@refugiopatitas", facebook: "Refugio Patitas" },
@@ -286,17 +409,75 @@ export const rescuers: Rescuer[] = [
   },
 ];
 
+/** Identidad pública: el refugio reemplaza al nombre personal cuando existe. */
+export function rescuerDisplayName(person: { name: string; orgName?: string | null }) {
+  return person.orgName?.trim() || person.name;
+}
+
+export function resolveRescuerDisplayName(
+  key: string,
+  live?: { name: string; orgName?: string | null } | null,
+) {
+  if (live) {
+    const liveOrg = live.orgName?.trim();
+    if (key === live.name || (liveOrg && key === liveOrg)) {
+      return rescuerDisplayName(live);
+    }
+  }
+  const found = rescuers.find((item) => item.name === key || item.orgName === key);
+  return found ? rescuerDisplayName(found) : key;
+}
+
+
 export const rescuerAccount = {
-  name: "María Rescatista",
+  name: "María R.",
   email: "maria@rescatista.com",
   phone: "+52 55 1234 5678",
-  address: "Calle Reforma 123, Col. Centro, Ciudad de México, CDMX",
+  address: "Ciudad de México, CDMX",
   description:
     "Refugio dedicado al rescate y rehabilitación de animales en situación de calle. Trabajamos con amor y compromiso para darles una segunda oportunidad.",
+  orgName: "Patitas del Centro",
   instagram: "@maria.rescata",
   facebook: "Maria Rescatista",
   clabe: "012345678901234567",
 };
+
+
+export type PaymentMovement = {
+  id: string;
+  caseName: string;
+  needTitle: string;
+  amount: number;
+  date: string;
+  status: "received" | "processing";
+};
+
+export const rescuerPaymentMovements: PaymentMovement[] = [
+  {
+    id: "mov-1",
+    caseName: "Luna",
+    needTitle: "Cirugía veterinaria",
+    amount: 250,
+    date: "28 ago 2026",
+    status: "received",
+  },
+  {
+    id: "mov-2",
+    caseName: "Rocky",
+    needTitle: "Medicamentos",
+    amount: 500,
+    date: "27 ago 2026",
+    status: "received",
+  },
+  {
+    id: "mov-3",
+    caseName: "Mila",
+    needTitle: "Alimento especial",
+    amount: 180,
+    date: "25 ago 2026",
+    status: "processing",
+  },
+];
 
 export type NotificationKind = "message" | "donation" | "case" | "pet";
 

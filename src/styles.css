@@ -894,6 +894,170 @@ textarea { min-height: 112px; resize: vertical; }
 .history-row b { color: var(--amount); font-size: 12px; }
 
 .profile-page { display: grid; gap: 14px; }
+.profile-peek {
+  display: grid;
+  gap: 18px;
+  justify-items: stretch;
+}
+.profile-peek-identity {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 8px;
+}
+.profile-peek-identity .avatar.large {
+  width: 88px;
+  height: 88px;
+  font-size: 30px;
+}
+.profile-peek-name {
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+}
+.profile-peek-org,
+.public-org {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.profile-peek-description,
+.public-bio {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: left;
+  width: 100%;
+}
+.profile-peek-contact {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  text-align: left;
+}
+.profile-contact-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.profile-contact-item .icon-mask {
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+.profile-contact-item > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.profile-contact-item small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.profile-contact-item strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+}
+@media (max-width: 340px) {
+  .profile-peek-contact {
+    grid-template-columns: 1fr;
+  }
+}
+.profile-peek .secondary-button {
+  width: 100%;
+  margin-top: 2px;
+}
+.profile-menu,
+.profile-session {
+  margin-top: 4px;
+}
+.profile-session {
+  margin-top: 8px;
+}
+.payments-stripe-card,
+.payments-movements {
+  display: grid;
+  gap: 12px;
+}
+.payments-stripe-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: white;
+}
+.payments-stripe-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.payments-movement-row {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: white;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  text-align: left;
+}
+.payments-movement-row strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.payments-movement-row small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.payments-movement-row b {
+  color: var(--amount);
+  font-size: 14px;
+  justify-self: end;
+}
+.payments-movement-row .movement-meta {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.payments-empty {
+  padding: 28px 20px;
+  border: 1px dashed var(--line);
+  border-radius: 20px;
+  background: #faf9f7;
+  text-align: center;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.payments-empty h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.payments-empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  max-width: 280px;
+}
 .profile-header { display: flex; align-items: center; gap: 14px; padding: 12px 4px 20px; }
 .profile-header > div { flex: 1; }
 .profile-header h1, .profile-header p { margin: 0; }
@@ -2537,3 +2701,89 @@ textarea { min-height: 112px; resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* --- Sync 29 ago: location map + publish shell bridge + filters --- */
+.location-map { display: grid; gap: 8px; margin: 4px 0 8px; }
+.location-map-head { display: grid; gap: 2px; }
+.location-map-head strong { color: #151423; font-size: 14px; font-weight: 500; }
+.location-map-head span { color: #616174; font-size: 13px; }
+.location-map-frame {
+  border: 1px solid #e3e4ed;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #f0eff8;
+  min-height: 160px;
+}
+.location-map.compact .location-map-frame { min-height: 120px; }
+.location-map-frame iframe { width: 100%; height: 160px; border: 0; display: block; }
+.location-map.compact .location-map-frame iframe { height: 120px; }
+
+/* Publish flow uses plain-screen; bridge to existing publish-case styles */
+.plain-screen.publish-case-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  background: #fafafd;
+}
+.plain-screen.publish-case-shell .publish-case-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.plain-screen.publish-type-shell {
+  overflow-y: auto;
+  padding: 0;
+  background: linear-gradient(#faf5ff 0%, #fff 100%);
+}
+.plain-screen.publish-type-shell .publish-type-screen {
+  min-height: 100%;
+}
+
+.publish-choice-row.three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.publish-choice-row.wrap {
+  grid-template-columns: 1fr 1fr;
+}
+
+.filter-chip-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 16px 0; }
+.filter-chip {
+  border: 0;
+  border-radius: 999px;
+  background: #fff5cf;
+  color: var(--yellow-ink);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.filter-search {
+  display: grid;
+  gap: 8px;
+}
+.filter-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid #eaeaf3;
+  border-radius: 14px;
+  background: white;
+  color: #151423;
+  font-size: 16px;
+}
+
+.pending-actions, .pending-card { display: grid; gap: 8px; }
+.pending-card {
+  border: 1px solid #f3d45d;
+  background: #fffbed;
+  border-radius: 16px;
+  padding: 14px;
+}
+.pending-card p { margin: 0; color: var(--muted); font-size: 14px; }
+.form-stack.nested { padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+
+.preview-banner { margin: 0 16px 8px; }
+.adoption-attr-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.publish-evidence-thumb { width: 52px; height: 52px; border-radius: 14px; object-fit: cover; flex: 0 0 auto; }
+.detail-screen.is-preview, .adoption-detail.is-preview { background: #fafafd; }

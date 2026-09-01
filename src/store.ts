@@ -7,6 +7,8 @@ export type DonorIntent = "adopt" | "donate";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
 export type PaymentOutcome = "success" | "error";
 
+export type StripeStatus = "unlinked" | "pending" | "linked" | "error";
+
 export type RescuerProfile = {
   name: string;
   email: string;
@@ -17,6 +19,16 @@ export type RescuerProfile = {
   facebook: string;
   clabe: string;
   avatar?: string;
+  orgName?: string;
+  wantsVerification?: boolean;
+  verificationPhoto?: string;
+  verificationVideo?: string;
+  profileComplete?: boolean;
+};
+
+export type PhoneVerification = {
+  status: "idle" | "code_sent" | "verified" | "wrong_code" | "expired";
+  phone: string;
 };
 
 export type DonorProfile = {
@@ -61,6 +73,9 @@ type PrototypeState = {
   emptyStates: boolean;
   rescuerProfile: RescuerProfile;
   donorProfile: DonorProfile;
+  stripeStatus: StripeStatus;
+  phoneVerification: PhoneVerification;
+  pendingActions: Array<{ id: string; caseId?: string; kind: "stripe" | "corrections"; title: string; body: string }>;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
@@ -68,6 +83,10 @@ type PrototypeState = {
   setEmptyStates: (value: boolean) => void;
   updateRescuerProfile: (values: Partial<RescuerProfile>) => void;
   updateDonorProfile: (values: Partial<DonorProfile>) => void;
+  setStripeStatus: (status: StripeStatus) => void;
+  setPhoneVerification: (values: Partial<PhoneVerification>) => void;
+  completeStripeAndPublish: (caseId?: string) => void;
+  dismissPendingAction: (id: string) => void;
   toggleSavedPet: (id: string) => void;
   toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
@@ -75,8 +94,9 @@ type PrototypeState = {
   sendMessage: (author: "donor" | "rescuer", text: string) => void;
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
-  publishDraft: (status?: PetCase["caseStatus"]) => void;
+  publishDraft: (status?: PetCase["caseStatus"]) => string;
   updateCaseStatus: (id: string, status: PetCase["caseStatus"]) => void;
+  approveCaseForPublish: (id: string) => void;
   toggleCaseAdoption: (id: string) => void;
   updateCase: (id: string, values: Partial<Pick<PetCase, "name" | "age" | "story" | "adoption">> & { needs?: PetCase["needs"] }) => void;
   submitNeedEvidence: (caseId: string, needId: string) => void;
@@ -100,13 +120,37 @@ const initialState = {
   guardianImpactReady: false,
   savedPetIds: [] as string[],
   savedRescuerIds: [] as string[],
-  cases: initialCases,
+  cases: [
+    ...initialCases,
+    {
+      ...initialCases[0],
+      id: "approved-stripe-demo",
+      name: "Coco",
+      adoption: false,
+      caseStatus: "approved_stripe_pending",
+      needs: [
+        { id: "coco-food", title: "Croquetas 5 kg", type: "Comida", requested: 450, funded: 0, status: "active" },
+      ],
+      feeMxn: 50,
+    },
+  ],
   donations: [] as Donation[],
   notifications: initialNotifications,
   messages: baseMessages,
   draft: {} as Record<string, string | boolean | string[]>,
   emptyStates: false,
-  rescuerProfile: { ...rescuerAccount },
+  rescuerProfile: { ...rescuerAccount, profileComplete: false, wantsVerification: false },
+  stripeStatus: "unlinked" as StripeStatus,
+  phoneVerification: { status: "idle" as const, phone: "" },
+  pendingActions: [
+    {
+      id: "pending-stripe-demo",
+      caseId: "approved-stripe-demo",
+      kind: "stripe",
+      title: "Vincula tu cuenta de Stripe",
+      body: "Tu caso fue aprobado. Vincula tu cuenta de Stripe para publicarlo y comenzar a recibir donaciones.",
+    },
+  ] as Array<{ id: string; caseId?: string; kind: "stripe" | "corrections"; title: string; body: string }>,
   donorProfile: {
     name: "Alberto Quiroga",
     email: "alberto@email.com",
@@ -137,6 +181,41 @@ export const usePrototypeStore = create<PrototypeState>()(
         set((state) => ({
           donorProfile: { ...state.donorProfile, ...values },
         })),
+      setStripeStatus: (stripeStatus) => set({ stripeStatus }),
+      setPhoneVerification: (values) =>
+        set((state) => ({
+          phoneVerification: { ...state.phoneVerification, ...values },
+        })),
+      dismissPendingAction: (id) =>
+        set((state) => ({
+          pendingActions: state.pendingActions.filter((item) => item.id !== id),
+        })),
+      completeStripeAndPublish: (caseId) =>
+        set((state) => {
+          const targetId =
+            caseId || state.pendingActions.find((item) => item.kind === "stripe")?.caseId;
+          return {
+            stripeStatus: "linked" as const,
+            cases: state.cases.map((item) =>
+              item.caseStatus === "approved_stripe_pending"
+                ? { ...item, caseStatus: "active" as const }
+                : item,
+            ),
+            pendingActions: state.pendingActions.filter((item) => item.kind !== "stripe"),
+            notifications: [
+              {
+                id: `stripe-${Date.now()}`,
+                kind: "case" as const,
+                title: "Stripe vinculado",
+                body: "Los casos aprobados ya pueden publicarse y recibir donaciones.",
+                time: "Ahora",
+                target: targetId ? `/rescuer/cases/${targetId}` : "/rescuer/cases",
+                read: false,
+              },
+              ...state.notifications,
+            ],
+          };
+        }),
       toggleSavedPet: (id) =>
         set((state) => ({
           savedPetIds: state.savedPetIds.includes(id)
@@ -151,22 +230,27 @@ export const usePrototypeStore = create<PrototypeState>()(
         })),
       donate: (caseId, needId, amount) =>
         set((state) => ({
-          cases: state.cases.map((item) =>
-            item.id === caseId
-              ? {
-                  ...item,
-                  needs: item.needs.map((need) =>
-                    need.id === needId
-                      ? {
-                          ...need,
-                          funded: Math.min(need.requested, need.funded + amount),
-                          status: need.funded + amount >= need.requested ? "funded" : need.status,
-                        }
-                      : need,
-                  ),
-                }
-              : item,
-          ),
+          cases: state.cases.map((item) => {
+            if (item.id !== caseId) return item;
+            const needs = item.needs.map((need) =>
+              need.id === needId
+                ? {
+                    ...need,
+                    funded: Math.min(need.requested, need.funded + amount),
+                    status: need.funded + amount >= need.requested ? ("funded" as const) : need.status,
+                  }
+                : need,
+            );
+            const allCovered = needs.length > 0 && needs.every((need) => need.funded >= need.requested);
+            return {
+              ...item,
+              needs,
+              caseStatus:
+                allCovered && (item.caseStatus === "active" || item.caseStatus === "funded")
+                  ? ("funded" as const)
+                  : item.caseStatus,
+            };
+          }),
           donations: [
             {
               id: `donation-${Date.now()}`,
@@ -244,72 +328,152 @@ export const usePrototypeStore = create<PrototypeState>()(
           notifications: state.notifications.map((item) => (item.id === id ? { ...item, read: true } : item)),
         })),
       updateDraft: (values) => set((state) => ({ draft: { ...state.draft, ...values } })),
-      publishDraft: (status = "review") =>
+      publishDraft: (status = "review") => {
+        let createdId = "";
         set((state) => {
-          const name = String(state.draft.petName || "Nuevo caso");
-          const mode = state.draft.publishMode === "donation" ? "donation" : "adoption";
-          const photos = Array.isArray(state.draft.photos) ? state.draft.photos : [];
+          let parsed: Record<string, any> = {};
+          try {
+            parsed = JSON.parse(String(state.draft.publishDraftJson || "{}"));
+          } catch {
+            parsed = {};
+          }
+          const mode = parsed.publishMode === "adoption" || state.draft.publishMode === "adoption" ? "adoption" : "donation";
+          const name = String(parsed.petName || state.draft.petName || "Nuevo caso");
+          const photos = parsed.mainPhoto
+            ? [parsed.mainPhoto, ...(parsed.extraPhotos || [])]
+            : Array.isArray(state.draft.photos)
+              ? (state.draft.photos as string[])
+              : [];
           let donationNeeds: Need[] = [];
           if (mode === "donation") {
-            try {
-              const parsed = JSON.parse(String(state.draft.needItemsJson || "[]")) as Array<{
-                id: string; title: string; type: Need["type"]; amount: number; urgent?: boolean;
-              }>;
-              donationNeeds = parsed.map((item) => ({
-                id: item.id,
-                title: item.title,
-                type: item.type,
-                requested: Number(item.amount || 0),
-                funded: 0,
-                urgent: Boolean(item.urgent),
-                recurring: item.type === "Comida",
-                status: "active" as const,
-              }));
-            } catch {
-              donationNeeds = [];
-            }
-            if (!donationNeeds.length && state.draft.needTitle) {
-              donationNeeds = [{
-                id: `need-${Date.now()}`,
-                title: String(state.draft.needTitle),
-                type: "Otra",
-                requested: Number(state.draft.amount || 500),
-                funded: 0,
-                status: "active",
-              }];
-            }
+            const items = Array.isArray(parsed.needItems) ? parsed.needItems : [];
+            donationNeeds = items.map((item: any) => ({
+              id: String(item.id),
+              title: String(item.title || "Necesidad"),
+              type:
+                item.type === "Veterinario"
+                  ? ("Veterinario" as const)
+                  : item.type === "Medicina"
+                    ? ("Medicina" as const)
+                    : ("Comida" as const),
+              requested: Number(item.amount || 0),
+              funded: 0,
+              recurring: item.type === "Comida",
+              status: "active" as const,
+              brand: item.brand,
+              weightKg: item.weightKg,
+              units: item.units,
+              ticketSpend: item.ticketSpend,
+              medicineName: item.medicineName,
+              treatment: item.treatment,
+              clinicName: item.clinicName,
+              consultReason: item.consultReason,
+              clinicPhone: item.clinicPhone,
+              ticketPhoto: parsed.needTicketById?.[item.id],
+            }));
           }
+          createdId = `case-${Date.now()}`;
+          const rawPersonality = parsed.personality;
+          const personality =
+            typeof rawPersonality === "string"
+              ? rawPersonality
+              : Array.isArray(rawPersonality)
+                ? String(rawPersonality[0] || "")
+                : undefined;
           const created: PetCase = {
-            id: `case-${Date.now()}`,
+            id: createdId,
             name,
-            age: String(state.draft.age || "Edad pendiente"),
-            sex: state.draft.sex === "Hembra" ? "Hembra" : "Macho",
-            species: state.draft.species === "Gato" ? "Gato" : "Perro",
+            age:
+              mode === "adoption"
+                ? String(parsed.ageBand || parsed.age || "Edad pendiente")
+                : String(parsed.ageBand || parsed.age || ""),
+            sex:
+              parsed.sex === "Hembra" || parsed.sex === "Macho"
+                ? parsed.sex
+                : mode === "adoption"
+                  ? "Macho"
+                  : undefined,
+            species:
+              parsed.species === "Gato" || parsed.species === "Perro"
+                ? parsed.species
+                : mode === "adoption"
+                  ? "Perro"
+                  : undefined,
             image: String(photos[0] || "/assets/luna-card.png"),
-            story: String(state.draft.story || "Historia por completar."),
-            location: String(state.draft.location || "Monterrey, MX"),
-            rescuer: "María R.",
+            photos: photos.length ? photos : undefined,
+            story: String(parsed.story || state.draft.story || "Historia por completar."),
+            location: String(parsed.location || state.draft.location || ""),
+            rescuer: state.rescuerProfile.name || "Rescatista",
             distance: "0 km",
             adoption: mode === "adoption",
             caseStatus: status,
             health: {
-              vaccinated: Boolean(state.draft.vaccinated),
-              sterilized: Boolean(state.draft.sterilized),
-              specialCare: state.draft.specialCare ? "Requiere cuidados especiales" : "Ninguno",
+              vaccinated: Boolean(parsed.vaccinated ?? state.draft.vaccinated),
+              sterilized: Boolean(parsed.sterilized ?? state.draft.sterilized),
+              specialCare: parsed.specialCare || state.draft.specialCare ? "Requiere cuidados especiales" : "Ninguno",
             },
             social: {
-              dogs: Boolean(state.draft.socialDogs),
-              cats: Boolean(state.draft.socialCats),
-              children: Boolean(state.draft.socialChildren),
+              dogs: Boolean(parsed.socialDogs ?? state.draft.socialDogs),
+              cats: Boolean(parsed.socialCats ?? state.draft.socialCats),
+              children: Boolean(parsed.socialChildren ?? state.draft.socialChildren),
             },
             needs: donationNeeds,
+            feeMxn: mode === "donation" ? 50 : undefined,
+            contextVideo: parsed.contextVideo || undefined,
+            thankYouVideo: parsed.thankYouVideo || undefined,
+            categoryEvidence: Array.isArray(parsed.categoryEvidence)
+              ? parsed.categoryEvidence.filter((entry: { photo?: string }) => Boolean(entry?.photo))
+              : undefined,
+            size: parsed.size || undefined,
+            ageBand: parsed.ageBand || undefined,
+            energy: parsed.energy || undefined,
+            personality: personality || undefined,
           };
-          return { cases: [created, ...state.cases], draft: {} };
-        }),
+          const pendingActions =
+            mode === "donation" && state.stripeStatus !== "linked"
+              ? [
+                  {
+                    id: `pending-stripe-${createdId}`,
+                    caseId: createdId,
+                    kind: "stripe" as const,
+                    title: "Vincula tu cuenta de Stripe",
+                    body: "Tu caso fue aprobado. Vincula tu cuenta de Stripe para publicarlo y comenzar a recibir donaciones.",
+                  },
+                  ...state.pendingActions,
+                ]
+              : state.pendingActions;
+          return { cases: [created, ...state.cases], draft: {}, pendingActions };
+        });
+        return createdId;
+      },
       updateCaseStatus: (id, status) =>
         set((state) => ({
           cases: state.cases.map((item) => (item.id === id ? { ...item, caseStatus: status } : item)),
         })),
+      approveCaseForPublish: (id) =>
+        set((state) => {
+          const target = state.cases.find((item) => item.id === id);
+          if (!target) return {};
+          const needsStripe = target.needs.length > 0 && state.stripeStatus !== "linked";
+          const nextStatus = needsStripe ? ("approved_stripe_pending" as const) : ("active" as const);
+          const alreadyPending = state.pendingActions.some((item) => item.kind === "stripe" && item.caseId === id);
+          return {
+            cases: state.cases.map((item) => (item.id === id ? { ...item, caseStatus: nextStatus } : item)),
+            pendingActions:
+              needsStripe && !alreadyPending
+                ? [
+                    {
+                      id: `pending-stripe-${id}`,
+                      caseId: id,
+                      kind: "stripe" as const,
+                      title: "Vincula tu cuenta de Stripe",
+                      body: "Tu caso fue aprobado. Vincula tu cuenta de Stripe para publicarlo y comenzar a recibir donaciones.",
+                    },
+                    ...state.pendingActions,
+                  ]
+                : state.pendingActions,
+          };
+        }),
       toggleCaseAdoption: (id) =>
         set((state) => ({
           cases: state.cases.map((item) => (item.id === id ? { ...item, adoption: !item.adoption } : item)),
@@ -353,23 +517,50 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 13,
+      version: 20,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
-      migrate: (persisted) => ({
-        ...(persisted as PrototypeState),
-        cases: initialCases,
-        notifications: initialNotifications,
-        emptyStates: false,
-        guardianImpactReady: false,
-        rescuerProfile: { ...rescuerAccount },
-        donorProfile: {
-          name: "Alberto Quiroga",
-          email: "alberto@email.com",
-          phone: "+52 55 1234 5678",
-          city: "Ciudad de México",
-          ...(persisted as { donorProfile?: Partial<DonorProfile> }).donorProfile,
-        },
-      }),
+      migrate: (persisted) => {
+        const prev = persisted as PrototypeState & { rescuerProfile?: Partial<RescuerProfile> };
+        const priorProfile = prev.rescuerProfile || {};
+        return {
+          ...prev,
+          cases: [
+            ...initialCases,
+            {
+              ...initialCases[0],
+              id: "approved-stripe-demo",
+              name: "Coco",
+              adoption: false,
+              caseStatus: "approved_stripe_pending",
+              needs: [
+                { id: "coco-food", title: "Croquetas 5 kg", type: "Comida", requested: 450, funded: 0, status: "active" },
+              ],
+              feeMxn: 50,
+            },
+          ],
+          notifications: initialNotifications,
+          emptyStates: false,
+          guardianImpactReady: false,
+          rescuerProfile: {
+            ...rescuerAccount,
+            profileComplete: false,
+                        wantsVerification: false,
+            ...priorProfile,
+            name: priorProfile.name === "María Rescatista" ? "María R." : priorProfile.name || rescuerAccount.name,
+            orgName: priorProfile.orgName ?? rescuerAccount.orgName,
+          },
+          stripeStatus: prev.stripeStatus || "unlinked",
+          phoneVerification: prev.phoneVerification || { status: "idle", phone: "" },
+          pendingActions: prev.pendingActions || [],
+          donorProfile: {
+            name: "Alberto Quiroga",
+            email: "alberto@email.com",
+            phone: "+52 55 1234 5678",
+            city: "Ciudad de México",
+            ...prev.donorProfile,
+          },
+        };
+      },
     },
   ),
 );
