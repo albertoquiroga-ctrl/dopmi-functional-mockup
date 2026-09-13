@@ -1,4 +1,6 @@
 export const TRANSACTION_FEE_MXN = 50;
+/** Meta mínima del caso (suma de necesidades), independiente del mínimo por donación puntual. */
+export const MIN_CASE_NEED_MXN = 100;
 
 export type NeedCategory = "Comida" | "Medicina" | "Veterinario";
 

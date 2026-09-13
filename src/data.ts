@@ -78,9 +78,9 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: true, sterilized: false, specialCare: "Seguimiento de crecimiento" },
     social: { dogs: true, cats: true, children: true },
     needs: [
-      { id: "luna-food", title: "Alimento cachorro 1.5 kg", type: "Comida", requested: 18, funded: 12, recurring: true, status: "active" },
-      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 15, funded: 15, status: "funded" },
-      { id: "luna-vet", title: "Consulta inicial", type: "Veterinario", requested: 40, funded: 25, status: "active" },
+      { id: "luna-food", title: "Alimento cachorro 1.5 kg", type: "Comida", requested: 40, funded: 12, recurring: true, status: "active" },
+      { id: "luna-meds", title: "Tabletas antiparasitarias", type: "Medicina", requested: 30, funded: 15, status: "funded" },
+      { id: "luna-vet", title: "Consulta inicial", type: "Veterinario", requested: 50, funded: 25, status: "active" },
     ],
   },
   {
@@ -99,10 +99,58 @@ export const initialCases: PetCase[] = [
     caseStatus: "active",
     health: { vaccinated: true, sterilized: true, specialCare: "Curación diaria" },
     social: { dogs: false, cats: true, children: true },
+    photos: ["/assets/milo-card.png", "/assets/guardian-milo.jpg"],
+    feeMxn: 50,
+    contextVideo: "context-milo.mp4",
+    categoryEvidence: [
+      {
+        category: "Comida",
+        photo: "/assets/milo-card.png",
+        caption: "Alimento comprado para cubrir las próximas semanas.",
+      },
+      {
+        category: "Medicina",
+        photo: "/assets/guardian-milo.jpg",
+        caption: "Medicamento aplicado durante la recuperación.",
+      },
+    ],
     needs: [
-      { id: "milo-med", title: "Spray para heridas", type: "Medicina", requested: 12, funded: 8, status: "active" },
-      { id: "milo-food", title: "Pack comida húmeda x12", type: "Comida", requested: 22, funded: 22, recurring: true, status: "funded" },
-      { id: "milo-vet", title: "Tratamiento de pata", type: "Veterinario", requested: 80, funded: 45, status: "active" },
+      {
+        id: "milo-med",
+        title: "Spray para heridas",
+        type: "Medicina",
+        requested: 450,
+        funded: 180,
+        status: "active",
+        medicineName: "Spray antiséptico",
+        treatment: "Limpieza y cicatrización de herida",
+        ticketSpend: 450,
+      },
+      {
+        id: "milo-food",
+        title: "Pack comida húmeda x12",
+        type: "Comida",
+        requested: 520,
+        funded: 520,
+        recurring: true,
+        status: "funded",
+        brand: "Fancy Feast",
+        weightKg: 1.2,
+        units: 12,
+        ticketSpend: 520,
+      },
+      {
+        id: "milo-vet",
+        title: "Tratamiento de pata",
+        type: "Veterinario",
+        requested: 1800,
+        funded: 900,
+        status: "active",
+        clinicName: "VetCare San Pedro",
+        consultReason: "Curación y seguimiento de fractura",
+        clinicPhone: "81 1234 5678",
+        ticketSpend: 1800,
+      },
     ],
   },
   {
@@ -121,8 +169,27 @@ export const initialCases: PetCase[] = [
     caseStatus: "active",
     health: { vaccinated: false, sterilized: true, specialCare: "Revisión de cadera" },
     social: { dogs: true, cats: false, children: true },
+    feeMxn: 50,
+    categoryEvidence: [
+      {
+        category: "Veterinario",
+        photo: "/assets/nina-card.png",
+        caption: "Estudios de cadera para planear su rehabilitación.",
+      },
+    ],
     needs: [
-      { id: "nina-vet", title: "Estudios de cadera", type: "Veterinario", requested: 95, funded: 45, status: "active" },
+      {
+        id: "nina-vet",
+        title: "Estudios de cadera",
+        type: "Veterinario",
+        requested: 1900,
+        funded: 450,
+        status: "active",
+        clinicName: "Hospital Veterinario Guadalupe",
+        consultReason: "Radiografías y evaluación de cadera",
+        clinicPhone: "81 9876 5432",
+        ticketSpend: 1900,
+      },
     ],
   },
   {
@@ -146,7 +213,7 @@ export const initialCases: PetCase[] = [
     health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
     social: { dogs: true, cats: false, children: true },
     needs: [
-      { id: "rocky-vet", title: "Veterinario", type: "Veterinario", requested: 80, funded: 80, status: "funded" },
+      { id: "rocky-vet", title: "Veterinario", type: "Veterinario", requested: 120, funded: 80, status: "funded" },
     ],
   },
   {
@@ -552,7 +619,7 @@ export type LogEntry = {
 export const donationLog: LogEntry[] = [
   { id: "l1", date: "29 abr", caseId: "milo", caseName: "Max", concept: "Comida", amount: "$100", status: "completada" },
   { id: "l2", date: "25 abr", caseId: "luna", caseName: "Luna", concept: "Medicina", amount: "$120", status: "completada" },
-  { id: "l3", date: "20 abr", caseId: "nina", caseName: "Rocky", concept: "Apadrinamiento mensual", amount: "$10/mes", status: "activa" },
+  { id: "l3", date: "20 abr", caseId: "nina", caseName: "Rocky", concept: "Suscripción Guardián", amount: "$50/mes", status: "activa" },
   { id: "l4", date: "15 abr", caseId: "milo", caseName: "Milo", concept: "Tratamiento veterinario", amount: "$25", status: "completada" },
   { id: "l5", date: "10 abr", caseId: "nina", caseName: "Nina", concept: "Comida", amount: "$15", status: "completada" },
 ];
@@ -585,11 +652,11 @@ export const donorFaqs: FaqItem[] = [
   },
   {
     q: "¿Cómo sé que mi donación se usó correctamente?",
-    a: "El rescatista sube evidencia (fotos y comprobantes) por cada necesidad cubierta. Te avisamos con una notificación cuando hay una nueva.",
+    a: "Cada caso publica evidencias (tickets y fotos) antes de salir a recaudación. Puedes ver el progreso y el detalle de cada necesidad en el caso.",
   },
   {
     q: "¿Dónde veo las evidencias de los casos que apoyé?",
-    a: "En Tu Impacto y en el detalle de cada caso encontrarás la evidencia publicada por el rescatista.",
+    a: "En Tu Impacto y en el detalle de cada caso verás el avance de la recaudación y las evidencias visuales del caso.",
   },
   {
     q: "¿Cómo puedo cancelar mi suscripción?",
@@ -619,7 +686,7 @@ export const rescuerFaqs: FaqItem[] = [
     a: "Desde Publicar elige Recibir donaciones y define cada necesidad con su monto objetivo.",
   },
   {
-    q: "¿Cómo subo evidencia de gastos?",
-    a: "En el detalle del caso, toca la necesidad cubierta y sube la foto del comprobante. Los donantes reciben una notificación.",
+    q: "¿Cuándo recibo el dinero de las donaciones?",
+    a: "Las donaciones se transfieren a tu cuenta de Stripe conforme llegan. No necesitas esperar a completar la meta ni subir evidencias después de publicar.",
   },
 ];

@@ -429,20 +429,7 @@ export const usePrototypeStore = create<PrototypeState>()(
             energy: parsed.energy || undefined,
             personality: personality || undefined,
           };
-          const pendingActions =
-            mode === "donation" && state.stripeStatus !== "linked"
-              ? [
-                  {
-                    id: `pending-stripe-${createdId}`,
-                    caseId: createdId,
-                    kind: "stripe" as const,
-                    title: "Vincula tu cuenta de Stripe",
-                    body: "Tu caso fue aprobado. Vincula tu cuenta de Stripe para publicarlo y comenzar a recibir donaciones.",
-                  },
-                  ...state.pendingActions,
-                ]
-              : state.pendingActions;
-          return { cases: [created, ...state.cases], draft: {}, pendingActions };
+          return { cases: [created, ...state.cases], draft: {} };
         });
         return createdId;
       },
@@ -517,7 +504,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 20,
+      version: 22,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
       migrate: (persisted) => {
         const prev = persisted as PrototypeState & { rescuerProfile?: Partial<RescuerProfile> };

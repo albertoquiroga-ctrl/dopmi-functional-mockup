@@ -5,6 +5,7 @@ import { CasePublicView } from "../components/CasePublicView";
 import { usePrototypeStore } from "../store";
 import { GeneralInfoFields, isGeneralInfoComplete } from "./GeneralInfoFields";
 import {
+  MIN_CASE_NEED_MXN,
   TRANSACTION_FEE_MXN,
   categoriesUsed,
   emptyPublishDraft,
@@ -20,7 +21,7 @@ import {
 const SAMPLE_PHOTO = "/assets/luna-card.png";
 const A = "/assets/";
 
-type DonationStep = "general" | "needs" | "evidences" | "visual" | "preview" | "submit";
+type DonationStep = "general" | "needs" | "evidences" | "visual" | "preview";
 type AdoptionStep = "general" | "visual" | "preview";
 
 const NEED_EMOJI: Record<NeedCategory, string> = {
@@ -129,6 +130,95 @@ function UploadDrop({
         <button type="button" className="publish-outline-btn" onClick={onAction}>
           <PublishIcon name="onb-camera.svg" size={16} />
           {actionLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+const ADOPTION_INTRO_STEPS = [
+  {
+    title: "Cuéntanos sobre la mascota",
+    body: "Agrega sus datos, personalidad, salud, social y ubicación.",
+  },
+  {
+    title: "Agrega sus fotos",
+    body: "Sube una imagen principal y fotos adicionales.",
+  },
+  {
+    title: "Revisa cómo se verá",
+    body: "Antes de publicar podrás ver un preview idéntico al que verán los adoptantes.",
+  },
+  {
+    title: "Publica",
+    body: "La mascota aparecerá en el catálogo para que las personas interesadas puedan conocerla y contactarte.",
+  },
+] as const;
+
+const DONATION_INTRO_STEPS = [
+  {
+    title: "Cuéntanos el caso",
+    body: "Agrega la información de la mascota y las necesidades que ya pagaste.",
+  },
+  {
+    title: "Sube las evidencias",
+    body: "Adjunta los tickets de cada necesidad y el video de agradecimiento.",
+  },
+  {
+    title: "Prepara la publicación",
+    body: "Agrega las imágenes, evidencias visuales opcionales y, si quieres, un video de contexto.",
+  },
+  {
+    title: "Revisamos tu caso",
+    body: "Antes de publicarlo, DopMi valida la información y las evidencias.",
+  },
+  {
+    title: "Recibe donaciones",
+    body: "Una vez aprobado y con Stripe vinculado, el caso se publica y el dinero se irá transfiriendo conforme lleguen las donaciones.",
+  },
+] as const;
+
+function PublishIntro({
+  mode,
+  onStart,
+  onBack,
+}: {
+  mode: "adoption" | "donation";
+  onStart: () => void;
+  onBack: () => void;
+}) {
+  const adoption = mode === "adoption";
+  const steps = adoption ? ADOPTION_INTRO_STEPS : DONATION_INTRO_STEPS;
+  return (
+    <div className="plain-screen rescuer-theme publish-intro-shell">
+      <header className="publish-intro-header">
+        <button type="button" className="publish-header-back" onClick={onBack} aria-label="Volver">
+          <PublishIcon name="back.svg" size={24} />
+          <h1>{adoption ? "Publicar en adopción" : "Publicar caso de donación"}</h1>
+        </button>
+      </header>
+      <div className="publish-intro-body">
+        <p className="publish-intro-lead">
+          {adoption
+            ? "Así funciona publicar una mascota para adopción en DopMi."
+            : "Así funciona publicar un caso de donación en DopMi."}
+        </p>
+        <div className="publish-intro-steps">
+          {steps.map((step, index) => (
+            <article className="intro-card" key={step.title}>
+              <span className="publish-intro-num" aria-hidden>
+                {index + 1}
+              </span>
+              <div>
+                <strong>{step.title}</strong>
+                <p>{step.body}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+        <button type="button" className="purple-button" onClick={onStart}>
+          Comenzar publicación
         </button>
       </div>
     </div>
@@ -416,10 +506,11 @@ function NeedEditor({
 export function PublishFlow() {
   const navigate = useNavigate();
   const { draft, updateDraft, publishDraft, rescuerProfile, stripeStatus } = usePrototypeStore();
-  const [phase, setPhase] = useState<"pick" | "flow">("pick");
+  const [phase, setPhase] = useState<"pick" | "intro" | "flow">("pick");
   const [state, setState] = useState<PublishDraftState>(() => loadDraft(draft));
   const [donationStep, setDonationStep] = useState<DonationStep>("general");
   const [adoptionStep, setAdoptionStep] = useState<AdoptionStep>("general");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const persist = (next: PublishDraftState) => {
     setState(next);
@@ -438,7 +529,7 @@ export function PublishFlow() {
 
   const patch = (partial: Partial<PublishDraftState>) => persist({ ...state, ...partial });
 
-  const donationSteps: DonationStep[] = ["general", "needs", "evidences", "visual", "preview", "submit"];
+  const donationSteps: DonationStep[] = ["general", "needs", "evidences", "visual", "preview"];
   const adoptionSteps: AdoptionStep[] = ["general", "visual", "preview"];
 
   const canGeneral = isGeneralInfoComplete(state, state.publishMode);
@@ -474,6 +565,16 @@ export function PublishFlow() {
         requested: item.amount,
         funded: 0,
         status: "active" as const,
+        brand: item.brand,
+        weightKg: item.weightKg,
+        units: item.units,
+        ticketSpend: item.ticketSpend ?? item.amount,
+        medicineName: item.medicineName,
+        treatment: item.treatment,
+        clinicName: item.clinicName,
+        consultReason: item.consultReason,
+        clinicPhone: item.clinicPhone,
+        ticketPhoto: state.needTicketById[item.id],
       })),
       feeMxn: TRANSACTION_FEE_MXN,
       contextVideo: state.contextVideo || undefined,
@@ -534,9 +635,10 @@ export function PublishFlow() {
     navigate("/rescuer/cases");
   };
 
-  const submitForReview = (goToStripe = false) => {
+  const submitForReview = (goToStripe = false, status: "review" | "active" = "review") => {
     persist(state);
-    const id = publishDraft("review");
+    setConfirmOpen(false);
+    const id = publishDraft(status);
     if (goToStripe) {
       navigate(`/rescuer/profile/payments?case=${typeof id === "string" ? id : ""}`);
       return;
@@ -558,7 +660,7 @@ export function PublishFlow() {
               className="intent-card publish-type-card"
               onClick={() => {
                 patch({ publishMode: "adoption" });
-                setPhase("flow");
+                setPhase("intro");
                 setAdoptionStep("general");
               }}
             >
@@ -575,7 +677,7 @@ export function PublishFlow() {
               className="intent-card publish-type-card"
               onClick={() => {
                 patch({ publishMode: "donation" });
-                setPhase("flow");
+                setPhase("intro");
                 setDonationStep("general");
               }}
             >
@@ -593,6 +695,21 @@ export function PublishFlow() {
           </button>
         </div>
       </div>
+    );
+  }
+
+
+  if (phase === "intro") {
+    return (
+      <PublishIntro
+        mode={state.publishMode}
+        onBack={() => setPhase("pick")}
+        onStart={() => {
+          if (state.publishMode === "adoption") setAdoptionStep("general");
+          else setDonationStep("general");
+          setPhase("flow");
+        }}
+      />
     );
   }
 
@@ -675,7 +792,7 @@ export function PublishFlow() {
         step={stepIndex + 1}
         total={adoptionSteps.length}
         onBack={() => {
-          if (stepIndex <= 0) setPhase("pick");
+          if (stepIndex <= 0) setPhase("intro");
           else setAdoptionStep(adoptionSteps[stepIndex - 1]);
         }}
         footer={
@@ -690,8 +807,8 @@ export function PublishFlow() {
                 Continuar
               </button>
             ) : (
-              <button type="button" className="purple-button publish-continue" onClick={submitForReview}>
-                Enviar a revisión
+              <button type="button" className="purple-button publish-continue" onClick={() => submitForReview(false, "active")}>
+                Publicar
               </button>
             )}
             <button type="button" className="publish-draft-link" onClick={saveAndExit}>
@@ -712,6 +829,7 @@ export function PublishFlow() {
   const dIndex = donationSteps.indexOf(donationStep);
   const subtotal = needsSubtotal(state.needItems);
   const goal = publicGoal(state.needItems);
+  const needsMetaOk = state.needItems.length > 0 && subtotal >= MIN_CASE_NEED_MXN;
 
   return (
     <PublishShell
@@ -719,12 +837,12 @@ export function PublishFlow() {
       step={dIndex + 1}
       total={donationSteps.length}
       onBack={() => {
-        if (dIndex <= 0) setPhase("pick");
+        if (dIndex <= 0) setPhase("intro");
         else setDonationStep(donationSteps[dIndex - 1]);
       }}
       footer={
         <>
-          {donationStep !== "submit" ? (
+          {donationStep !== "preview" ? (
             <button
               type="button"
               className="purple-button publish-continue"
@@ -732,7 +850,7 @@ export function PublishFlow() {
                 donationStep === "general"
                   ? !canGeneral
                   : donationStep === "needs"
-                    ? state.needItems.length === 0
+                    ? !needsMetaOk
                     : donationStep === "evidences"
                       ? !evidencesOk
                       : donationStep === "visual"
@@ -743,19 +861,10 @@ export function PublishFlow() {
             >
               Continuar
             </button>
-          ) : stripeStatus === "linked" ? (
-            <button type="button" className="purple-button publish-continue" onClick={() => submitForReview(false)}>
+          ) : (
+            <button type="button" className="purple-button publish-continue" onClick={() => setConfirmOpen(true)}>
               Enviar a revisión
             </button>
-          ) : (
-            <>
-              <button type="button" className="purple-button publish-continue" onClick={() => submitForReview(true)}>
-                Vincular Stripe
-              </button>
-              <button type="button" className="secondary-button" onClick={() => submitForReview(false)}>
-                Hacerlo después
-              </button>
-            </>
           )}
           <button type="button" className="publish-draft-link" onClick={saveAndExit}>
             Guardar borrador
@@ -769,7 +878,7 @@ export function PublishFlow() {
           <h2>Necesidades</h2>
           <div className="publish-needs-note">
             <strong>Puedes combinar categorías</strong> y agregar varias del mismo tipo. Cada necesidad conserva un ID
-            estable.
+            estable. La meta mínima del caso es ${MIN_CASE_NEED_MXN} MXN (sin contar el fee de publicación).
           </div>
           <NeedEditor
             items={state.needItems}
@@ -790,6 +899,12 @@ export function PublishFlow() {
               patch({ needItems, needTicketById, categoryEvidence });
             }}
           />
+          {state.needItems.length > 0 && subtotal < MIN_CASE_NEED_MXN ? (
+            <p className="field-error">
+              La meta del caso debe ser de al menos ${MIN_CASE_NEED_MXN} MXN. Ahora suman ${subtotal.toLocaleString("es-MX")}{" "}
+              MXN.
+            </p>
+          ) : null}
         </section>
       ) : null}
       {donationStep === "evidences" ? (
@@ -903,52 +1018,79 @@ export function PublishFlow() {
       {donationStep === "preview" ? (
         <CasePublicView data={casePreview} preview onBack={() => setDonationStep("visual")} />
       ) : null}
-      {donationStep === "submit" ? (
-        <section className="publish-section">
-          <h2>Enviar a revisión</h2>
-          <article className="publish-trait-card">
-            <h3>Fees de transacción</h3>
-            <p className="publish-hint">
-              DopMi agregará <strong>$50 MXN</strong> a la meta que verán los donantes para cubrir costos de transacción.
-              Ese monto no forma parte del gasto que reportaste.
-            </p>
-            <article className="publish-review-card">
-              <div>
-                <span>Necesidades</span>
-                <strong>${subtotal.toLocaleString("es-MX")}</strong>
-              </div>
-              <div>
-                <span>Fees de transacción</span>
-                <strong>${TRANSACTION_FEE_MXN}</strong>
-              </div>
-              <div>
-                <span>Meta total</span>
-                <strong>${goal.toLocaleString("es-MX")}</strong>
-              </div>
+      {confirmOpen ? (
+        <div className="modal-backdrop center" onClick={() => setConfirmOpen(false)}>
+          <div className="dialog-card publish-confirm-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="dialog-close" onClick={() => setConfirmOpen(false)} aria-label="Cerrar">
+              ×
+            </button>
+            <h2>Antes de enviar</h2>
+            <article className="publish-trait-card">
+              <h3>Costo de transacción</h3>
+              <p className="publish-hint">
+                DopMi agrega <strong>${TRANSACTION_FEE_MXN} MXN</strong> a la meta pública para cubrir costos de
+                transacción. Ese monto no forma parte del gasto que reportaste; los donantes ven la meta total ya
+                incluyendo este costo.
+              </p>
+              <article className="publish-review-card">
+                <div>
+                  <span>Necesidades</span>
+                  <strong>${subtotal.toLocaleString("es-MX")}</strong>
+                </div>
+                <div>
+                  <span>Costos de transacción</span>
+                  <strong>${TRANSACTION_FEE_MXN}</strong>
+                </div>
+                <div>
+                  <span>Meta total</span>
+                  <strong>${goal.toLocaleString("es-MX")}</strong>
+                </div>
+              </article>
             </article>
-          </article>
-          <article className="publish-trait-card">
-            <h3>Stripe</h3>
-            {stripeStatus === "linked" ? (
+            <article className="publish-trait-card">
+              <h3>Stripe</h3>
+              {stripeStatus === "linked" ? (
+                <p className="publish-hint">
+                  Tu cuenta de Stripe ya está vinculada. Cuando DopMi apruebe el caso, se publicará y podrás recibir
+                  donaciones.
+                </p>
+              ) : (
+                <p className="publish-hint">
+                  Para <strong>publicar</strong> el caso y recibir dinero necesitas vincular Stripe. No es requisito para
+                  enviarlo a revisión: puedes hacerlo después.
+                </p>
+              )}
+            </article>
+            <article className="publish-trait-card">
+              <h3>Transferencias progresivas</h3>
               <p className="publish-hint">
-                Tu cuenta de Stripe ya está vinculada. Cuando DopMi apruebe el caso, se publicará y podrás recibir donaciones.
+                El dinero se irá transfiriendo conforme lleguen las donaciones. No necesitas esperar a alcanzar la meta
+                completa.
               </p>
-            ) : (
-              <p className="publish-hint">
-                <strong>Para que el caso pueda publicarse y recibir donaciones, debes tener una cuenta de Stripe vinculada.</strong>{" "}
-                Stripe no es obligatorio para mandar el caso a revisión. Si lo envías ahora, tendrás que vincular Stripe
-                antes de que el caso se publique.
-              </p>
-            )}
-          </article>
-          <article className="publish-trait-card">
-            <h3>Transferencias</h3>
-            <p className="publish-hint">
-              Las donaciones se irán transfiriendo a tu cuenta conforme las vayas recibiendo; no necesitas esperar a
-              completar la meta.
-            </p>
-          </article>
-        </section>
+            </article>
+            <div className="publish-confirm-actions">
+              {stripeStatus === "linked" ? (
+                <>
+                  <button type="button" className="purple-button" onClick={() => submitForReview(false)}>
+                    Enviar a revisión
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => setConfirmOpen(false)}>
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="purple-button" onClick={() => submitForReview(true)}>
+                    Vincular Stripe
+                  </button>
+                  <button type="button" className="secondary-button" onClick={() => submitForReview(false)}>
+                    Hacerlo después
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       ) : null}
     </PublishShell>
   );

@@ -50,14 +50,17 @@ export function GeneralInfoFields({ state, onChange, mode }: Props) {
       <article className="publish-trait-card">
         <Req label="Tipo" required={attrsRequired} />
         <div className="publish-choice-row">
-          {(["Perro", "Gato"] as const).map((value) => (
+          {([
+            { value: "Perro" as const, label: "🐶 Perro" },
+            { value: "Gato" as const, label: "🐱 Gato" },
+          ]).map(({ value, label }) => (
             <button
               type="button"
               key={value}
               className={`publish-choice ${state.species === value ? "selected" : ""}`}
               onClick={() => onChange({ species: state.species === value && !attrsRequired ? "" : value })}
             >
-              {value}
+              {label}
             </button>
           ))}
         </div>
@@ -66,14 +69,17 @@ export function GeneralInfoFields({ state, onChange, mode }: Props) {
       <article className="publish-trait-card">
         <Req label="Sexo" required={attrsRequired} />
         <div className="publish-choice-row">
-          {(["Macho", "Hembra"] as const).map((value) => (
+          {([
+            { value: "Macho" as const, label: "♂ Macho" },
+            { value: "Hembra" as const, label: "♀ Hembra" },
+          ]).map(({ value, label }) => (
             <button
               type="button"
               key={value}
               className={`publish-choice ${state.sex === value ? "selected" : ""}`}
               onClick={() => onChange({ sex: state.sex === value && !attrsRequired ? "" : value })}
             >
-              {value}
+              {label}
             </button>
           ))}
         </div>
@@ -135,18 +141,22 @@ export function GeneralInfoFields({ state, onChange, mode }: Props) {
 
       <article className="publish-trait-card">
         <Req label="Personalidad" required />
-        <div className="publish-choice-row wrap">
-          {PERSONALITY_OPTIONS.map((value) => (
-            <button
-              type="button"
-              key={value}
-              className={`publish-choice ${state.personality === value ? "selected" : ""}`}
-              onClick={() => onChange({ personality: value as PersonalityTrait })}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
+        <label className="publish-field">
+          <span className="visually-hidden">Personalidad</span>
+          <select
+            value={state.personality || ""}
+            onChange={(e) =>
+              onChange({ personality: (e.target.value || "") as PersonalityTrait | "" })
+            }
+          >
+            <option value="">Selecciona una personalidad</option>
+            {PERSONALITY_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </label>
       </article>
 
       <label className="publish-field">

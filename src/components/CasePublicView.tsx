@@ -1,6 +1,23 @@
+import { useState } from "react";
 import { LocationMap } from "./LocationMap";
 import { resolveRescuerDisplayName, type Need, type PetCase } from "../data";
 import { usePrototypeStore } from "../store";
+import { TRANSACTION_FEE_MXN } from "../publish/types";
+
+function NeedExpandChevron() {
+  return (
+    <span
+      aria-hidden
+      className="icon-mask"
+      style={{
+        width: 20,
+        height: 20,
+        maskImage: "url(/assets/icon-chevron-right.svg)",
+        WebkitMaskImage: "url(/assets/icon-chevron-right.svg)",
+      }}
+    />
+  );
+}
 
 export type CaseViewModel = {
   id: string;
@@ -84,13 +101,170 @@ function Trait({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+function needEmoji(type: Need["type"]) {
+  if (type === "Comida") return "🥣";
+  if (type === "Medicina") return "💊";
+  if (type === "Veterinario") return "🩺";
+  return "🐾";
+}
+
+function NeedDetailFacts({ need }: { need: Need }) {
+  if (need.type === "Comida") {
+    return (
+      <div className="need-facts-card">
+        {need.brand ? (
+          <div>
+            <small>Marca</small>
+            <strong>{need.brand}</strong>
+          </div>
+        ) : null}
+        {need.weightKg != null ? (
+          <div>
+            <small>Peso</small>
+            <strong>{need.weightKg} kg</strong>
+          </div>
+        ) : null}
+        {need.units != null ? (
+          <div>
+            <small>Unidades</small>
+            <strong>{need.units}</strong>
+          </div>
+        ) : null}
+        <div>
+          <small>Gasto comprobado</small>
+          <strong>${(need.ticketSpend ?? need.requested).toLocaleString("es-MX")} MXN</strong>
+        </div>
+      </div>
+    );
+  }
+
+  if (need.type === "Medicina") {
+    return (
+      <div className="need-facts-card">
+        <div>
+          <small>Nombre</small>
+          <strong>{need.medicineName || need.title}</strong>
+        </div>
+        {need.treatment ? (
+          <div>
+            <small>Tratamiento</small>
+            <strong>{need.treatment}</strong>
+          </div>
+        ) : null}
+        <div>
+          <small>Costo comprobado</small>
+          <strong>${(need.ticketSpend ?? need.requested).toLocaleString("es-MX")} MXN</strong>
+        </div>
+      </div>
+    );
+  }
+
+  if (need.type === "Veterinario") {
+    return (
+      <div className="need-facts-card">
+        {need.clinicName ? (
+          <div>
+            <small>Consultorio / veterinario</small>
+            <strong>{need.clinicName}</strong>
+          </div>
+        ) : null}
+        {need.consultReason ? (
+          <div>
+            <small>Motivo</small>
+            <strong>{need.consultReason}</strong>
+          </div>
+        ) : null}
+        {need.clinicPhone ? (
+          <div>
+            <small>Teléfono</small>
+            <strong>{need.clinicPhone}</strong>
+          </div>
+        ) : null}
+        <div>
+          <small>Monto comprobado</small>
+          <strong>${(need.ticketSpend ?? need.requested).toLocaleString("es-MX")} MXN</strong>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function PublicNeedCard({
+  need,
+  onDonate,
+}: {
+  need: Need;
+  onDonate?: (needId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const remaining = Math.max(0, need.requested - need.funded);
+  const pct = need.requested ? Math.min(100, Math.round((need.funded / need.requested) * 100)) : 0;
+  const fullyFunded = remaining === 0 || need.status === "funded" || need.status === "completed";
+  const typeKey = need.type.toLowerCase();
+
+  return (
+    <article className={`need-card donor-need-card ${open ? "open" : ""}`}>
+      <div className="need-card-head">
+        <span className={`need-symbol soft ${typeKey}`}>{needEmoji(need.type)}</span>
+        <div className="need-card-copy">
+          <div className="need-card-title-row">
+            <div>
+              <strong>{need.title}</strong>
+              <span className="need-type-row">
+                <small>{need.type}</small>
+              </span>
+            </div>
+            <div className="need-price-row">
+              <b>${need.requested.toLocaleString("es-MX")}</b>
+              <button
+                type="button"
+                className="need-expand"
+                aria-expanded={open}
+                aria-label={open ? "Ocultar detalle" : "Ver detalle"}
+                onClick={() => setOpen((value) => !value)}
+              >
+                <NeedExpandChevron />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="split-meta">
+        <span>${need.funded.toLocaleString("es-MX")} recaudados</span>
+        <strong>${remaining.toLocaleString("es-MX")} por recaudar</strong>
+      </div>
+      <div className="progress">
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      {onDonate ? (
+        <button
+          type="button"
+          className={`primary-button need-donate-btn ${fullyFunded ? "funded" : ""}`}
+          disabled={fullyFunded}
+          onClick={() => onDonate(need.id)}
+        >
+          {fullyFunded ? "Completamente fondeada" : "Donar"}
+        </button>
+      ) : null}
+      {open ? (
+        <div className="need-details">
+          <h3>Detalle de la necesidad</h3>
+          <NeedDetailFacts need={need} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 export function CasePublicView({ data, preview, onBack, onDonateNeed, onOpenRescuer }: Props) {
   const rescuerProfile = usePrototypeStore((state) => state.rescuerProfile);
   const rescuerLabel = resolveRescuerDisplayName(data.rescuer, rescuerProfile);
   const photos = data.photos?.length ? data.photos : [data.image];
   const subtotal = data.needs.reduce((sum, need) => sum + need.requested, 0);
   const funded = data.needs.reduce((sum, need) => sum + need.funded, 0);
-  const fee = data.feeMxn ?? 50;
+  const fee = data.feeMxn ?? TRANSACTION_FEE_MXN;
   const goal = subtotal + (data.needs.length ? fee : 0);
   const pct = Math.round((funded / Math.max(goal, 1)) * 100);
   const meta = [data.species, data.sex, data.ageBand || data.age].filter(Boolean).join(" · ");
@@ -100,11 +274,10 @@ export function CasePublicView({ data, preview, onBack, onDonateNeed, onOpenResc
       ? Boolean(data.health.specialCare && data.health.specialCare !== "Ninguno")
       : Boolean(data.health?.specialCare);
   const showHealth =
-    Boolean(data.health) &&
-    Boolean(data.health?.vaccinated || data.health?.sterilized || special);
+    Boolean(data.health) && Boolean(data.health?.vaccinated || data.health?.sterilized || special);
   const showSocial =
-    Boolean(data.social) &&
-    Boolean(data.social?.dogs || data.social?.cats || data.social?.children);
+    Boolean(data.social) && Boolean(data.social?.dogs || data.social?.cats || data.social?.children);
+  const visualEvidence = data.categoryEvidence?.filter((item) => item.photo) ?? [];
 
   return (
     <div className={`detail-screen donor-case-detail ${preview ? "is-preview" : ""}`}>
@@ -148,7 +321,13 @@ export function CasePublicView({ data, preview, onBack, onDonateNeed, onOpenResc
           </span>
         </button>
 
-        {data.location ? <LocationMap location={data.location} /> : null}
+        {data.location ? (
+          <article className="info-card location-card">
+            <h3>Ubicación</h3>
+            <p className="location-card-text">{data.location}</p>
+            <LocationMap location={data.location} mapOnly />
+          </article>
+        ) : null}
 
         {showHealth && data.health ? (
           <article className="info-card trait-card">
@@ -170,62 +349,30 @@ export function CasePublicView({ data, preview, onBack, onDonateNeed, onOpenResc
 
         <article className="info-card funding-card">
           <h3>Meta de recaudación</h3>
+          <p className="funding-overview-amount">
+            ${funded.toLocaleString("es-MX")} de ${goal.toLocaleString("es-MX")}
+          </p>
+          <p className="funding-overview-pct">{pct}%</p>
           <div className="progress-track">
             <i style={{ width: `${Math.min(pct, 100)}%` }} />
           </div>
-          <p>
-            ${funded.toLocaleString("es-MX")} de ${goal.toLocaleString("es-MX")} MXN ({pct}%)
-          </p>
-          {data.needs.length ? (
-            <div className="publish-review-card">
-              <div>
-                <span>Necesidades</span>
-                <strong>${subtotal.toLocaleString("es-MX")}</strong>
-              </div>
-              <div>
-                <span>Fees DopMi</span>
-                <strong>${fee.toLocaleString("es-MX")}</strong>
-              </div>
-              <div>
-                <span>Meta pública</span>
-                <strong>${goal.toLocaleString("es-MX")}</strong>
-              </div>
-            </div>
-          ) : null}
         </article>
 
-        <section className="publish-needs-list">
+        <section className="case-needs-stack">
           <h3>Necesidades</h3>
           {data.needs.map((need) => (
-            <article className="publish-need-row" key={need.id}>
-              <span className={`need-symbol soft ${need.type.toLowerCase()}`}>{need.type === "Comida" ? "🥣" : need.type === "Medicina" ? "💊" : "🩺"}</span>
-              <div>
-                <strong>{need.title}</strong>
-                <p>
-                  {need.type} · ${need.funded.toLocaleString("es-MX")} / ${need.requested.toLocaleString("es-MX")}
-                </p>
-              </div>
-              {onDonateNeed ? (
-                <button type="button" className="primary-button compact" onClick={() => onDonateNeed(need.id)}>
-                  Donar
-                </button>
-              ) : null}
-            </article>
+            <PublicNeedCard key={need.id} need={need} onDonate={onDonateNeed} />
           ))}
         </section>
 
-        {data.categoryEvidence?.filter((item) => item.photo).length ? (
-          <section className="publish-section">
+        {visualEvidence.length ? (
+          <section className="case-visual-evidence">
             <h3>Evidencia visual</h3>
-            {data.categoryEvidence
-              .filter((item) => item.photo)
-              .map((item) => (
-              <article className="publish-need-row" key={item.category}>
-                <img className="publish-evidence-thumb" src={item.photo} alt="" />
-                <div>
-                  <strong>{item.category}</strong>
-                  {item.caption ? <p>{item.caption}</p> : null}
-                </div>
+            {visualEvidence.map((item) => (
+              <article className="visual-evidence-card" key={item.category}>
+                <h4>{item.category === "Comida" ? "Alimentación" : item.category}</h4>
+                <img src={item.photo} alt={`Evidencia de ${item.category}`} />
+                {item.caption ? <p>{item.caption}</p> : null}
               </article>
             ))}
           </section>
@@ -234,7 +381,7 @@ export function CasePublicView({ data, preview, onBack, onDonateNeed, onOpenResc
         {data.contextVideo ? (
           <article className="info-card">
             <h3>Video de contexto</h3>
-            <p className="publish-hint">Video cargado para dar contexto al caso.</p>
+            <p className="publish-hint">Se agregó un video de contexto para este caso.</p>
           </article>
         ) : null}
 

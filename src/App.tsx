@@ -1044,7 +1044,7 @@ function AdoptionHome() {
                 <p>Filtra las mascotas disponibles para adopción</p>
               </header>
               <div className="adoption-filter-grid">
-                <section>
+                <section className="filter-search-full">
                   <h3>Buscar por nombre</h3>
                   <label className="filter-search">
                     <span className="visually-hidden">Nombre de la mascota</span>
@@ -1054,6 +1054,27 @@ function AdoptionHome() {
                       placeholder="Nombre de la mascota"
                     />
                   </label>
+                </section>
+                <section>
+                  <h3>Tipo</h3>
+                  <div className="filter-options">
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftType.includes("Perro")}
+                        onChange={() => toggleDraft("Perro", draftType, setDraftType)}
+                      />
+                      <span>Perro</span>
+                    </label>
+                    <label className="filter-check">
+                      <input
+                        type="checkbox"
+                        checked={draftType.includes("Gato")}
+                        onChange={() => toggleDraft("Gato", draftType, setDraftType)}
+                      />
+                      <span>Gato</span>
+                    </label>
+                  </div>
                 </section>
                 <section>
                   <h3>Sexo</h3>
@@ -1073,27 +1094,6 @@ function AdoptionHome() {
                         onChange={() => toggleDraft("Hembra", draftSex, setDraftSex)}
                       />
                       <span>Hembra</span>
-                    </label>
-                  </div>
-                </section>
-                <section>
-                  <h3>Tipo</h3>
-                  <div className="filter-options">
-                    <label className="filter-check">
-                      <input
-                        type="checkbox"
-                        checked={draftType.includes("Gato")}
-                        onChange={() => toggleDraft("Gato", draftType, setDraftType)}
-                      />
-                      <span>Gato</span>
-                    </label>
-                    <label className="filter-check">
-                      <input
-                        type="checkbox"
-                        checked={draftType.includes("Perro")}
-                        onChange={() => toggleDraft("Perro", draftType, setDraftType)}
-                      />
-                      <span>Perro</span>
                     </label>
                   </div>
                 </section>
@@ -1275,8 +1275,7 @@ function DonationHome() {
                   <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
                 </div>
                 <div className="need-summary" key={need.id}>
-                  <div><strong>{need.title}</strong><b>${need.funded} / ${need.requested}</b></div>
-                  <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
+                  <div><strong>{need.title}</strong></div>
                   <div className="card-actions">
                     <button className="primary-button" onClick={() => navigate(`/donate/${item.id}/${need.id}`)}>Donar</button>
                     <button className="secondary-button" onClick={() => navigate(`/case/${item.id}`)}>Ver caso</button>
@@ -1430,8 +1429,10 @@ function DonationFlow() {
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const need = item.needs.find((entry) => entry.id === needId) ?? item.needs[0];
   const [step, setStep] = useState<"amount" | "review">("amount");
-  const [amount, setAmount] = useState(150);
-  const remaining = Math.max(1, need.requested - need.funded);
+  const [amount, setAmount] = useState(50);
+  const [customMode, setCustomMode] = useState(false);
+  const presets = [50, 150] as const;
+  const canContinue = amount >= 50;
   const confirm = () => {
     if (paymentOutcome === "error") {
       navigate(`/payment-error/${caseId}/${needId}?amount=${amount}`);
@@ -1450,12 +1451,48 @@ function DonationFlow() {
         {step === "amount" ? (
           <>
             <h2>¿Cuánto quieres donar?</h2>
-            <div className="amount-grid">
-              {[50, 150, 300, remaining].map((value) => <button key={value} className={amount === value ? "selected" : ""} onClick={() => setAmount(value)}>${value}</button>)}
+            <div className="amount-grid three">
+              {presets.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={!customMode && amount === value ? "selected" : ""}
+                  onClick={() => {
+                    setCustomMode(false);
+                    setAmount(value);
+                  }}
+                >
+                  ${value}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={customMode ? "selected" : ""}
+                onClick={() => {
+                  setCustomMode(true);
+                  setAmount((current) => (current < 50 ? 50 : current));
+                }}
+              >
+                Otra cantidad
+              </button>
             </div>
-            <label>Monto personalizado<input type="number" min="1" value={amount} onChange={(event) => setAmount(Number(event.target.value))} /></label>
+            {customMode ? (
+              <label>
+                Otra cantidad (mín. $50 MXN)
+                <input
+                  type="number"
+                  min={50}
+                  step={1}
+                  value={amount}
+                  onChange={(event) => setAmount(Math.max(0, Number(event.target.value) || 0))}
+                />
+              </label>
+            ) : null}
+            {customMode && !canContinue ? (
+              <p className="field-error">La cantidad mínima es $50 MXN.</p>
+            ) : null}
             <p className="supporting-copy">Esta es una operación simulada. No se realizará ningún cargo real.</p>
-            <button className="primary-button" onClick={() => setStep("review")}>Continuar</button>
+            <button className="primary-button" disabled={!canContinue} onClick={() => setStep("review")}>Continuar</button>
           </>
         ) : (
           <>
@@ -2673,31 +2710,12 @@ function RescuerHome() {
         </header>
 
         {verified ? (
-          <article className="dopmi-wallet">
-            <div className="dopmi-wallet-top">
-              <span className="dopmi-wallet-label">
-                <AssetIcon name="icon-wallet.svg" size={20} />
-                Cuenta Dopmi
-              </span>
-              <span className="dopmi-wallet-badge">
-                {showEmptyPending ? "0 Casos activos" : "3 Casos activos"}
-              </span>
-            </div>
-            <strong className="dopmi-wallet-balance">{showEmptyPending ? "$0" : "$68"}</strong>
-            <p>Las donaciones se transfieren vía Stripe conforme llegan</p>
-            <div className="dopmi-wallet-bar">
-              <i style={{ width: showEmptyPending ? "0%" : "40%" }} />
-            </div>
-            <div className="dopmi-wallet-stats">
-              <div>
-                <span>Total recibido</span>
-                <b>{showEmptyPending ? "$0" : "$172"}</b>
-              </div>
-              <div>
-                <span>Transferido</span>
-                <b>{showEmptyPending ? "$0" : "$172"}</b>
-              </div>
-            </div>
+          <article className="info-banner soft">
+            <AssetIcon name="icon-wallet.svg" size={20} />
+            <p>
+              Las donaciones se transfieren a tu cuenta Stripe conforme llegan. No hay saldo bloqueado ni fondos por
+              desbloquear.
+            </p>
           </article>
         ) : verification === "review" && !showEmptyPending ? (
           <article className="verify-card review">
@@ -3038,18 +3056,22 @@ function EditCaseModal({
               </div>
               <div className="publish-trait-card">
                 <h3>Personalidad</h3>
-                <div className="publish-choice-row wrap">
-                  {PERSONALITY_OPTIONS.map((value) => (
-                    <button
-                      type="button"
-                      key={value}
-                      className={`publish-choice ${personality === value ? "selected" : ""}`}
-                      onClick={() => setPersonality(personality === value ? "" : value)}
-                    >
-                      {value}
-                    </button>
-                  ))}
-                </div>
+                <label className="publish-field">
+                  <span className="visually-hidden">Personalidad</span>
+                  <select
+                    value={personality}
+                    onChange={(event) =>
+                      setPersonality((event.target.value || "") as PersonalityTrait | "")
+                    }
+                  >
+                    <option value="">Selecciona una personalidad</option>
+                    {PERSONALITY_OPTIONS.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </>
           ) : (
@@ -3498,7 +3520,11 @@ const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
 };
 
 function PublishFlow() {
-  return <PublishFlowWizard />;
+  return (
+    <ScreenShell mode="rescuer" className="publish-flow-shell">
+      <PublishFlowWizard />
+    </ScreenShell>
+  );
 }
 
 
@@ -3597,6 +3623,14 @@ function RescuerProfile() {
         </header>
 
         <article className="public-card profile-peek">
+          <button
+            type="button"
+            className="icon-button profile-peek-edit"
+            onClick={() => navigate("/rescuer/profile/edit")}
+            aria-label="Editar perfil"
+          >
+            <Icon name="icon-edit.svg" size={18} />
+          </button>
           <div className="profile-peek-identity">
             <span className={`avatar large purple ${rescuerProfile.avatar ? "has-photo" : ""}`}>
               {rescuerProfile.avatar ? <img src={rescuerProfile.avatar} alt="" /> : (displayName.charAt(0) || "R")}
@@ -3647,10 +3681,6 @@ function RescuerProfile() {
               ) : null}
             </div>
           ) : null}
-
-          <button type="button" className="secondary-button" onClick={() => navigate("/rescuer/profile/edit")}>
-            Editar perfil
-          </button>
         </article>
 
         <section className="list-stack profile-menu">
@@ -3676,6 +3706,26 @@ function RescuerProfile() {
             <Chevron />
           </button>
         </section>
+
+        <article className="switch-card">
+          <div>
+            <strong>Cambiar a modo donante</strong>
+            <small>Cambia tu experiencia en la app</small>
+          </div>
+          <button
+            type="button"
+            className="switch on"
+            role="switch"
+            aria-checked="true"
+            aria-label="Cambiar a modo donante"
+            onClick={() => {
+              setAccountMode("donor");
+              navigate("/donate");
+            }}
+          >
+            <i />
+          </button>
+        </article>
 
         <section className="list-stack profile-session">
           <button
@@ -4268,8 +4318,7 @@ function PublicRescuerProfile() {
                 </div>
                 {item.needs.slice(0, 1).map((need) => (
                   <div className="need-summary" key={need.id}>
-                    <div><strong>{need.title}</strong><b>${need.funded} / ${need.requested}</b></div>
-                    <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
+                    <div><strong>{need.title}</strong></div>
                     <div className="card-actions">
                       <button className="primary-button" onClick={() => navigate(`/donate/${item.id}/${need.id}`)}>Donar</button>
                       <button className="secondary-button" onClick={() => navigate(`/case/${item.id}`)}>Ver caso</button>
