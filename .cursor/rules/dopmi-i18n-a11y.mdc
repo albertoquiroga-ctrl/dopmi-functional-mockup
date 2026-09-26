@@ -1,0 +1,36 @@
+---
+description: DopMi prototype — Spanish UI copy and WCAG 2.2 AA contrast (global)
+alwaysApply: true
+---
+
+# DopMi: español + contraste AA
+
+Aplica siempre, en pantallas existentes y en cualquier pantalla o componente nuevo.
+
+## 1. Interfaz en español
+
+- Todo el copy visible va en **español de México**: natural, claro y breve.
+- Si Figma trae inglés, **traduce antes de implementar**. No copies inglés al prototipo.
+- Incluye títulos, labels, placeholders, CTAs, tabs, menús, toasts, modales, errores, vacíos, chips, nav y notificaciones.
+- No traduzcas literales torpes; suena a producto escrito en español.
+- Excepciones: marcas y nombres propios (DopMi, Google, Apple, Apple Pay, Google Pay, nombres de personas/mascotas).
+
+## 2. Contraste WCAG 2.2 AA
+
+- Texto normal ≥ **4.5:1**; texto grande ≥ **3:1**; iconos/controles necesarios ≥ **3:1**.
+- No copies colores de texto del mock si fallan legibilidad.
+- Ajusta lo mínimo (texto o fondo) y **prioriza tokens** en `src/styles.css` (`:root` / `.rescuer-theme`).
+
+### Tokens a respetar
+
+- `--ink` / `--muted`: texto sobre fondos claros.
+- `--yellow` / `--yellow-strong`: **solo rellenos** (botones, barras, chips de fondo).
+- `--yellow-ink`: texto/iconos “amarillos” sobre fondo claro (nunca `#f7cb2d` como color de texto en blanco).
+- `--amount`: montos/acentos dorados sobre fondo claro.
+- `--on-brand` / `--on-brand-muted`: texto sobre púrpura u otros fondos de marca. Los `<p>` heredan `--muted` por defecto; en cards de marca hay que forzar estos tokens.
+- Sobre fotos oscuras, el amarillo de marca como highlight de título sí es válido.
+
+## 3. Consistencia
+
+- Corrige el token o componente reutilizable; no parches por pantalla.
+- Antes de dar por lista una pantalla: español, contraste AA, jerarquía e identidad DopMi intactas.
