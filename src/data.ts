@@ -432,22 +432,25 @@ export const initialNotifications: Notification[] = [
   },
 ];
 
+export type PaymentStatus = "pagado" | "cancelado" | "enproceso" | "fallado";
+
 export type LogEntry = {
   id: string;
   date: string;
   caseId: string;
   caseName: string;
   concept: string;
+  method: string;
   amount: string;
-  status: "completada" | "activa";
+  status: PaymentStatus;
 };
 
 export const donationLog: LogEntry[] = [
-  { id: "l1", date: "29 abr", caseId: "milo", caseName: "Max", concept: "Comida", amount: "$100", status: "completada" },
-  { id: "l2", date: "25 abr", caseId: "luna", caseName: "Luna", concept: "Medicina", amount: "$120", status: "completada" },
-  { id: "l3", date: "20 abr", caseId: "nina", caseName: "Rocky", concept: "Apadrinamiento mensual", amount: "$10/mes", status: "activa" },
-  { id: "l4", date: "15 abr", caseId: "milo", caseName: "Milo", concept: "Tratamiento veterinario", amount: "$25", status: "completada" },
-  { id: "l5", date: "10 abr", caseId: "nina", caseName: "Nina", concept: "Comida", amount: "$15", status: "completada" },
+  { id: "l1", date: "29 abr", caseId: "milo", caseName: "Max", concept: "Alimento", method: "Visa *4242", amount: "$100", status: "pagado" },
+  { id: "l2", date: "25 abr", caseId: "luna", caseName: "Luna", concept: "Medicina", method: "Apple Pay", amount: "$120", status: "pagado" },
+  { id: "l3", date: "20 abr", caseId: "nina", caseName: "Rocky", concept: "Alimento", method: "Visa *4242", amount: "$50", status: "enproceso" },
+  { id: "l4", date: "15 abr", caseId: "milo", caseName: "Milo", concept: "Veterinario", method: "Mastercard *1881", amount: "$25", status: "pagado" },
+  { id: "l5", date: "10 abr", caseId: "nina", caseName: "Nina", concept: "Alimento", method: "Visa *4242", amount: "$15", status: "fallado" },
 ];
 
 export type SubscriptionPlan = { id: string; name: string; amount: number; recommended?: boolean };
@@ -459,9 +462,9 @@ export const subscriptionPlans: SubscriptionPlan[] = [
 ];
 
 export const paymentHistory = [
-  { id: "p1", date: "3 junio 2026", method: "Visa 4242", amount: "$50.00 MXN" },
-  { id: "p2", date: "3 mayo 2026", method: "Apple Pay", amount: "$50.00 MXN" },
-  { id: "p3", date: "3 abril 2026", method: "Visa 4242", amount: "$50.00 MXN" },
+  { id: "p1", date: "3 jun", method: "Visa *4242", amount: "$50.00", status: "pagado" as const },
+  { id: "p2", date: "3 may", method: "Apple Pay", amount: "$50.00", status: "pagado" as const },
+  { id: "p3", date: "3 abr", method: "Visa *4242", amount: "$50.00", status: "cancelado" as const },
 ];
 
 export const savedCards = [
@@ -471,48 +474,270 @@ export const savedCards = [
 
 export type FaqItem = { q: string; a: string };
 
-export const donorFaqs: FaqItem[] = [
-  {
-    q: "¿Cómo funciona mi suscripción mensual?",
-    a: "Cada mes se cobra el monto que elegiste y se reparte entre los casos activos que más lo necesitan. Puedes cambiar la cantidad o cancelarla desde Suscripción y pagos.",
-  },
-  {
-    q: "¿Cómo sé que mi donación se usó correctamente?",
-    a: "El rescatista sube evidencia (fotos y comprobantes) por cada necesidad cubierta. Te avisamos con una notificación cuando hay una nueva.",
-  },
-  {
-    q: "¿Dónde veo las evidencias de los casos que apoyé?",
-    a: "En Tu Impacto y en el detalle de cada caso encontrarás la evidencia publicada por el rescatista.",
-  },
-  {
-    q: "¿Cómo puedo cancelar mi suscripción?",
-    a: "Entra a Perfil › Configuración › Suscripción y pagos y toca Cancelar suscripción. Puedes volver a suscribirte cuando quieras.",
-  },
-  {
-    q: "¿Cómo guardo una mascota o caso?",
-    a: "Usa el marcador en la tarjeta o en el detalle. Lo encontrarás después en Perfil › Mascotas guardadas.",
-  },
-];
+export type HelpAudience = "donor" | "rescuer" | "both";
 
-export const rescuerFaqs: FaqItem[] = [
+export type HelpBlock =
+  | { type: "heading"; text: string }
+  | { type: "paragraph"; text: string }
+  | { type: "bullets"; items: string[] }
+  | { type: "faq"; q: string; a: string }
+  | { type: "action"; label: string; action: "delete-account" };
+
+export type HelpTopic = {
+  id: string;
+  label: string;
+  audience: HelpAudience;
+  blocks: HelpBlock[];
+};
+
+export const helpTopics: HelpTopic[] = [
   {
-    q: "¿Cómo verifico mi cuenta?",
-    a: "Sube una identificación oficial, un comprobante de domicilio y tus datos bancarios. La revisión tarda hasta 48 horas.",
+    id: "apoyos",
+    label: "Cómo funcionan los apoyos",
+    audience: "both",
+    blocks: [
+      { type: "heading", text: "Cuando apoyas a un caso" },
+      {
+        type: "paragraph",
+        text: "Tu apoyo va a una necesidad concreta de esa mascota: comida, medicina o una consulta.",
+      },
+      {
+        type: "bullets",
+        items: [
+          "La mayor parte llega a la rescatista.",
+          "Una parte cubre la comisión del procesador de pago.",
+          "Una parte pequeña (alrededor del 2%) mantiene funcionando DopMi.",
+        ],
+      },
+      {
+        type: "paragraph",
+        text: "La rescatista recibe los fondos cuando sube la evidencia de en qué los usó, y tú puedes ver esa evidencia en el caso.",
+      },
+      { type: "heading", text: "Cuando eres Guardián" },
+      {
+        type: "paragraph",
+        text: "Tu aportación mensual es un pago por el servicio de DopMi, que mantiene listo un fondo para responder a las urgencias de rescate. No va a una mascota en específico.",
+      },
+      {
+        type: "bullets",
+        items: [
+          "Urgencias primero. El fondo siempre atiende primero las urgencias: operaciones, hospitalizaciones o traslados.",
+          "Con criterio, no a dedo. Cuando hay excedente, se usa para completar casos que llevan tiempo esperando, siguiendo criterios claros.",
+          "Te contamos a dónde fue. Cada mes recibes un reporte con los casos que atendió el fondo, con nombre, foto y desenlace.",
+        ],
+      },
+    ],
   },
   {
-    q: "¿Por qué necesito verificarme para recibir donaciones?",
-    a: "La verificación protege a la comunidad: garantiza que los fondos llegan a una persona real y responsable del caso.",
+    id: "apoyar",
+    label: "Apoyar",
+    audience: "donor",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cómo sé que mi apoyo llega a un caso real?",
+        a: "Cada caso que pide apoyo lo publica una rescatista verificada por DopMi, y revisamos cada mascota antes de que aparezca en la app.",
+      },
+      {
+        type: "faq",
+        q: "¿Dónde veo en qué se usó mi apoyo?",
+        a: "En el caso que apoyaste, en la sección de actividad. También te avisamos con una notificación cuando la rescatista sube evidencia nueva.",
+      },
+      {
+        type: "faq",
+        q: "¿Qué pasa cuando una necesidad se completa?",
+        a: "Deja de recibir apoyos. La rescatista usa los fondos, sube la evidencia y tú recibes la actualización.",
+      },
+      {
+        type: "faq",
+        q: "Mi pago no se completó, ¿se me cobró?",
+        a: 'Si viste la pantalla "Pago no completado", tu apoyo no se registró. Si ves un cargo en tu estado de cuenta, escríbenos con la fecha y el monto.',
+      },
+      {
+        type: "faq",
+        q: "¿Puedo apoyar a la misma mascota cada mes?",
+        a: "Sí. En el caso, elige apadrinar, selecciona las necesidades y define el monto y la frecuencia. Puedes editarlo o cancelarlo cuando quieras.",
+      },
+      {
+        type: "faq",
+        q: "¿Dónde veo todos mis apoyos?",
+        a: "En tu perfil, en Historial de apoyos.",
+      },
+    ],
   },
   {
-    q: "¿Cómo publico una mascota en adopción?",
-    a: "Desde Publicar elige Dar en adopción y completa los cuatro pasos: fotos, información básica, necesidades y revisión.",
+    id: "guardian",
+    label: "Guardián",
+    audience: "donor",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Qué es ser Guardián?",
+        a: "Es una suscripción mensual que mantiene listo un fondo para responder a las urgencias de rescate. Cada mes te contamos qué se logró.",
+      },
+      {
+        type: "faq",
+        q: "¿Puedo elegir a qué mascota va mi aportación?",
+        a: "No. El fondo se asigna con criterios claros, siempre urgencias primero. Lo que sí hacemos es mostrarte después, con detalle, a dónde fue.",
+      },
+      {
+        type: "faq",
+        q: "¿Cómo cambio mi monto o cancelo?",
+        a: "Desde Tu impacto, en la sección de suscripción. Puedes cambiar el monto o cancelar cuando quieras, sin penalizaciones.",
+      },
+      {
+        type: "faq",
+        q: "¿Cuándo recibo mi reporte?",
+        a: "Cada mes, en la sección Tu impacto. Te avisamos con una notificación.",
+      },
+    ],
   },
   {
-    q: "¿Cómo publico un caso para recibir donaciones?",
-    a: "Desde Publicar elige Recibir donaciones y define cada necesidad con su monto objetivo.",
+    id: "adoptar",
+    label: "Adoptar",
+    audience: "donor",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cómo contacto a una rescatista?",
+        a: "En la mascota que te interesa, toca el botón de mensajes. Hablas directo con quien la cuida.",
+      },
+      {
+        type: "faq",
+        q: "La rescatista no me ha respondido, ¿qué hago?",
+        a: "Muchas rescatistas cuidan a varios animales a la vez y a veces tardan en contestar. Mientras tanto, guarda tus mascotas favoritas y escríbele también a otras rescatistas.",
+      },
+      {
+        type: "faq",
+        q: "¿DopMi participa en la adopción?",
+        a: "DopMi te conecta con la rescatista y verifica que la mascota sea real. El cierre de adopción (entrevista, visita y entrega) lo acuerdas directamente con ella.",
+      },
+    ],
   },
   {
-    q: "¿Cómo subo evidencia de gastos?",
-    a: "En el detalle del caso, toca la necesidad cubierta y sube la foto del comprobante. Los donantes reciben una notificación.",
+    id: "verificacion",
+    label: "Verificación",
+    audience: "rescuer",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Por qué necesito verificarme?",
+        a: "Para pedir apoyo económico. La verificación les da confianza a quienes apoyan tus casos.",
+      },
+      {
+        type: "faq",
+        q: "¿Necesito verificarme si solo quiero dar en adopción?",
+        a: "No. Puedes publicar mascotas en adopción sin la verificación completa. Solo la necesitas cuando pides apoyo económico.",
+      },
+      {
+        type: "faq",
+        q: "Mi verificación tiene observaciones, ¿cómo la corrijo?",
+        a: 'Desde tu inicio, toca "Corregir información". Te marcamos exactamente qué hay que ajustar para que puedas reenviarla.',
+      },
+      {
+        type: "faq",
+        q: "¿Cuánto tarda la revisión?",
+        a: "La revisamos lo antes posible y te avisamos con una notificación en cuanto esté lista.",
+      },
+    ],
+  },
+  {
+    id: "publicar",
+    label: "Publicar casos",
+    audience: "rescuer",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cómo publico un caso?",
+        a: 'Desde tu inicio o desde Mis casos, toca "Publicar caso". Puedes guardar un borrador y seguir después.',
+      },
+      {
+        type: "faq",
+        q: "¿Tengo que pedir apoyo económico?",
+        a: "No. Las necesidades son opcionales. Puedes publicar una mascota solo para adopción.",
+      },
+      {
+        type: "faq",
+        q: "¿Qué cuenta como necesidad urgente?",
+        a: "Una necesidad médica o veterinaria que no puede esperar. Para marcarla como urgente, sube un video donde aparezcan tú y la mascota. DopMi lo revisa.",
+      },
+      {
+        type: "faq",
+        q: "¿Por qué no se aprobó mi caso?",
+        a: 'En Mis casos verás las observaciones. Toca "Corregir", ajusta lo necesario y vuelve a enviarlo.',
+      },
+      {
+        type: "faq",
+        q: "¿Cómo cierro un caso?",
+        a: 'Edita el caso y toca "Cerrar caso". Si la mascota fue adoptada, puedes compartir un video de despedida con quienes la apoyaron.',
+      },
+    ],
+  },
+  {
+    id: "fondos",
+    label: "Fondos y evidencia",
+    audience: "rescuer",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cuándo recibo los fondos?",
+        a: "Cuando la necesidad se completa y subes la evidencia de su uso. Después de revisarla, liberamos los fondos.",
+      },
+      {
+        type: "faq",
+        q: "¿Qué evidencia tengo que subir?",
+        a: "Depende de la necesidad: ticket o recibo, fotos o video con la mascota y una breve descripción.",
+      },
+      {
+        type: "faq",
+        q: "Ya pagué algo con mi dinero, ¿puedo pedir reembolso?",
+        a: "Sí. En la necesidad, solicita el reembolso y sube el ticket y la evidencia. Te avisamos cuando esté aprobado.",
+      },
+      {
+        type: "faq",
+        q: "¿Cómo vuelvo a pedir comida?",
+        a: 'Al terminar la evidencia de comida, toca "Solicitar comida". Puedes elegir otro producto o pedir la misma comida.',
+      },
+    ],
+  },
+  {
+    id: "cuenta",
+    label: "Mi cuenta",
+    audience: "both",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cómo cambio entre cuenta de Donante y de Rescatista?",
+        a: 'En Configuración, toca "Cambiar tipo de cuenta". Tu información se conserva en ambas.',
+      },
+      {
+        type: "faq",
+        q: "¿Cómo edito mis datos?",
+        a: "En Configuración puedes cambiar tu foto, nombre, correo y teléfono.",
+      },
+      {
+        type: "faq",
+        q: "¿Cómo elimino mi cuenta?",
+        a: 'En Centro de ayuda, toca "Eliminar mi cuenta". Te explicamos qué se borra y qué se conserva antes de confirmar.',
+      },
+      { type: "action", label: "Eliminar mi cuenta", action: "delete-account" },
+    ],
+  },
+  {
+    id: "confianza",
+    label: "Confianza y seguridad",
+    audience: "both",
+    blocks: [
+      {
+        type: "faq",
+        q: "¿Cómo reporto un caso o un perfil?",
+        a: 'En el caso o en el perfil de la rescatista, toca "Reportar". Revisamos cada reporte.',
+      },
+      {
+        type: "faq",
+        q: "¿Cómo protegen mis datos de pago?",
+        a: "DopMi no guarda los datos de tu tarjeta. Los pagos se procesan con un proveedor de pagos certificado.",
+      },
+    ],
   },
 ];

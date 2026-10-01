@@ -7,16 +7,12 @@ describe("DopMi prototype state", () => {
     usePrototypeStore.getState().resetPrototype();
   });
 
-  it("keeps adopter and donor under the same account mode", () => {
+  it("keeps adopt under the donor account mode", () => {
     const state = usePrototypeStore.getState();
     state.setAccountMode("donor");
     state.setDonorIntent("adopt");
     expect(usePrototypeStore.getState().accountMode).toBe("donor");
     expect(usePrototypeStore.getState().donorIntent).toBe("adopt");
-
-    usePrototypeStore.getState().setDonorIntent("donate");
-    expect(usePrototypeStore.getState().accountMode).toBe("donor");
-    expect(usePrototypeStore.getState().donorIntent).toBe("donate");
   });
 
   it("synchronizes saved pets across surfaces", () => {

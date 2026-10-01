@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { initialCases, initialNotifications, rescuerAccount, type Need, type Notification, type PetCase } from "./data";
 
 export type AccountMode = "donor" | "rescuer";
-export type DonorIntent = "adopt" | "donate";
+export type DonorIntent = "adopt";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
 export type PaymentOutcome = "success" | "error";
 
@@ -33,6 +33,17 @@ export type ChatMessage = {
   author: "donor" | "rescuer";
   text: string;
   time: string;
+  threadId?: string;
+  image?: string;
+};
+
+export type DonorProfile = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  city: string;
+  avatar?: string;
 };
 
 type PrototypeState = {
@@ -51,18 +62,21 @@ type PrototypeState = {
   messages: ChatMessage[];
   draft: Record<string, string | boolean | string[]>;
   emptyStates: boolean;
+  donorProfile: DonorProfile;
   rescuerProfile: RescuerProfile;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
   setPaymentOutcome: (outcome: PaymentOutcome) => void;
   setEmptyStates: (value: boolean) => void;
+  updateDonorProfile: (values: Partial<DonorProfile>) => void;
   updateRescuerProfile: (values: Partial<RescuerProfile>) => void;
   toggleSavedPet: (id: string) => void;
   toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
   setGuardian: (active: boolean, amount?: number) => void;
-  sendMessage: (author: "donor" | "rescuer", text: string) => void;
+  sendMessage: (author: "donor" | "rescuer", text: string, threadId?: string) => void;
+  startAdoptionChat: (pet: { id: string; name: string; image: string }) => void;
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
   publishDraft: (status?: PetCase["caseStatus"]) => void;
@@ -74,10 +88,17 @@ type PrototypeState = {
 };
 
 const baseMessages: ChatMessage[] = [
-  { id: "m1", author: "donor", text: "¡Hola! Me interesa adoptar a Luna.", time: "10:30" },
-  { id: "m2", author: "rescuer", text: "¡Hola Ana! Me alegra tu interés. ¿Tienes experiencia con perros?", time: "10:32" },
-  { id: "m3", author: "donor", text: "Sí, he tenido perros antes. Tengo un jardín amplio para ella.", time: "10:35" },
-  { id: "m4", author: "rescuer", text: "Perfecto. ¿Cuándo podrías visitarnos para conocerla?", time: "10:36" },
+  {
+    id: "m1",
+    threadId: "luna",
+    author: "donor",
+    text: "¡Hola! Me interesa adoptar a Luna",
+    image: "/assets/luna-card.png",
+    time: "10:30",
+  },
+  { id: "m2", threadId: "luna", author: "rescuer", text: "¡Hola Ana! Me alegra tu interés. ¿Tienes experiencia con perros?", time: "10:32" },
+  { id: "m3", threadId: "luna", author: "donor", text: "Sí, he tenido perros antes. Tengo un jardín amplio para ella.", time: "10:35" },
+  { id: "m4", threadId: "luna", author: "rescuer", text: "Perfecto. ¿Cuándo podrías visitarnos para conocerla?", time: "10:36" },
 ];
 
 const initialState = {
@@ -95,7 +116,14 @@ const initialState = {
   notifications: initialNotifications,
   messages: baseMessages,
   draft: {} as Record<string, string | boolean | string[]>,
-  emptyStates: false,
+  emptyStates: true,
+  donorProfile: {
+    firstName: "Alberto",
+    lastName: "Quiroga",
+    email: "alberto@email.com",
+    phone: "+52 55 1234 5678",
+    city: "Monterrey, NL",
+  },
   rescuerProfile: { ...rescuerAccount },
 };
 
@@ -112,6 +140,10 @@ export const usePrototypeStore = create<PrototypeState>()(
           emptyStates,
           // Al apagar empty states, muestra el feed de impacto de demo si ya es Guardián.
           guardianImpactReady: emptyStates ? false : state.guardianActive ? true : state.guardianImpactReady,
+        })),
+      updateDonorProfile: (values) =>
+        set((state) => ({
+          donorProfile: { ...state.donorProfile, ...values },
         })),
       updateRescuerProfile: (values) =>
         set((state) => ({
@@ -192,7 +224,7 @@ export const usePrototypeStore = create<PrototypeState>()(
               ]
             : state.notifications,
         })),
-      sendMessage: (author, text) =>
+      sendMessage: (author, text, threadId) =>
         set((state) => ({
           messages: [
             ...state.messages,
@@ -200,6 +232,7 @@ export const usePrototypeStore = create<PrototypeState>()(
               id: `message-${Date.now()}`,
               author,
               text,
+              threadId,
               time: new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date()),
             },
           ],
@@ -212,13 +245,31 @@ export const usePrototypeStore = create<PrototypeState>()(
                     title: "Nuevo mensaje para María",
                     body: text,
                     time: "Ahora",
-                    target: "/messages/luna",
+                    target: threadId ? `/messages/${threadId}` : "/messages/luna",
                     read: false,
                   },
                   ...state.notifications,
                 ]
               : state.notifications,
         })),
+      startAdoptionChat: (pet) =>
+        set((state) => {
+          const hasThread = state.messages.some((message) => message.threadId === pet.id);
+          if (hasThread) return state;
+          return {
+            messages: [
+              ...state.messages,
+              {
+                id: `intro-${pet.id}-${Date.now()}`,
+                threadId: pet.id,
+                author: "donor" as const,
+                text: `¡Hola! Me interesa adoptar a ${pet.name}`,
+                image: pet.image,
+                time: new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date()),
+              },
+            ],
+          };
+        }),
       markNotificationRead: (id) =>
         set((state) => ({
           notifications: state.notifications.map((item) => (item.id === id ? { ...item, read: true } : item)),
@@ -333,14 +384,22 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 11,
+      version: 15,
       // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
       migrate: (persisted) => ({
         ...(persisted as PrototypeState),
         cases: initialCases,
         notifications: initialNotifications,
-        emptyStates: false,
+        emptyStates: true,
         guardianImpactReady: false,
+        messages: baseMessages,
+        donorProfile: {
+          firstName: "Alberto",
+          lastName: "Quiroga",
+          email: "alberto@email.com",
+          phone: "+52 55 1234 5678",
+          city: "Monterrey, NL",
+        },
         rescuerProfile: { ...rescuerAccount },
       }),
     },

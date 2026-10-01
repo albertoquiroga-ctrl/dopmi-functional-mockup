@@ -3,12 +3,12 @@ import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "re
 import {
   adoptionPets,
   donationLog,
-  donorFaqs,
+  helpTopics,
   paymentHistory,
-  rescuerFaqs,
   rescuers,
   savedCards,
   subscriptionPlans,
+  type HelpTopic,
   type Need,
   type NotificationKind,
   type PetCase,
@@ -67,17 +67,33 @@ function SimulatedBanner() {
   );
 }
 
+function useGoBack(fallback?: string | (() => void)) {
+  const navigate = useNavigate();
+  return () => {
+    if (typeof fallback === "function") {
+      fallback();
+      return;
+    }
+    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
+    if (typeof historyIdx === "number" && historyIdx > 0) {
+      navigate(-1);
+      return;
+    }
+    if (typeof fallback === "string" && fallback) {
+      navigate(fallback);
+      return;
+    }
+    navigate(-1);
+  };
+}
+
 /** Header del flujo de acceso: ranuras laterales fijas de 40px con el logo centrado. */
 function BrandHeader({ back, action }: { back?: string | (() => void); action?: ReactNode }) {
-  const navigate = useNavigate();
+  const goBack = useGoBack(back);
   return (
     <header className="brand-header">
       {back ? (
-        <button
-          className="header-slot"
-          onClick={() => (typeof back === "function" ? back() : navigate(back))}
-          aria-label="Atrás"
-        >
+        <button className="header-slot" onClick={goBack} aria-label="Atrás" type="button">
           <AssetIcon name="back.svg" size={24} />
         </button>
       ) : (
@@ -91,33 +107,34 @@ function BrandHeader({ back, action }: { back?: string | (() => void); action?: 
 
 function TopBar({
   title,
+  subtitle,
   back,
   actions,
   icon,
 }: {
   title?: string;
+  subtitle?: string;
   back?: string | (() => void);
   actions?: ReactNode;
   icon?: string;
 }) {
-  const navigate = useNavigate();
+  const goBack = useGoBack(back);
   return (
-    <header className="topbar">
+    <header className={`topbar${subtitle ? " has-subtitle" : ""}`}>
       {back ? (
-        <button
-          className="icon-button"
-          onClick={() => (typeof back === "function" ? back() : navigate(back))}
-          aria-label="Regresar"
-        >
+        <button className="icon-button" onClick={goBack} aria-label="Regresar" type="button">
           <AssetIcon name="back.svg" />
         </button>
       ) : (
         <span className="topbar-spacer" />
       )}
-      <h1>
-        {icon ? <Icon name={icon} size={20} className="title-icon" /> : null}
-        {title}
-      </h1>
+      <div className="topbar-title">
+        <h1>
+          {icon ? <Icon name={icon} size={20} className="title-icon" /> : null}
+          {title}
+        </h1>
+        {subtitle ? <p className="topbar-subtitle">{subtitle}</p> : null}
+      </div>
       <div className="topbar-actions">{actions}</div>
     </header>
   );
@@ -126,6 +143,7 @@ function TopBar({
 const donorTabs = [
   { path: "/adoption", label: "Adoptar", icon: "rtab-home.svg", size: 22 },
   { path: "/donate", label: "Apoyar", icon: "tab-donate.svg", size: 22 },
+  { path: "/messages", label: "Favoritos", icon: "icon-heart.svg", size: 20 },
   { path: "/profile", label: "Perfil", icon: "tab-profile.svg", size: 20 },
 ];
 
@@ -141,19 +159,27 @@ function BottomNav({ mode }: { mode: AccountMode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const items = mode === "donor" ? donorTabs : rescuerTabs;
+  const iconOnly = mode === "donor";
   return (
-    <nav className={`bottom-nav${mode === "rescuer" ? " five" : " donor-pill"}`}>
+    <nav className={`bottom-nav${mode === "rescuer" ? " five" : " donor-pill"}`} aria-label="Navegación principal">
       {items.map((item) => {
         const active =
           item.path === "/rescuer"
             ? location.pathname === item.path
             : location.pathname.startsWith(item.path);
         return (
-          <button key={item.path} className={active ? "active" : ""} onClick={() => navigate(item.path)}>
+          <button
+            key={item.path}
+            type="button"
+            className={active ? "active" : ""}
+            onClick={() => navigate(item.path)}
+            aria-label={item.label}
+            aria-current={active ? "page" : undefined}
+          >
             <span className="nav-icon-wrap" aria-hidden="true">
               <Icon name={item.icon} size={item.size} />
             </span>
-            <span>{item.label}</span>
+            {iconOnly ? null : <span>{item.label}</span>}
           </button>
         );
       })}
@@ -178,6 +204,40 @@ function ScreenShell({
       <BottomNav mode={mode} />
       {overlay}
     </div>
+  );
+}
+
+/** Logo + notificaciones: misma posición en Adoptar, Apoyar, Mis match, etc. */
+function DonorChromeTop({
+  leading,
+  brand,
+}: {
+  leading?: ReactNode;
+  brand?: ReactNode;
+}) {
+  const navigate = useNavigate();
+  const { notifications } = usePrototypeStore();
+  const unread = notifications.filter((item) => !item.read).length;
+  return (
+    <header className="discover-top">
+      <div className="discover-brand">
+        {brand ?? (
+          <img className="discover-logo" src={`${A}logo-paw.svg`} alt="DopMi" width={40} height={40} />
+        )}
+        {leading}
+      </div>
+      <div className="discover-actions">
+        <button
+          type="button"
+          className="discover-icon-btn"
+          onClick={() => navigate("/notifications")}
+          aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
+        >
+          <Icon name="icon-bell.svg" size={20} />
+          {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
+        </button>
+      </div>
+    </header>
   );
 }
 
@@ -293,37 +353,9 @@ function Splash() {
 }
 
 /** §3.1 / §3.2 / §3.5 — Tipo de cuenta + intención en una sola pantalla */
-type AccountChoiceId = "donate" | "adopt" | "rescue";
+type AccountChoiceId = "adopt" | "rescue";
 
 function AccountChoiceIcon({ id, size = 28 }: { id: AccountChoiceId; size?: number }) {
-  if (id === "donate") {
-    return (
-      <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true">
-        <path
-          d="M12.83 16.33h2.33a2.33 2.33 0 0 0 0-4.66h-3.5c-.7 0-1.28.23-1.63.7L3.5 18.66"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path
-          d="m8.16 23.33 1.87-1.63c.35-.47.93-.7 1.63-.7h4.67c1.28 0 2.45-.47 3.26-1.4l5.37-5.13a2.34 2.34 0 0 0-3.21-3.4l-4.9 4.55"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <path d="m2.33 17.5 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <path
-          d="M22.74 9.91c.82-.82 1.75-1.87 1.75-3.15a3.5 3.5 0 0 0-5.83-2.1 3.5 3.5 0 0 0-5.83 2.1c0 1.4.93 2.33 1.75 3.27l4.08 3.96 4.08-4.08Z"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
   if (id === "adopt") {
     return (
       <svg width={size} height={size} viewBox="0 0 28 28" fill="none" aria-hidden="true">
@@ -369,12 +401,6 @@ function ChooseAccount() {
     copy: string;
   }[] = [
     {
-      id: "donate",
-      label: "Donar",
-      title: "Donar",
-      copy: "Apoya necesidades concretas de casos reales y sigue el impacto de tu aportación.",
-    },
-    {
       id: "adopt",
       label: "Adoptar",
       title: "Adoptar",
@@ -398,7 +424,7 @@ function ChooseAccount() {
       return;
     }
     setAccountMode("donor");
-    setDonorIntent(selected);
+    setDonorIntent("adopt");
     navigate("/onboarding/donor");
   };
 
@@ -432,7 +458,7 @@ function ChooseAccount() {
         </h2>
 
         <div className="account-tabs-wrap">
-          <div className="account-tabs" role="radiogroup" aria-label="Cómo quieres ayudar">
+          <div className="account-tabs account-tabs--two" role="radiogroup" aria-label="Cómo quieres ayudar">
             {options.map((option) => {
               const isSelected = selected === option.id;
               return (
@@ -445,7 +471,7 @@ function ChooseAccount() {
                   onClick={() => setSelected(option.id)}
                 >
                   <span className="account-tab-orb">
-                    <AccountChoiceIcon id={option.id} size={isSelected ? 32 : 26} />
+                    <AccountChoiceIcon id={option.id} size={32} />
                   </span>
                   <span className="account-tab-label">{option.label}</span>
                 </button>
@@ -488,108 +514,21 @@ type OnboardingSlide = {
   footnote?: string;
 };
 
-function OnbDonorCaseCard({
-  completed = false,
-  showTicket = false,
-}: {
-  completed?: boolean;
-  showTicket?: boolean;
-}) {
-  return (
-    <article className={`onb-case-card${completed ? " is-done" : ""}`}>
-      <div className="onb-case-row">
-        <img className="onb-case-photo-sm" src={`${A}luna-card.png`} alt="" />
-        <div className="onb-case-head">
-          <strong className="onb-case-name">Luna</strong>
-          <span className="onb-case-rescuer">
-            Refugio Patitas
-            <span className="onb-case-verified">
-              <AssetIcon name="icon-verified.svg" size={14} alt="" />
-              Verificada
-            </span>
-          </span>
-        </div>
-      </div>
-      <div className="onb-case-need">
-        <div className="onb-case-need-top">
-          <span className="onb-case-need-label">Medicina</span>
-          {completed ? (
-            <span className="onb-case-need-pill">
-              <AssetIcon name="onb-check.svg" size={12} alt="" />
-              Completada
-            </span>
-          ) : (
-            <span className="onb-case-need-pct">70%</span>
-          )}
-        </div>
-        {!completed && (
-          <span className="onb-case-need-bar" aria-hidden="true">
-            <i style={{ width: "70%" }} />
-          </span>
-        )}
-      </div>
-      {showTicket && (
-        <div className="onb-case-ticket">
-          <span className="onb-case-ticket-icon">
-            <AssetIcon name="icon-doc.svg" size={18} alt="" />
-          </span>
-          <span>
-            <strong>Ticket de consulta</strong>
-            <small>Subido por Refugio Patitas</small>
-          </span>
-        </div>
-      )}
-    </article>
-  );
-}
-
-const onboardingTracks: Record<"adopter" | "donor" | "rescuer", OnboardingSlide[]> = {
-  donor: [
-    {
-      id: "trust",
-      eyebrow: "Apoyo puntual",
-      title: "Quieres ayudar. Aquí sabes a quién.",
-      body: "Apoya una necesidad concreta y mira cómo se usó.",
-      art: (
-        <div className="onb-story" aria-hidden="true">
-          <div className="onb-feature-chips">
-            <span>Quién publica</span>
-            <span>Cuánto falta</span>
-            <span>Evidencia</span>
-          </div>
-          <OnbDonorCaseCard />
-        </div>
-      ),
-      cta: "Continuar",
-      accountLink: true,
-    },
-    {
-      id: "evidence",
-      title: "Tu ayuda no se pierde de vista.",
-      body: "La rescatista sube evidencia, DopMi la revisa y te mostramos cómo ayudó tu aportación.",
-      art: (
-        <div className="onb-story onb-story--evidence" aria-hidden="true">
-          <div className="onb-evidence-toast">
-            <AssetIcon name="icon-bell.svg" size={14} alt="" />
-            <span>Nueva evidencia en el caso de Luna</span>
-          </div>
-          <OnbDonorCaseCard completed showTicket />
-        </div>
-      ),
-      cta: "Quiero ayudar",
-      accountLink: true,
-      footnote: "Con tu cuenta sigues cada caso que apoyas.",
-    },
-  ],
+const onboardingTracks: Record<"adopter" | "rescuer", OnboardingSlide[]> = {
   adopter: [
     {
       id: "desire",
-      title: "Tu nuevo mejor amigo ya te está esperando.",
+      title: "Tu nuevo mejor amigo ya te espera.",
       body: "Descubre mascotas que buscan un hogar y conoce su historia.",
       art: (
         <div className="onb-adopt-stack" aria-hidden="true">
+          <article className="onb-adopt-card onb-adopt-card--peek">
+            <img src={`${A}nina-card.png`} alt="" />
+            <p>Michi también busca hogar</p>
+          </article>
           <article className="onb-adopt-card onb-adopt-card--main">
             <img src={`${A}luna-card.png`} alt="" />
+            <div className="onb-adopt-card-shade" />
             <div className="onb-adopt-card-meta">
               <strong>Luna</strong>
               <span>Refugio Patitas</span>
@@ -598,10 +537,6 @@ const onboardingTracks: Record<"adopter" | "donor" | "rescuer", OnboardingSlide[
               <AssetIcon name="icon-heart.svg" size={16} alt="" />
             </span>
           </article>
-          <article className="onb-adopt-card onb-adopt-card--peek">
-            <img src={`${A}nina-card.png`} alt="" />
-            <p>Michi también busca hogar</p>
-          </article>
         </div>
       ),
       cta: "Continuar",
@@ -609,8 +544,8 @@ const onboardingTracks: Record<"adopter" | "donor" | "rescuer", OnboardingSlide[
     },
     {
       id: "trust",
-      title: "Conoce a quien está detrás de cada historia.",
-      body: "Revisa la información de la mascota, conoce al rescatista y contacta directamente para continuar.",
+      title: "Conoce a quien cuida cada historia.",
+      body: "Revisa salud y convivencia, conoce al rescatista y escríbele directo.",
       art: (
         <div className="onb-adopt-detail" aria-hidden="true">
           <article className="onb-adopt-detail-card">
@@ -627,34 +562,36 @@ const onboardingTracks: Record<"adopter" | "donor" | "rescuer", OnboardingSlide[
                 </span>
               </div>
             </div>
-            <div className="onb-adopt-section">
-              <small>Salud</small>
-              <div className="onb-adopt-tags">
-                <span>Vacunada</span>
-                <span>Esterilizada</span>
+            <div className="onb-adopt-attrs">
+              <div className="onb-adopt-section">
+                <small>Salud</small>
+                <div className="onb-adopt-tags">
+                  <span>Vacunada</span>
+                  <span>Esterilizada</span>
+                </div>
+              </div>
+              <div className="onb-adopt-section">
+                <small>Convive con</small>
+                <div className="onb-adopt-tags">
+                  <span>Perros</span>
+                  <span>Gatos</span>
+                  <span>Niños</span>
+                </div>
               </div>
             </div>
-            <div className="onb-adopt-section">
-              <small>Convive con</small>
-              <div className="onb-adopt-tags">
-                <span>Perros</span>
-                <span>Gatos</span>
-                <span>Niños</span>
-              </div>
-            </div>
-            <p className="onb-adopt-review">Cada publicación pasa por revisión de DopMi.</p>
             <div className="onb-adopt-chat">
               <span>¡Hola! Me interesa Luna</span>
               <em>
                 <AssetIcon name="send.svg" size={14} alt="" />
               </em>
             </div>
+            <p className="onb-adopt-review">Cada publicación pasa por revisión de DopMi.</p>
           </article>
         </div>
       ),
       cta: "Quiero adoptar",
       accountLink: true,
-      footnote: "Con tu cuenta guardas tus favoritos y escribes a rescatistas.",
+      footnote: "Con tu cuenta guardas favoritos y escribes a rescatistas.",
     },
   ],
   rescuer: [
@@ -724,8 +661,7 @@ const onboardingTracks: Record<"adopter" | "donor" | "rescuer", OnboardingSlide[
 
 function Onboarding({ mode }: { mode: AccountMode }) {
   const navigate = useNavigate();
-  const donorIntent = usePrototypeStore((state) => state.donorIntent);
-  const track = mode === "rescuer" ? "rescuer" : donorIntent === "adopt" ? "adopter" : "donor";
+  const track = mode === "rescuer" ? "rescuer" : "adopter";
   const slides = onboardingTracks[track];
   const [step, setStep] = useState(0);
   const slide = slides[step];
@@ -746,30 +682,68 @@ function Onboarding({ mode }: { mode: AccountMode }) {
       </div>
 
       <div className="onb-gate-body" key={slide.id}>
-        <div className="onb-gate-copy">
-          {slide.eyebrow ? <p className="onb-gate-eyebrow">{slide.eyebrow}</p> : null}
-          <h1>{slide.title}</h1>
-          <p>{slide.body}</p>
-        </div>
-        {slide.art}
-        <div className="onb-gate-dots" aria-label={`Paso ${step + 1} de ${slides.length}`}>
-          {slides.map((item, index) => (
-            <span key={item.id} className={index === step ? "active" : ""} />
-          ))}
-        </div>
+        {track === "adopter" ? (
+          <>
+            {slide.art}
+            <div className="onb-gate-copy">
+              {slide.eyebrow ? <p className="onb-gate-eyebrow">{slide.eyebrow}</p> : null}
+              <h1>{slide.title}</h1>
+              <p>{slide.body}</p>
+              {slide.footnote ? <p className="onb-gate-footnote">{slide.footnote}</p> : null}
+            </div>
+            <div className="onb-gate-dots" aria-label={`Paso ${step + 1} de ${slides.length}`}>
+              {slides.map((item, index) => (
+                <span key={item.id} className={index === step ? "active" : ""} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="onb-gate-copy">
+              {slide.eyebrow ? <p className="onb-gate-eyebrow">{slide.eyebrow}</p> : null}
+              <h1>{slide.title}</h1>
+              <p>{slide.body}</p>
+            </div>
+            {slide.art}
+            <div className="onb-gate-dots" aria-label={`Paso ${step + 1} de ${slides.length}`}>
+              {slides.map((item, index) => (
+                <span key={item.id} className={index === step ? "active" : ""} />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="onb-gate-footer">
         <button type="button" className="auth-gate-primary" onClick={goNext}>
           {slide.cta}
         </button>
-        {slide.footnote ? <p className="onb-gate-footnote">{slide.footnote}</p> : null}
+        {track !== "adopter" && slide.footnote ? <p className="onb-gate-footnote">{slide.footnote}</p> : null}
       </div>
     </div>
   );
 }
 
-function SocialButtons({ variant, onPick }: { variant: "solid" | "outline" | "auth"; onPick: () => void }) {
+function SocialButtons({
+  variant,
+  onPick,
+}: {
+  variant: "solid" | "outline" | "auth" | "icons";
+  onPick: () => void;
+}) {
+  if (variant === "icons") {
+    return (
+      <div className="social-stack social-stack--icons">
+        <button type="button" className="social-button icons" onClick={onPick} aria-label="Continuar con Apple">
+          <AssetIcon name="icon-apple.svg" size={22} />
+        </button>
+        <button type="button" className="social-button icons" onClick={onPick} aria-label="Continuar con Google">
+          <AssetIcon name="icon-google.svg" size={22} />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className={`social-stack${variant === "auth" ? " social-stack--auth" : ""}`}>
       <button type="button" className={`social-button ${variant}`} onClick={onPick}>
@@ -786,8 +760,8 @@ function SocialButtons({ variant, onPick }: { variant: "solid" | "outline" | "au
 
 function Welcome({ mode }: { mode: AccountMode }) {
   const navigate = useNavigate();
-  const donorIntent = usePrototypeStore((state) => state.donorIntent);
   const enter = () => navigate(mode === "donor" ? "/adoption" : "/rescuer");
+  const bgImage = mode === "rescuer" ? `${A}publish-sample-pet.jpg` : `${A}welcome-pets.png`;
 
   const context =
     mode === "rescuer"
@@ -795,18 +769,18 @@ function Welcome({ mode }: { mode: AccountMode }) {
           title: "Crea tu espacio para publicar",
           body: "Verifica tu cuenta, publica casos y comparte evidencia con transparencia.",
         }
-      : donorIntent === "adopt"
-        ? {
-            title: "Casi listo para encontrar hogar",
-            body: "Guarda favoritos, revisa historias y contacta al rescatista cuando quieras.",
-          }
-        : {
-            title: "Casi listo para apoyar",
-            body: "Elige necesidades concretas y sigue el impacto de cada aportación.",
-          };
+      : {
+          title: "Casi listo para encontrar hogar",
+          body: "Guarda favoritos, revisa historias y contacta al rescatista cuando quieras.",
+        };
 
   return (
-    <div className="auth-gate">
+    <div className={`auth-gate auth-gate--welcome${mode === "rescuer" ? " is-rescuer" : ""}`}>
+      <div className="auth-gate-media" aria-hidden="true">
+        <img src={bgImage} alt="" />
+        <div className="auth-gate-scrim" />
+      </div>
+
       <div className="auth-gate-top">
         <button
           type="button"
@@ -814,7 +788,7 @@ function Welcome({ mode }: { mode: AccountMode }) {
           onClick={() => navigate(mode === "rescuer" ? "/onboarding/rescuer" : "/onboarding/donor")}
           aria-label="Atrás"
         >
-          <AssetIcon name="back.svg" size={24} />
+          <Icon name="back.svg" size={24} />
         </button>
         <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
       </div>
@@ -838,17 +812,17 @@ function Welcome({ mode }: { mode: AccountMode }) {
       </div>
 
       <div className="auth-gate-actions">
-        <SocialButtons variant="auth" onPick={enter} />
-        <div className="auth-gate-divider"><span>o</span></div>
         <button type="button" className="auth-gate-primary" onClick={() => navigate(`/signup/${mode}`)}>
-          Crear cuenta
+          Crea una cuenta
         </button>
         <p className="auth-gate-switch">
-          ¿Ya tienes cuenta?{" "}
           <button type="button" className="auth-text-link" onClick={() => navigate(`/login/${mode}`)}>
             Inicia sesión
           </button>
         </p>
+        <div className="auth-gate-rule" aria-hidden="true" />
+        <p className="auth-gate-social-label">Continuar con</p>
+        <SocialButtons variant="icons" onPick={enter} />
       </div>
     </div>
   );
@@ -858,12 +832,20 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState(false);
   const enter = () => navigate(mode === "donor" ? "/adoption" : "/rescuer");
+  const bgImage = mode === "rescuer" ? `${A}publish-sample-pet.jpg` : `${A}welcome-pets.png`;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     enter();
   };
   return (
-    <div className="auth-gate auth-gate--form">
+    <div
+      className={`auth-gate auth-gate--form auth-gate--sheet${mode === "rescuer" ? " is-rescuer" : ""}`}
+    >
+      <div className="auth-gate-media" aria-hidden="true">
+        <img src={bgImage} alt="" />
+        <div className="auth-gate-scrim auth-gate-scrim--form" />
+      </div>
+
       <div className="auth-gate-top">
         <button
           type="button"
@@ -871,25 +853,29 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
           onClick={() => navigate(`/welcome/${mode}`)}
           aria-label="Atrás"
         >
-          <AssetIcon name="back.svg" size={24} />
+          <Icon name="back.svg" size={24} />
         </button>
         <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
       </div>
 
       <form className="auth-gate-form" onSubmit={submit}>
         <div className="auth-gate-form-head">
-          <h1>{signup ? "Crear cuenta" : "Iniciar sesión"}</h1>
-          <p>{signup ? "Únete a DopMi y empieza a ayudar con seguimiento claro." : "Bienvenido de vuelta a DopMi."}</p>
+          <h1>{signup ? "Crea tu cuenta" : "Inicia sesión"}</h1>
+          <p>
+            {signup
+              ? "Completa tus datos para guardar favoritos y contactar al rescatista."
+              : "Entra para seguir tus favoritos y retomar donde lo dejaste."}
+          </p>
         </div>
 
         {signup && (
           <label className="auth-field">
-            Nombre completo *
-            <input required placeholder="Tu nombre" />
+            Nombre completo
+            <input required placeholder="Tu nombre" autoComplete="name" />
           </label>
         )}
         <label className="auth-field">
-          Correo electrónico{signup ? " *" : ""}
+          Correo electrónico
           <input required type="email" placeholder="tu@email.com" autoComplete="email" />
         </label>
         {signup && (
@@ -899,7 +885,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
           </label>
         )}
         <label className="auth-field">
-          Contraseña{signup ? " *" : ""}
+          Contraseña
           <input
             required
             type="password"
@@ -909,7 +895,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
         </label>
         {signup && (
           <label className="auth-field">
-            Confirmar contraseña *
+            Confirmar contraseña
             <input required type="password" placeholder="Confirma tu contraseña" autoComplete="new-password" />
           </label>
         )}
@@ -949,11 +935,13 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
         )}
 
         <button className="auth-gate-primary" disabled={signup && !accepted}>
-          {signup ? "Crear cuenta" : "Iniciar sesión"}
+          {signup ? "Crea una cuenta" : "Inicia sesión"}
         </button>
 
-        <div className="auth-gate-divider"><span>o</span></div>
-        <SocialButtons variant="auth" onPick={enter} />
+        <div className="auth-gate-alt">
+          <p className="auth-gate-social-label">Continuar con</p>
+          <SocialButtons variant="icons" onPick={enter} />
+        </div>
 
         <p className="auth-gate-switch">
           {signup ? "¿Ya tienes cuenta? " : "¿No tienes cuenta? "}
@@ -1159,12 +1147,6 @@ function SizeDogIcon({ size, active }: { size: PetSize; active: boolean }) {
   );
 }
 
-function parseDistanceKm(value: string): number {
-  const match = value.replace(",", ".").match(/[\d.]+/);
-  const n = match ? Number(match[0]) : NaN;
-  return Number.isFinite(n) ? n : 999;
-}
-
 type DiscoverPet = (typeof adoptionPets)[number];
 type DiscoverDonateCard = {
   kind: "donate";
@@ -1177,7 +1159,8 @@ type DiscoverCard = DiscoverPetCard | DiscoverDonateCard;
 
 function AdoptionHome() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, notifications, emptyStates, cases } = usePrototypeStore();
+  const { savedPetIds, toggleSavedPet, emptyStates, cases, donorProfile } = usePrototypeStore();
+  const donorCity = donorProfile.city.trim() || "Monterrey, NL";
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftSex, setDraftSex] = useState<"Macho" | "Hembra" | null>(null);
   const [sexFilter, setSexFilter] = useState<"Macho" | "Hembra" | null>(null);
@@ -1185,12 +1168,6 @@ function AdoptionHome() {
   const [sizeFilter, setSizeFilter] = useState<PetSize | null>(null);
   const [draftPersonality, setDraftPersonality] = useState<PetPersonality[]>([]);
   const [personalityFilter, setPersonalityFilter] = useState<PetPersonality[]>([]);
-  const [locationOpen, setLocationOpen] = useState(false);
-  const [placeLabel, setPlaceLabel] = useState("Monterrey, NL");
-  const [draftPlace, setDraftPlace] = useState("Monterrey, NL");
-  const [rangeOpen, setRangeOpen] = useState(false);
-  const [draftRangeKm, setDraftRangeKm] = useState(5);
-  const [rangeKm, setRangeKm] = useState<number | null>(null);
   const [chatConfirmId, setChatConfirmId] = useState<string | null>(null);
   const [species, setSpecies] = useState<"Perro" | "Gato">("Perro");
   const [index, setIndex] = useState(0);
@@ -1199,8 +1176,7 @@ function AdoptionHome() {
   const [exiting, setExiting] = useState<"left" | "right" | null>(null);
   const startX = useRef(0);
   const dragXRef = useRef(0);
-  const unread = notifications.filter((item) => !item.read).length;
-  const filtersActive = !!sexFilter || !!sizeFilter || personalityFilter.length > 0 || rangeKm !== null;
+  const filtersActive = !!sexFilter || !!sizeFilter || personalityFilter.length > 0;
 
   const pets = emptyStates
     ? []
@@ -1215,7 +1191,6 @@ function AdoptionHome() {
         ) {
           return false;
         }
-        if (rangeKm !== null && parseDistanceKm(pet.distance) > rangeKm) return false;
         return true;
       });
 
@@ -1268,27 +1243,13 @@ function AdoptionHome() {
     setIndex(0);
     setDragX(0);
     setExiting(null);
-  }, [sexFilter, sizeFilter, personalityFilter, rangeKm, placeLabel, species, emptyStates]);
+  }, [sexFilter, sizeFilter, personalityFilter, species, emptyStates]);
 
   const openFilters = () => {
     setDraftSex(sexFilter);
     setDraftSize(sizeFilter);
     setDraftPersonality(personalityFilter);
     setFilterOpen(true);
-  };
-
-  const openLocation = () => {
-    setDraftPlace(placeLabel);
-    setDraftRangeKm(rangeKm ?? 5);
-    setRangeOpen(rangeKm !== null);
-    setLocationOpen(true);
-  };
-
-  const applyLocation = () => {
-    const nextPlace = draftPlace.trim() || placeLabel;
-    setPlaceLabel(nextPlace);
-    setRangeKm(rangeOpen ? draftRangeKm : null);
-    setLocationOpen(false);
   };
 
   const applyFilters = () => {
@@ -1486,86 +1447,6 @@ function AdoptionHome() {
             </div>
           </div>
         ) : null}
-        {locationOpen ? (
-          <div className="modal-backdrop center" onClick={() => setLocationOpen(false)}>
-            <div
-              className="dialog-card location-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="location-dialog-title"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button type="button" className="dialog-close" onClick={() => setLocationOpen(false)} aria-label="Cerrar">
-                ×
-              </button>
-              <h2 id="location-dialog-title">Ubicación</h2>
-              <label className="location-field">
-                <span className="visually-hidden">Ciudad o zona</span>
-                <AssetIcon name="location.svg" size={16} alt="" />
-                <input
-                  type="text"
-                  value={draftPlace}
-                  onChange={(event) => setDraftPlace(event.target.value)}
-                  placeholder="Ciudad, estado"
-                  autoComplete="address-level2"
-                />
-              </label>
-              <p className="location-note">
-                Todas las recomendaciones automáticas que te mostraremos son dentro del mismo estado.
-              </p>
-              <div className="location-map" aria-hidden="true">
-                <div className="location-map-surface">
-                  <span className="location-map-label location-map-label--a">Hospital</span>
-                  <span className="location-map-label location-map-label--b">Parque</span>
-                  <span className="location-map-label location-map-label--c">Centro</span>
-                  <i
-                    className="location-map-radius"
-                    style={{
-                      width: `${28 + (rangeOpen ? draftRangeKm : 5) * 2.4}%`,
-                      height: `${28 + (rangeOpen ? draftRangeKm : 5) * 2.4}%`,
-                    }}
-                  />
-                  <i className="location-map-pin" />
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`location-range-toggle${rangeOpen ? " is-open" : ""}`}
-                onClick={() => setRangeOpen((value) => !value)}
-                aria-expanded={rangeOpen}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M4 20 14.5 9.5M16 4l4 4-9.5 9.5H6.5V13.5L16 4Z"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Personalizar alcance
-              </button>
-              {rangeOpen ? (
-                <div className="location-range-row">
-                  <input
-                    type="range"
-                    className="location-range-slider"
-                    min={1}
-                    max={30}
-                    step={1}
-                    value={draftRangeKm}
-                    onChange={(event) => setDraftRangeKm(Number(event.target.value))}
-                    aria-label="Distancia máxima en kilómetros"
-                  />
-                  <span className="location-range-value">{draftRangeKm} km</span>
-                </div>
-              ) : null}
-              <button type="button" className="primary-button" onClick={applyLocation}>
-                Aplicar cambios
-              </button>
-            </div>
-          </div>
-        ) : null}
         {chatConfirmId ? (
           <AdoptStartDialog
             onClose={() => setChatConfirmId(null)}
@@ -1575,38 +1456,15 @@ function AdoptionHome() {
         </>
       }
     >
-      <div className="discover">
-        <header className="discover-top">
-          <div className="discover-brand">
-            <img className="discover-logo" src="/assets/logo-paw.svg" alt="DopMi" width={40} height={40} />
-            <button type="button" className="discover-place" onClick={openLocation}>
+      <div className="discover donor-chrome">
+        <DonorChromeTop
+          leading={
+            <p className="discover-place">
               <AssetIcon name="location.svg" size={14} alt="" />
-              <span>{placeLabel}</span>
-            </button>
-          </div>
-          <div className="discover-actions">
-            <button type="button" className="discover-icon-btn" onClick={() => navigate("/messages")} aria-label="Mis match">
-              <svg className="discover-action-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M19.5 12.572 12 20l-7.5-7.428A5 5 0 1 1 12 6.006a5 5 0 1 1 7.5 6.566Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="discover-icon-btn"
-              onClick={() => navigate("/notifications")}
-              aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
-            >
-              <Icon name="icon-bell.svg" size={20} />
-              {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
-            </button>
-          </div>
-        </header>
+              <span>{donorCity}</span>
+            </p>
+          }
+        />
 
         <div className="discover-species-row">
           <div className="discover-species" role="tablist" aria-label="Tipo de mascota">
@@ -1671,17 +1529,16 @@ function AdoptionHome() {
         ) : !pets.length ? (
           <section className="discover-empty">
             <article className="empty-card donor-empty-card">
-              <span className="empty-chip yellow">
-                <Icon name="icon-heart.svg" size={28} />
-              </span>
-              <h2>No hay mascotas disponibles</h2>
-              <p>
-                {filtersActive && !emptyStates
-                  ? "Prueba otros filtros o limpia la selección para ver más opciones."
-                  : !emptyStates
-                    ? `Por ahora no hay ${species === "Perro" ? "perros" : "gatos"} en adopción. Prueba la otra categoría o vuelve pronto.`
-                    : "Por ahora no hay mascotas en adopción. Vuelve pronto o apoya a quienes ya buscan ayuda."}
-              </p>
+              <div className="donor-empty-copy">
+                <h2>No hay mascotas disponibles</h2>
+                <p>
+                  {filtersActive && !emptyStates
+                    ? "Prueba otros filtros o limpia la selección para ver más opciones."
+                    : !emptyStates
+                      ? `Por ahora no hay ${species === "Perro" ? "perros" : "gatos"} en adopción. Prueba la otra categoría o vuelve pronto.`
+                      : "Por ahora no hay mascotas en adopción. Vuelve pronto o apoya a quienes ya buscan ayuda."}
+                </p>
+              </div>
               {filtersActive && !emptyStates ? (
                 <button type="button" className="secondary-button" onClick={clearFilters}>Limpiar filtros</button>
               ) : !emptyStates ? (
@@ -2042,9 +1899,7 @@ function DonateCaseRing({
 
 function DonationHome() {
   const navigate = useNavigate();
-  const { cases, notifications, emptyStates, savedPetIds } = usePrototypeStore();
-  const unread = notifications.filter((item) => !item.read).length;
-  const matchCount = savedPetIds.length;
+  const { cases, emptyStates } = usePrototypeStore();
 
   const openCases = emptyStates
     ? []
@@ -2059,66 +1914,28 @@ function DonationHome() {
   });
 
   return (
-    <ScreenShell className="donate-shell">
-      <div className="donate-home">
-        <header className="donate-home-top">
-          <img className="donate-home-logo" src="/assets/logo-paw.svg" alt="DopMi" width={40} height={40} />
-          <div className="donate-home-actions">
-            <button
-              type="button"
-              className="discover-icon-btn"
-              onClick={() => navigate("/messages")}
-              aria-label="Mis match"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M19.5 12.572 12 20l-7.5-7.428A5 5 0 1 1 12 6.006a5 5 0 1 1 7.5 6.566Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {matchCount > 0 ? <span className="notification-dot">{Math.min(matchCount, 9)}</span> : null}
-            </button>
-            <button
-              type="button"
-              className="discover-icon-btn"
-              onClick={() => navigate("/notifications")}
-              aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
-            >
-              <Icon name="icon-bell.svg" size={20} />
-              {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
-            </button>
-          </div>
-        </header>
+    <ScreenShell
+      className="donate-shell"
+      overlay={
+        <button
+          type="button"
+          className="donate-guardian-foot donate-guardian-foot--dock"
+          onClick={() => navigate("/impact/support")}
+        >
+          <small>Desde $50 / mes</small>
+          <span className="donate-guardian-cta">Suscríbete ahora</span>
+        </button>
+      }
+    >
+      <div className="donate-home donor-chrome">
+        <DonorChromeTop />
 
         <section className="donate-discover">
           <div className="donate-discover-head">
             <h1>Descubre casos</h1>
-            <button
-              type="button"
-              className="donate-see-all"
-              onClick={() => {
-                if (caseItems[0]) navigate(`/case/${caseItems[0].item.id}`);
-              }}
-            >
-              Ver todos
-            </button>
           </div>
 
-          {!caseItems.length ? (
-            <article className="empty-card donor-empty-card">
-              <span className="empty-chip yellow">
-                <Icon name="tab-donate.svg" size={28} />
-              </span>
-              <h2>No hay casos para donar</h2>
-              <p>Por ahora no hay necesidades abiertas. Mientras tanto, puedes conocer mascotas en adopción.</p>
-              <button type="button" className="primary-button" onClick={() => navigate("/adoption")}>
-                Ir a Adopción
-              </button>
-            </article>
-          ) : (
+          {!caseItems.length ? null : (
             <div className="donate-cases-rail" role="list">
               {caseItems.map(({ item, need, pct }) => (
                 <DonateCaseRing
@@ -2143,28 +1960,31 @@ function DonationHome() {
             className="donate-guardian-card"
             onClick={() => navigate("/impact/support")}
           >
-            <img src={`${A}guardian-urgent.jpg`} alt="" />
-            <div className="donate-guardian-shade" />
-            <div className="donate-guardian-top">
-              <span className="donate-guardian-cta">Suscríbete ahora</span>
-              <small>Desde $50 / mes</small>
+            <div className="donate-guardian-media" aria-hidden="true">
+              <img src={`${A}guardian-urgent.jpg`} alt="" />
+              <div className="donate-guardian-shade" />
             </div>
-            <div className="donate-guardian-bottom">
-              <strong>Apoya a casos urgentes</strong>
-              <ul>
-                <li>
-                  <Icon name="icon-shield.svg" size={14} />
-                  Rescatistas y casos verificados
-                </li>
-                <li>
-                  <Icon name="tab-impact.svg" size={14} />
-                  Sigue tu huella
-                </li>
-                <li>
-                  <Icon name="check-circle.svg" size={14} />
-                  Cancela cuando quieras
-                </li>
-              </ul>
+            <div className="donate-guardian-body">
+              <div className="donate-guardian-copy">
+                <strong>Apoya a casos urgentes</strong>
+                <ul>
+                  <li>
+                    <Icon name="icon-shield.svg" size={14} />
+                    Rescatistas y casos verificados
+                  </li>
+                  <li>
+                    <Icon name="tab-impact.svg" size={14} />
+                    Sigue tu huella
+                  </li>
+                  <li>
+                    <Icon name="check-circle.svg" size={14} />
+                    Cancela cuando quieras
+                  </li>
+                </ul>
+              </div>
+              <div className="donate-guardian-grow" aria-hidden="true" />
+              <div className="donate-guardian-foot-slot" aria-hidden="true" />
+              <div className="donate-guardian-trail" aria-hidden="true" />
             </div>
           </button>
         </section>
@@ -2261,12 +2081,11 @@ function NeedCard({
 function CaseDetail() {
   const { caseId = "luna" } = useParams();
   const navigate = useNavigate();
-  const { cases, savedPetIds, toggleSavedPet } = usePrototypeStore();
+  const { cases } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const total = item.needs.reduce((sum, need) => sum + need.requested, 0);
   const funded = item.needs.reduce((sum, need) => sum + need.funded, 0);
   const missionPct = Math.round((funded / Math.max(total, 1)) * 100);
-  const isSaved = savedPetIds.includes(item.id);
   const [report, setReport] = useState(false);
   const [toast, setToast] = useState("");
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -2452,24 +2271,6 @@ function CaseDetail() {
         </div>
 
         <div className="pet-detail-bar donate-case-bar">
-          <button
-            type="button"
-            className={`pet-detail-save${isSaved ? " is-on" : ""}`}
-            onClick={() => toggleSavedPet(item.id)}
-            aria-pressed={isSaved}
-            aria-label={isSaved ? "Quitar de favoritos" : "Guardar en favoritos"}
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                d="M19.5 12.572 12 20l-7.5-7.428A5 5 0 1 1 12 6.006a5 5 0 1 1 7.5 6.566Z"
-                fill={isSaved ? "currentColor" : "none"}
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
           <button
             type="button"
             className="pet-detail-cta"
@@ -2970,28 +2771,51 @@ function ImpactError() {
 }
 
 function Messages() {
+  const navigate = useNavigate();
   const { threadId = "luna" } = useParams();
-  const { messages, sendMessage, accountMode } = usePrototypeStore();
+  const { messages, sendMessage, startAdoptionChat, accountMode } = usePrototypeStore();
   const [text, setText] = useState("");
   const pet = adoptionPets.find((item) => item.id === threadId);
   const chatTitle = pet?.name ?? (threadId === "luna" ? "Luna" : "Chat");
+  const threadMessages = messages.filter((message) => (message.threadId ?? "luna") === threadId);
+
+  useEffect(() => {
+    if (accountMode !== "donor" || !pet) return;
+    startAdoptionChat({ id: pet.id, name: pet.name, image: pet.image });
+  }, [accountMode, pet?.id, pet?.name, pet?.image, startAdoptionChat]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!text.trim()) return;
-    sendMessage(accountMode, text.trim());
+    sendMessage(accountMode, text.trim(), threadId);
     setText("");
   };
   return (
     <div className={`plain-screen chat-screen ${accountMode === "donor" ? "adopter-chat" : "rescuer-chat"}`}>
       <TopBar
         title={chatTitle}
+        subtitle={accountMode === "donor" ? pet?.rescuer : undefined}
         back={accountMode === "donor" ? "/messages" : "/rescuer/messages"}
-        actions={<span className="online-label">En línea</span>}
+        actions={
+          pet && accountMode === "donor" ? (
+            <button
+              type="button"
+              className="online-label chat-detail-link"
+              onClick={() => navigate(`/adoption/${pet.id}`)}
+            >
+              Ver detalle
+            </button>
+          ) : null
+        }
       />
       <div className="chat-messages">
-        {messages.map((message) => (
-          <div key={message.id} className={`bubble ${message.author === accountMode ? "mine" : ""}`}>
-            <p>{message.text}</p><span>{message.time}</span>
+        {threadMessages.map((message) => (
+          <div key={message.id} className={`bubble ${message.author === accountMode ? "mine" : ""}${message.image ? " has-media" : ""}`}>
+            {message.image ? (
+              <img className="bubble-photo" src={message.image} alt={pet?.name ?? "Mascota"} />
+            ) : null}
+            <p>{message.text}</p>
+            <span>{message.time}</span>
           </div>
         ))}
       </div>
@@ -2999,28 +2823,32 @@ function Messages() {
         <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Escribe un mensaje..." />
         <button disabled={!text.trim()} aria-label="Enviar"><AssetIcon name="send.svg" /></button>
       </form>
-      <BottomNav mode={accountMode} />
     </div>
   );
 }
 
 function DonorMessages() {
   const navigate = useNavigate();
-  const { messages, emptyStates, savedPetIds, cases, notifications } = usePrototypeStore();
-  const [showMessages, setShowMessages] = useState(false);
-  const [favTab, setFavTab] = useState<"adoption" | "donation">("adoption");
+  const { messages, emptyStates, savedPetIds } = usePrototypeStore();
+  const [view, setView] = useState<"home" | "favorites">("home");
+  const [favSort, setFavSort] = useState<"newest" | "oldest">("newest");
   const [chatConfirmId, setChatConfirmId] = useState<string | null>(null);
   const last = messages[messages.length - 1];
-  const unread = notifications.filter((item) => !item.read).length;
 
-  const adoptionFavorites = emptyStates
-    ? []
-    : adoptionPets.filter((pet) => pet.listed !== false && savedPetIds.includes(pet.id));
-  const donationFavorites = emptyStates
-    ? []
-    : cases.filter((item) => savedPetIds.includes(item.id));
-  const favorites = favTab === "adoption" ? adoptionFavorites : donationFavorites;
-  const hasVisibleFavorites = favorites.length > 0;
+  const favorites = useMemo(() => {
+    if (emptyStates) return [];
+    const pets = adoptionPets.filter((pet) => pet.listed !== false && savedPetIds.includes(pet.id));
+    const rank = (id: string) => {
+      const index = savedPetIds.indexOf(id);
+      return index === -1 ? -1 : index;
+    };
+    return [...pets].sort((a, b) => {
+      const diff = rank(a.id) - rank(b.id);
+      return favSort === "newest" ? -diff : diff;
+    });
+  }, [emptyStates, savedPetIds, favSort]);
+
+  const hasFavorites = favorites.length > 0;
 
   const threads = emptyStates
     ? []
@@ -3028,8 +2856,8 @@ function DonorMessages() {
         [
           {
             petId: "rocky",
-            preview: last?.text ?? "Puedes visitarlo el sábado por la mañana.",
-            time: last?.time ?? "5m",
+            preview: last?.text ?? "Perfecto. ¿Cuándo podrías visitarlo?",
+            time: last?.time ?? "10:36",
             unread: last?.author === "rescuer" ? 1 : 0,
           },
           {
@@ -3055,6 +2883,36 @@ function DonorMessages() {
 
   const hasChats = threads.length > 0;
 
+  const renderFavCard = (item: (typeof favorites)[number]) => (
+    <article className="match-fav-card" key={item.id}>
+      <button
+        type="button"
+        className="match-fav-photo"
+        onClick={() => navigate(`/adoption/${item.id}`)}
+        aria-label={`Ver a ${item.name}`}
+      >
+        <img src={item.image} alt="" />
+        <span className="match-fav-name">{item.name}</span>
+      </button>
+      <button
+        type="button"
+        className="match-fav-chat"
+        onClick={() => setChatConfirmId(item.id)}
+        aria-label={`Escribir sobre ${item.name}`}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M7.9 20c1.91.98 4.1 1.24 6.19.75 2.09-.5 3.93-1.72 5.19-3.45 1.26-1.73 1.86-3.86 1.7-6-.17-2.14-1.09-4.15-2.61-5.66C16.85 4.11 14.84 3.19 12.7 3.02c-2.14-.17-4.27.44-6 1.7C5 6 3.75 7.82 3.25 9.91c-.5 2.09-.23 4.28.75 6.19L2 22l5.9-2z"
+            stroke="#15110d"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </article>
+  );
+
   return (
     <ScreenShell
       className="match-shell"
@@ -3067,214 +2925,118 @@ function DonorMessages() {
         ) : null
       }
     >
-      <div className="content-pad match-page">
-        <header className="match-brand-top">
-          <img className="match-brand-logo" src="/assets/logo-paw.svg" alt="DopMi" width={40} height={40} />
-          <button
-            type="button"
-            className="discover-icon-btn"
-            onClick={() => navigate("/notifications")}
-            aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
-          >
-            <Icon name="icon-bell.svg" size={20} />
-            {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
-          </button>
-        </header>
+      <div className="match-page donor-chrome">
+        <DonorChromeTop />
 
-        <header className="match-top">
-          <h1>Mis match</h1>
-          <button type="button" className="chats-search-btn" aria-label="Buscar">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M16.5 16.5 21 21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </button>
-        </header>
-
-        <section className="match-chats">
-          <h2>Chats</h2>
-          {!hasChats ? (
-            <p className="match-chats-empty">
-              Aún no tienes chats. Ponte en contacto con el rescatista de tu compañero favorito.
-            </p>
-          ) : showMessages ? (
-            <div className="thread-list donor-thread-list match-thread-list">
-              {threads.map((thread) => (
-                <button
-                  className="thread-row chats-thread-row"
-                  key={thread.petId}
-                  onClick={() => navigate(`/messages/${thread.petId}`)}
-                >
-                  <span className="thread-avatar chats-thread-avatar">
-                    <img src={thread.pet.image} alt="" />
-                  </span>
-                  <span className="thread-main">
-                    <span className="thread-head">
-                      <strong>
-                        {thread.pet.name}
-                        <span className="chats-rescuer-name"> · {thread.pet.rescuer}</span>
-                      </strong>
-                      <time>{thread.time}</time>
-                    </span>
-                    <p>{thread.preview}</p>
-                  </span>
-                  {thread.unread > 0 ? <span className="thread-badge">{thread.unread}</span> : null}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <>
-              <div className="match-chat-teaser">
-                {threads.map((thread) => (
-                  <button
-                    type="button"
-                    className="match-teaser-avatar"
-                    key={thread.petId}
-                    onClick={() => navigate(`/messages/${thread.petId}`)}
-                    aria-label={`Abrir chat con ${thread.pet.name}`}
-                  >
-                    <img src={thread.pet.image} alt="" />
-                    {thread.unread > 0 ? <span className="match-teaser-badge">{thread.unread}</span> : null}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="match-show-messages"
-                onClick={() => setShowMessages(true)}
-              >
-                Mostrar mis mensajes
-                <span aria-hidden="true">↓</span>
-              </button>
-            </>
-          )}
-          {hasChats && showMessages ? (
+        {view === "favorites" ? (
+          <>
             <button
               type="button"
-              className="match-show-messages match-hide-messages"
-              onClick={() => setShowMessages(false)}
+              className="match-back"
+              onClick={() => setView("home")}
+              aria-label="Volver"
             >
-              Ocultar mensajes
-              <span aria-hidden="true">↑</span>
+              <Icon name="back.svg" size={22} />
             </button>
-          ) : null}
-        </section>
-
-        <section className={`match-favorites${showMessages && hasChats ? " is-rail" : ""}`}>
-          <div className="match-favorites-head">
-            <h2>{showMessages && hasChats ? "Mis match" : "Mis favoritos"}</h2>
-            {showMessages && hasChats ? (
-              <span className="match-favorites-grid-icon" aria-hidden="true">
-                ▦
-              </span>
-            ) : null}
-          </div>
-
-          {!(showMessages && hasChats) ? (
-            <div className="match-fav-switch" role="tablist" aria-label="Tipo de favoritos">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={favTab === "adoption"}
-                className={favTab === "adoption" ? "is-active" : ""}
-                onClick={() => setFavTab("adoption")}
-              >
-                Adopción
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={favTab === "donation"}
-                className={favTab === "donation" ? "is-active" : ""}
-                onClick={() => setFavTab("donation")}
-              >
-                Donación
-              </button>
-            </div>
-          ) : null}
-
-          {hasVisibleFavorites ? (
-            <div className={showMessages && hasChats ? "match-fav-rail" : "match-fav-grid"}>
-              {favorites.map((item) => (
-                <article className="match-fav-card" key={item.id}>
-                  <button
-                    type="button"
-                    className="match-fav-photo"
-                    onClick={() =>
-                      navigate(favTab === "adoption" ? `/adoption/${item.id}` : `/case/${item.id}`)
-                    }
-                    aria-label={`Ver a ${item.name}`}
-                  >
-                    <img src={item.image} alt="" />
-                    <span className="match-fav-name">{item.name}</span>
-                  </button>
-                  {favTab === "adoption" ? (
-                    <button
-                      type="button"
-                      className="match-fav-chat"
-                      onClick={() => setChatConfirmId(item.id)}
-                      aria-label={`Escribir sobre ${item.name}`}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                          d="M7.9 20c1.91.98 4.1 1.24 6.19.75 2.09-.5 3.93-1.72 5.19-3.45 1.26-1.73 1.86-3.86 1.7-6-.17-2.14-1.09-4.15-2.61-5.66C16.85 4.11 14.84 3.19 12.7 3.02c-2.14-.17-4.27.44-6 1.7C5 6 3.75 7.82 3.25 9.91c-.5 2.09-.23 4.28.75 6.19L2 22l5.9-2z"
-                          stroke="#15110d"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </button>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="match-favorites-empty">
-              <div className="match-favorites-art" aria-hidden="true">
-                <span />
-                <span />
-                <span />
+            <button
+              type="button"
+              className="match-sort-btn"
+              onClick={() => setFavSort((value) => (value === "newest" ? "oldest" : "newest"))}
+              aria-label={
+                favSort === "newest"
+                  ? "Ordenar del más antiguo al más reciente"
+                  : "Ordenar del más reciente al más antiguo"
+              }
+            >
+              Ordenar
+              <small>{favSort === "newest" ? "Más recientes" : "Más antiguos"}</small>
+            </button>
+            {hasFavorites ? (
+              <div className="match-fav-grid match-fav-grid--all">{favorites.map(renderFavCard)}</div>
+            ) : (
+              <div className="match-favorites-empty">
+                <div className="match-favorites-art" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <p className="match-favorites-empty-title">Es tiempo de compartir una nueva aventura</p>
+                <button type="button" className="match-explore-btn" onClick={() => navigate("/adoption")}>
+                  Explorar
+                  <span aria-hidden="true">→</span>
+                </button>
               </div>
-              {favTab === "donation" ? (
-                <>
-                  <p className="match-favorites-empty-title">Tu manada te necesita.</p>
-                  <p className="match-favorites-empty-sub">Conoce historias y apoya a sus casos.</p>
-                  <button
-                    type="button"
-                    className="match-explore-btn"
-                    onClick={() => navigate("/donate")}
-                  >
-                    Ayudar
+            )}
+          </>
+        ) : (
+          <>
+            <header className="match-top">
+              <h1>Mis match</h1>
+            </header>
+
+            <section className="match-favorites">
+              <div className="match-favorites-head">
+                <h2>Mis favoritos</h2>
+                {hasFavorites ? (
+                  <button type="button" className="match-see-more" onClick={() => setView("favorites")}>
+                    Ver más
                   </button>
-                </>
+                ) : null}
+              </div>
+
+              {hasFavorites ? (
+                <div className="match-fav-rail">{favorites.map(renderFavCard)}</div>
               ) : (
-                <>
+                <div className="match-favorites-empty">
+                  <div className="match-favorites-art" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
                   <p className="match-favorites-empty-title">Es tiempo de compartir una nueva aventura</p>
-                  <button
-                    type="button"
-                    className="match-explore-btn"
-                    onClick={() => navigate("/adoption")}
-                  >
+                  <button type="button" className="match-explore-btn" onClick={() => navigate("/adoption")}>
                     Explorar
                     <span aria-hidden="true">→</span>
                   </button>
-                </>
+                </div>
               )}
-            </div>
-          )}
-        </section>
+            </section>
 
-        {hasVisibleFavorites ? (
-          <button
-            type="button"
-            className="match-fab"
-            onClick={() => navigate(favTab === "donation" ? "/donate" : "/adoption")}
-            aria-label={favTab === "donation" ? "Explorar más casos" : "Explorar más mascotas"}
-          >
-            <span aria-hidden="true">+</span>
-          </button>
-        ) : null}
+            <section className="match-chats">
+              <h2>Chats</h2>
+              {!hasChats ? (
+                <p className="match-chats-empty">
+                  Aún no tienes chats. Ponte en contacto con el rescatista de tu compañero favorito.
+                </p>
+              ) : (
+                <div className="thread-list donor-thread-list match-thread-list">
+                  {threads.map((thread) => (
+                    <button
+                      className="thread-row chats-thread-row"
+                      key={thread.petId}
+                      onClick={() => navigate(`/messages/${thread.petId}`)}
+                    >
+                      <span className="thread-avatar chats-thread-avatar">
+                        <img src={thread.pet.image} alt="" />
+                      </span>
+                      <span className="thread-main">
+                        <span className="thread-head">
+                          <strong>
+                            {thread.pet.name}
+                            <span className="chats-rescuer-name"> · {thread.pet.rescuer}</span>
+                          </strong>
+                          <time>{thread.time}</time>
+                        </span>
+                        <p>{thread.preview}</p>
+                      </span>
+                      {thread.unread > 0 ? <span className="thread-badge">{thread.unread}</span> : null}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
     </ScreenShell>
   );
@@ -3321,42 +3083,104 @@ function NotificationList() {
 }
 
 function History() {
-  const rows = useDonationLogRows();
+  const navigate = useNavigate();
+  const { emptyStates } = usePrototypeStore();
+  const paymentStatusLabel = {
+    pagado: "Pagado",
+    cancelado: "Cancelado",
+    enproceso: "En proceso",
+    fallado: "Fallado",
+  } as const;
+  const donationRows = useDonationLogRows().filter(
+    (row) => !/apadrinamiento/i.test(row.concept),
+  );
+  const subscriptionRows = emptyStates
+    ? []
+    : paymentHistory.map((row) => ({
+        id: row.id,
+        date: row.date,
+        kind: "suscripcion" as const,
+        title: "Suscripción",
+        method: row.method,
+        amount: row.amount,
+        status: row.status,
+        caseId: null as string | null,
+      }));
+  const caseRows = emptyStates
+    ? []
+    : donationRows.map((row) => ({
+        id: row.id,
+        date: row.date,
+        kind: "donacion" as const,
+        title: row.caseName,
+        concept: row.concept,
+        method: row.method,
+        amount: row.amount,
+        status: row.status,
+        caseId: row.caseId as string | null,
+      }));
+  const rows = [...subscriptionRows, ...caseRows];
+
   return (
     <div className="plain-screen">
-      <TopBar title="Historial de donaciones" back="/profile" />
+      <TopBar title="Mi historial" back="/profile" />
       <div className="content-pad log-section">
-        <p>Cada aportación registrada con su caso, concepto y estado.</p>
-        <DonationLogTable rows={rows} />
+        <p>Consulta todo tu historial de pagos.</p>
+        {rows.length ? (
+          <ul className="profile-activity-list">
+            {rows.map((row) => {
+              const statusLabel = paymentStatusLabel[row.status];
+              const body = (
+                <>
+                  <span className="profile-activity-date">{row.date}</span>
+                  <span className="profile-activity-body">
+                    {row.kind === "donacion" ? (
+                      <span className="profile-activity-title">
+                        <strong>{row.title}</strong> - {row.concept}
+                      </span>
+                    ) : (
+                      <strong>{row.title}</strong>
+                    )}
+                    <small>{row.method}</small>
+                  </span>
+                  <span className="profile-activity-amount">
+                    <b>{row.amount}</b>
+                    <i className={`log-pill ${row.status}`}>{statusLabel}</i>
+                  </span>
+                </>
+              );
+              return (
+                <li key={`${row.kind}-${row.id}`}>
+                  {row.caseId ? (
+                    <button
+                      type="button"
+                      className="profile-activity-row"
+                      onClick={() => navigate(`/case/${row.caseId}`)}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="profile-activity-row">{body}</div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <div className="profile-activity-empty">
+            <p>Aún no hay movimientos en tu historial.</p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function DonationLogTable({ rows }: { rows: { id: string; date: string; caseId: string; caseName: string; concept: string; amount: string; status: "completada" | "activa" }[] }) {
-  const navigate = useNavigate();
-  return (
-    <div className="log-table">
-      <div className="log-head">
-        <span>Fecha</span>
-        <span>Caso</span>
-        <span>Monto</span>
-      </div>
-      {rows.map((row) => (
-        <button className="log-row" key={row.id} onClick={() => navigate(`/case/${row.caseId}`)}>
-          <span className="log-date">{row.date}</span>
-          <span className="log-case">
-            <strong>{row.caseName}</strong>
-            <small>{row.concept}</small>
-          </span>
-          <span className="log-amount">
-            <b>{row.amount}</b>
-            <i className={`log-pill ${row.status}`}>{row.status}</i>
-          </span>
-        </button>
-      ))}
-    </div>
-  );
+function donationConceptLabel(type?: Need["type"]) {
+  if (type === "Comida") return "Alimento";
+  if (type === "Medicina") return "Medicina";
+  if (type === "Veterinario") return "Veterinario";
+  return "Aportación";
 }
 
 function useDonationLogRows(limit?: number) {
@@ -3369,9 +3193,10 @@ function useDonationLogRows(limit?: number) {
       date: donation.date,
       caseId: item.id,
       caseName: item.name,
-      concept: need?.title ?? "Aportación",
+      concept: donationConceptLabel(need?.type),
+      method: "Visa *4242",
       amount: `$${donation.amount}`,
-      status: "completada" as const,
+      status: "pagado" as const,
     };
   });
   const rows = [...live, ...donationLog];
@@ -3380,76 +3205,188 @@ function useDonationLogRows(limit?: number) {
 
 function DonorProfile() {
   const navigate = useNavigate();
-  const { savedPetIds, savedRescuerIds, notifications, setAccountMode, guardianActive } = usePrototypeStore();
-  const unread = notifications.filter((item) => !item.read).length;
-  const rows = useDonationLogRows(5);
+  const {
+    setAccountMode,
+    guardianActive,
+    donorProfile,
+  } = usePrototypeStore();
+  const [rescuerModeOpen, setRescuerModeOpen] = useState(false);
   const switchToRescuer = () => {
     setAccountMode("rescuer");
     navigate("/rescuer");
   };
+  const fullName = `${donorProfile.firstName} ${donorProfile.lastName}`.trim() || "Alberto Quiroga";
+  const city = donorProfile.city.trim() || "Monterrey, NL";
+  const initial = (donorProfile.firstName.trim().charAt(0) || "A").toUpperCase();
+
   return (
-    <ScreenShell>
-      <div className="content-pad profile-page">
-        <header className="page-head">
-          <h1>Perfil</h1>
-          <BellButton count={unread} onClick={() => navigate("/notifications")} />
+    <ScreenShell
+      overlay={
+        rescuerModeOpen ? (
+          <RescuerModeDialog onClose={() => setRescuerModeOpen(false)} onConfirm={switchToRescuer} />
+        ) : null
+      }
+    >
+      <div className="profile-page profile-page--soft donor-chrome">
+        <DonorChromeTop />
+        <header className="match-top">
+          <h1>Mi perfil</h1>
         </header>
 
-        <article className="member-card">
-          <span className="member-avatar">A</span>
-          <div>
-            <strong>Alberto Quiroga</strong>
-            <span>{guardianActive ? "Guardián" : "Miembro de la Comunidad"}</span>
+        <section className="profile-intro">
+          <div className="profile-intro-row">
+            <span className="profile-intro-avatar" aria-hidden="true">
+              {donorProfile.avatar ? <img src={donorProfile.avatar} alt="" /> : initial}
+            </span>
+            <div className="profile-intro-copy">
+              <strong>{fullName}</strong>
+              <small>{city}</small>
+            </div>
           </div>
-        </article>
-
-        <section className="log-section">
-          <h2>Registro de donaciones</h2>
-          <DonationLogTable rows={rows} />
-          <button className="ghost-button" onClick={() => navigate("/history")}>Ver más</button>
         </section>
 
-        <section className="list-stack">
-          <button className="nav-row" onClick={() => navigate("/saved")}>
-            <span className="nav-row-main">
-              <Icon name="icon-bookmark.svg" size={20} />
-              <strong>Mascotas guardadas</strong>
+        {guardianActive ? (
+          <button
+            type="button"
+            className="profile-feature is-active"
+            onClick={() => navigate("/settings/billing")}
+          >
+            <span className="profile-feature-copy">
+              <strong>¡Ya eres Guardián!</strong>
+              <small>Consulta mi impacto a la manada</small>
             </span>
-            <span className="nav-row-end">
-              <small>{savedPetIds.length}</small>
-              <Chevron />
-            </span>
-          </button>
-          <button className="nav-row" onClick={() => navigate("/saved-rescuers")}>
-            <span className="nav-row-main">
-              <Icon name="icon-bookmark.svg" size={20} />
-              <strong>Rescatistas guardados</strong>
-            </span>
-            <span className="nav-row-end">
-              <small>{savedRescuerIds.length}</small>
-              <Chevron />
+            <span className="profile-feature-cta" aria-hidden="true">
+              <Icon name="icon-shield.svg" size={22} />
             </span>
           </button>
-          <button className="nav-row" onClick={() => navigate("/settings")}>
-            <span className="nav-row-main">
-              <Icon name="icon-settings.svg" size={20} />
-              <strong>Configuración</strong>
+        ) : (
+          <button
+            type="button"
+            className="profile-feature"
+            onClick={() => navigate("/impact/support")}
+          >
+            <span className="profile-feature-copy">
+              <strong>Sé un Guardián</strong>
+              <small>Apoyo mensual con reportes de impacto</small>
             </span>
-            <span className="nav-row-end">
-              <Chevron />
+            <span className="profile-feature-cta" aria-hidden="true">
+              <Icon name="icon-star.svg" size={22} />
             </span>
+          </button>
+        )}
+
+        <section className="profile-access" aria-label="Preferencias">
+          <h2>Preferencias</h2>
+          <div className="profile-access-grid profile-access-grid--two">
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/settings/basic-info")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-user.svg" size={22} />
+              </span>
+              <span>Mi cuenta</span>
+            </button>
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/messages")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-heart.svg" size={22} />
+              </span>
+              <span>Mis mascotas</span>
+            </button>
+          </div>
+        </section>
+
+        <section className="profile-access" aria-label="Pagos y suscripciones">
+          <h2>Pagos y suscripciones</h2>
+          <div className="profile-access-grid">
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/settings/payment-methods")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-card.svg" size={22} />
+              </span>
+              <span>Métodos de pago</span>
+            </button>
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/settings/billing")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-billing.svg" size={22} />
+              </span>
+              <span>Suscripción y pagos</span>
+            </button>
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/history")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-clock.svg" size={22} />
+              </span>
+              <span>Mi historial</span>
+            </button>
+          </div>
+        </section>
+
+        <button
+          type="button"
+          className="profile-feature profile-feature--mode"
+          onClick={() => setRescuerModeOpen(true)}
+        >
+          <span className="profile-feature-copy">
+            <strong>Publica un caso de adopción</strong>
+            <small>Cambia tu perfil a modo Rescatista. Siempre podrás regresar a la navegación como Adoptante.</small>
+          </span>
+          <span className="profile-feature-cta" aria-hidden="true">
+            <Icon name="rtab-publish.svg" size={22} />
+          </span>
+        </button>
+
+        <section className="profile-support">
+          <button
+            type="button"
+            className="profile-support-row"
+            onClick={() => navigate("/about")}
+          >
+            <span className="profile-support-icon" aria-hidden="true">
+              <Icon name="icon-doc.svg" size={20} />
+            </span>
+            <strong>Sobre Nosotros</strong>
+            <Chevron />
+          </button>
+          <button
+            type="button"
+            className="profile-support-row"
+            onClick={() => navigate("/help")}
+          >
+            <span className="profile-support-icon" aria-hidden="true">
+              <Icon name="icon-help.svg" size={20} />
+            </span>
+            <strong>Centro de ayuda</strong>
+            <Chevron />
           </button>
         </section>
 
-        <article className="switch-card">
-          <div>
-            <strong>Cambiar a modo rescatista</strong>
-            <small>Cambia tu experiencia en la app</small>
-          </div>
-          <button className="switch" role="switch" aria-checked="false" aria-label="Cambiar a modo rescatista" onClick={switchToRescuer}>
-            <i />
-          </button>
-        </article>
+        <button
+          type="button"
+          className="nav-row danger-row profile-logout"
+          onClick={() => navigate("/")}
+        >
+          <span className="nav-row-main">
+            <Icon name="icon-logout.svg" size={20} />
+            <strong>Cerrar sesión</strong>
+          </span>
+          <Chevron />
+        </button>
       </div>
     </ScreenShell>
   );
@@ -3457,15 +3394,46 @@ function DonorProfile() {
 
 function SavedPets() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, cases } = usePrototypeStore();
-  const [tab, setTab] = useState<"donation" | "adoption">("adoption");
-  const items = tab === "adoption" ? adoptionPets.filter((item) => savedPetIds.includes(item.id)) : cases.filter((item) => savedPetIds.includes(item.id));
+  const { savedPetIds, toggleSavedPet, emptyStates } = usePrototypeStore();
+  const items = emptyStates
+    ? []
+    : adoptionPets.filter((item) => item.listed !== false && savedPetIds.includes(item.id));
   return (
     <div className="plain-screen">
-      <TopBar title="Mascotas guardadas" back="/profile" />
+      <TopBar title="Mis mascotas" back="/profile" />
       <div className="content-pad">
-        <div className="segmented-control"><button className={tab === "donation" ? "active" : ""} onClick={() => setTab("donation")}>Casos de donación</button><button className={tab === "adoption" ? "active" : ""} onClick={() => setTab("adoption")}>En adopción</button></div>
-        {!items.length ? <div className="empty-state"><h2>Aún no guardas mascotas</h2><p>Usa el marcador en cards y detalles para encontrarlas aquí.</p><button className="primary-button" onClick={() => navigate(tab === "adoption" ? "/adoption" : "/donate")}>Explorar</button></div> : items.map((item) => <article className="saved-row" key={item.id}><img src={item.image} alt="" /><button onClick={() => navigate(tab === "adoption" ? `/adoption/${item.id}` : `/case/${item.id}`)}><strong>{item.name}</strong><span>Ver detalle</span></button><button className="icon-button" onClick={() => toggleSavedPet(item.id)}><AssetIcon name="bookmark.svg" /></button></article>)}
+        <p className="profile-saved-lead">
+          Solo aparecen los compañeritos que marcaste con like o guardaste para adoptar.
+        </p>
+        {!items.length ? (
+          <div className="empty-state">
+            <h2>Aún no tienes mascotas guardadas</h2>
+            <p>Cuando des like o guardes un perfil en Adoptar, lo verás aquí.</p>
+            <button type="button" className="primary-button" onClick={() => navigate("/adoption")}>
+              Ir a Adoptar
+            </button>
+          </div>
+        ) : (
+          items.map((item) => (
+            <article className="saved-row" key={item.id}>
+              <img src={item.image} alt="" />
+              <button type="button" onClick={() => navigate(`/adoption/${item.id}`)}>
+                <strong>{item.name}</strong>
+                <span>
+                  {item.sex} · {item.age}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => toggleSavedPet(item.id)}
+                aria-label={`Quitar a ${item.name} de mis mascotas`}
+              >
+                <AssetIcon name="bookmark.svg" />
+              </button>
+            </article>
+          ))
+        )}
       </div>
     </div>
   );
@@ -3512,13 +3480,6 @@ function Settings() {
           subtitle={accountMode === "donor" ? "Ir a cuenta Rescatista" : "Ir a cuenta Donante"}
           onClick={switchMode}
         />
-        <button className="nav-row danger-row" onClick={() => navigate("/")}>
-          <span className="nav-row-main">
-            <Icon name="icon-logout.svg" size={20} />
-            <strong>Cerrar sesión</strong>
-          </span>
-          <Chevron />
-        </button>
       </div>
       <BottomNav mode={accountMode} />
     </div>
@@ -3526,14 +3487,60 @@ function Settings() {
 }
 
 function BasicInfo() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { donorProfile, updateDonorProfile } = usePrototypeStore();
   const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState({
+    firstName: donorProfile.firstName,
+    lastName: donorProfile.lastName,
+    email: donorProfile.email,
+    phone: donorProfile.phone,
+    city: donorProfile.city,
+    avatar: donorProfile.avatar ?? "",
+  });
+
+  const pickPhoto = (file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setForm((current) => ({ ...current, avatar: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    const city = form.city.trim() || "Monterrey, NL";
+    updateDonorProfile({
+      firstName: form.firstName.trim() || "Alberto",
+      lastName: form.lastName.trim() || "Quiroga",
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      city,
+      avatar: form.avatar || undefined,
+    });
+    setForm((current) => ({ ...current, city }));
+    setSaved(true);
+  };
+
+  const initial = (form.firstName.trim().charAt(0) || "A").toUpperCase();
+
   return (
     <div className="plain-screen">
       <TopBar title="Información básica" back="/settings" />
       <div className="content-pad form-stack">
+        <input
+          ref={fileRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => {
+            pickPhoto(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
         <div className="photo-card">
-          <span className="avatar large">
-            A
+          <span className={`avatar large ${form.avatar ? "has-photo" : ""}`}>
+            {form.avatar ? <img src={form.avatar} alt="" /> : initial}
             <span className="avatar-camera">
               <AssetIcon name="onb-camera.svg" size={12} />
             </span>
@@ -3542,12 +3549,60 @@ function BasicInfo() {
             <strong>Foto de perfil</strong>
             <small>Cambia tu foto de perfil</small>
           </span>
+          <button
+            type="button"
+            className="photo-card-edit"
+            onClick={() => fileRef.current?.click()}
+            aria-label="Editar foto de perfil"
+          >
+            <Icon name="icon-edit.svg" size={18} />
+            Editar
+          </button>
         </div>
-        <label>Nombre<input defaultValue="Alberto" /></label>
-        <label>Correo electrónico<input defaultValue="alberto@email.com" /></label>
-        <label>Teléfono<input defaultValue="+52 55 1234 5678" /></label>
-        <label>Ciudad / estado<input defaultValue="Ciudad de México" /></label>
-        <button className="primary-button" onClick={() => setSaved(true)}>Guardar cambios</button>
+        <label>
+          Nombre
+          <input
+            value={form.firstName}
+            onChange={(event) => setForm({ ...form, firstName: event.target.value })}
+          />
+        </label>
+        <label>
+          Apellido
+          <input
+            value={form.lastName}
+            onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+          />
+        </label>
+        <label>
+          Correo electrónico
+          <input
+            type="email"
+            value={form.email}
+            onChange={(event) => setForm({ ...form, email: event.target.value })}
+          />
+        </label>
+        <label>
+          Teléfono
+          <input
+            type="tel"
+            value={form.phone}
+            onChange={(event) => setForm({ ...form, phone: event.target.value })}
+          />
+        </label>
+        <label>
+          Ciudad / estado
+          <input
+            value={form.city}
+            onChange={(event) => {
+              const city = event.target.value;
+              setForm({ ...form, city });
+              updateDonorProfile({ city: city.trim() || "Monterrey, NL" });
+            }}
+          />
+        </label>
+        <button type="button" className="primary-button" onClick={save}>
+          Guardar cambios
+        </button>
       </div>
       {saved ? <Toast text="Cambios guardados" onDone={() => setSaved(false)} /> : null}
     </div>
@@ -3620,12 +3675,19 @@ function Toast({ text, onDone }: { text: string; onDone: () => void }) {
 }
 
 function Billing() {
-  const { guardianActive, guardianAmount, setGuardian } = usePrototypeStore();
+  const { guardianActive, guardianAmount, setGuardian, emptyStates } = usePrototypeStore();
   const [dialog, setDialog] = useState<"none" | "amount" | "cancel">("none");
   const [choice, setChoice] = useState(guardianAmount);
   const [toast, setToast] = useState("");
   const [justChanged, setJustChanged] = useState(false);
   const plan = subscriptionPlans.find((item) => item.amount === guardianAmount) ?? subscriptionPlans[1];
+  const paymentRows = emptyStates ? [] : paymentHistory;
+  const paymentStatusLabel = {
+    pagado: "Pagado",
+    cancelado: "Cancelado",
+    enproceso: "En proceso",
+    fallado: "Fallado",
+  } as const;
   return (
     <div className="plain-screen">
       <TopBar title="Suscripción y pagos" back="/settings" />
@@ -3649,7 +3711,7 @@ function Billing() {
             </div>
             <div className="billing-meta">
               <span>Método de pago</span>
-              <strong>Visa 4242</strong>
+              <strong>Visa *4242</strong>
             </div>
           </article>
         ) : (
@@ -3671,20 +3733,29 @@ function Billing() {
           </>
         ) : null}
         <h2 className="settings-heading">Historial de pagos</h2>
-        <div className="history-card">
-          {paymentHistory.map((row) => (
-            <div className="history-row" key={row.id}>
-              <span className="nav-row-text">
-                <strong>{row.date}</strong>
-                <small>{row.method}</small>
-              </span>
-              <span className="nav-row-text right">
-                <strong>{row.amount}</strong>
-                <small className="paid">Pagado</small>
-              </span>
-            </div>
-          ))}
-        </div>
+        {paymentRows.length ? (
+          <ul className="profile-activity-list">
+            {paymentRows.map((row) => (
+              <li key={row.id}>
+                <div className="profile-activity-row">
+                  <span className="profile-activity-date">{row.date}</span>
+                  <span className="profile-activity-body">
+                    <strong>Suscripción</strong>
+                    <small>{row.method}</small>
+                  </span>
+                  <span className="profile-activity-amount">
+                    <b>{row.amount}</b>
+                    <i className={`log-pill ${row.status}`}>{paymentStatusLabel[row.status]}</i>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="profile-activity-empty">
+            <p>Aún no hay pagos registrados.</p>
+          </div>
+        )}
       </div>
       {dialog === "amount" ? (
         <div className="modal-backdrop center">
@@ -5731,72 +5802,240 @@ function RescuerMessages() {
 
 function RescuerProfile() {
   const navigate = useNavigate();
-  const verification = usePrototypeStore((state) => state.verification);
-  const profile = usePrototypeStore((state) => state.rescuerProfile);
-  const avatar = (
-    <span className={`avatar large purple ${profile.avatar ? "has-photo" : ""}`}>
-      {profile.avatar ? <img src={profile.avatar} alt="" /> : profile.name.charAt(0)}
-    </span>
-  );
+  const {
+    verification,
+    rescuerProfile: profile,
+    cases,
+    emptyStates,
+    setAccountMode,
+  } = usePrototypeStore();
+  const verified = verification === "verified";
+  const activeCases = emptyStates ? 0 : cases.filter((item) => item.caseStatus === "active").length;
+  const openCases = emptyStates ? 0 : cases.filter((item) => item.caseStatus !== "closed").length;
+  const receivedTotal = emptyStates
+    ? 0
+    : rescuerActivity.reduce((sum, item) => {
+        const n = Number(String(item.amount).replace(/[^0-9.]/g, ""));
+        return sum + (Number.isFinite(n) ? n : 0);
+      }, 0);
+  const recent = emptyStates || !verified ? [] : rescuerActivity.slice(0, 3);
+  const statusLabel = {
+    unverified: "Sin verificar",
+    review: "En revisión",
+    rejected: "Requiere correcciones",
+    verified: "Verificado",
+  }[verification];
+  const cityHint = profile.address.includes(",")
+    ? profile.address.split(",").slice(-2).join(",").trim()
+    : profile.address;
+  const switchToDonor = () => {
+    setAccountMode("donor");
+    navigate("/adoption");
+  };
+
   return (
     <ScreenShell mode="rescuer">
-      <div className="content-pad profile-page">
+      <div className="content-pad profile-page rescuer-profile-page">
         <header className="page-head">
-          <h1>Perfil</h1>
+          <h1>Mi perfil</h1>
         </header>
-        {verification === "verified" ? (
-          <article className="public-card">
-            <div className="public-card-head">
-              <h2>Perfil público</h2>
-              <button className="icon-button" onClick={() => navigate("/rescuer/profile/edit")} aria-label="Editar perfil público">
-                <Icon name="icon-edit.svg" size={18} />
-              </button>
-            </div>
-            <div className="public-card-id">
-              {avatar}
-              <div>
-                <strong>{profile.name}</strong>
-                <span className="status-chip green">Verificado</span>
-              </div>
-            </div>
-            <div className="field-row">
-              <Icon name="location.svg" size={16} />
-              <span className="nav-row-text"><small>Dirección</small><strong>{profile.address}</strong></span>
-            </div>
-            <div className="field-row">
-              <Icon name="icon-phone.svg" size={16} />
-              <span className="nav-row-text"><small>Teléfono</small><strong>{profile.phone}</strong></span>
-            </div>
-            <div className="field-row">
-              <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
-            </div>
-            <div className="field-row column">
-              <small>Descripción</small>
-              <p>{profile.description}</p>
-            </div>
-          </article>
-        ) : (
-          <article className="public-card">
-            <div className="public-card-id">
-              {avatar}
+
+        <article className={`profile-hero rescuer${verified ? " verified" : ""}`}>
+          <div className="profile-hero-main">
+            <span className={`profile-hero-avatar${profile.avatar ? " has-photo" : ""}`} aria-hidden="true">
+              {profile.avatar ? <img src={profile.avatar} alt="" /> : profile.name.charAt(0)}
+            </span>
+            <div className="profile-hero-copy">
               <strong>{profile.name}</strong>
+              <span className={`profile-hero-badge${verified ? " ok" : ""}`}>
+                <Icon name="icon-shield.svg" size={14} />
+                {statusLabel}
+              </span>
+              <small>{cityHint}</small>
             </div>
-            <div className="field-row">
-              <Icon name="icon-mail.svg" size={16} />
-              <span className="nav-row-text"><small>Email</small><strong>{profile.email}</strong></span>
-            </div>
-          </article>
-        )}
-        <section className="list-stack">
-          <button className="nav-row" onClick={() => navigate("/rescuer/settings")}>
-            <span className="nav-row-main">
-              <Icon name="icon-shield.svg" size={20} />
-              <strong>Configuración</strong>
+          </div>
+          {verified ? (
+            <button
+              type="button"
+              className="profile-hero-edit"
+              onClick={() => navigate("/rescuer/profile/edit")}
+            >
+              <Icon name="icon-edit.svg" size={16} />
+              Editar
+            </button>
+          ) : null}
+        </article>
+
+        <section className="profile-metrics" aria-label="Tu refugio">
+          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer/cases")}>
+            <strong>{openCases}</strong>
+            <span>Casos</span>
+          </button>
+          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer/cases")}>
+            <strong>{activeCases}</strong>
+            <span>Activos</span>
+          </button>
+          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer")}>
+            <strong>${receivedTotal}</strong>
+            <span>Recibido</span>
+          </button>
+        </section>
+
+        {verified ? (
+          <button
+            type="button"
+            className="profile-guardian-card is-active rescuer"
+            onClick={() => navigate("/rescuer/settings")}
+          >
+            <span className="profile-guardian-icon" aria-hidden="true">
+              <Icon name="icon-verified.svg" size={20} />
+            </span>
+            <span className="profile-guardian-copy">
+              <strong>Cuenta verificada</strong>
+              <small>Puedes recibir donaciones y publicar casos</small>
             </span>
             <Chevron />
           </button>
+        ) : (
+          <button
+            type="button"
+            className="profile-guardian-card rescuer"
+            onClick={() => navigate("/rescuer/verification")}
+          >
+            <span className="profile-guardian-icon" aria-hidden="true">
+              <Icon name="icon-shield.svg" size={20} />
+            </span>
+            <span className="profile-guardian-copy">
+              <strong>
+                {verification === "rejected"
+                  ? "Corrige tu verificación"
+                  : verification === "review"
+                    ? "Verificación en proceso"
+                    : "Verifícate para recibir donaciones"}
+              </strong>
+              <small>
+                {verification === "rejected"
+                  ? "Hay datos que debes corregir para continuar"
+                  : verification === "review"
+                    ? "Te avisaremos cuando termine la revisión"
+                    : "Desbloquea donaciones y reembolsos"}
+              </small>
+            </span>
+            <Chevron />
+          </button>
+        )}
+
+        {verified && profile.description ? (
+          <section className="rescuer-profile-about">
+            <h2>Sobre ti</h2>
+            <p>{profile.description}</p>
+            <div className="rescuer-profile-contacts">
+              <span>
+                <Icon name="icon-phone.svg" size={14} />
+                {profile.phone}
+              </span>
+              <span>
+                <Icon name="icon-mail.svg" size={14} />
+                {profile.email}
+              </span>
+            </div>
+          </section>
+        ) : null}
+
+        <section className="profile-activity">
+          <div className="profile-section-head">
+            <h2>Actividad reciente</h2>
+            {recent.length ? (
+              <button type="button" className="text-link rescuer" onClick={() => navigate("/rescuer")}>
+                Ver inicio
+              </button>
+            ) : null}
+          </div>
+          {recent.length ? (
+            <ul className="profile-activity-list">
+              {recent.map((item) => (
+                <li key={`${item.amount}-${item.meta}`}>
+                  <button
+                    type="button"
+                    className="profile-activity-row rescuer-activity-row"
+                    onClick={() => navigate("/rescuer/cases")}
+                  >
+                    <span className="profile-activity-icon" aria-hidden="true">
+                      <AssetIcon name="icon-donation-in.svg" size={18} />
+                    </span>
+                    <span className="profile-activity-body">
+                      <strong>
+                        {item.amount} · {item.title}
+                      </strong>
+                      <small>{item.meta}</small>
+                    </span>
+                    <Chevron />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="profile-activity-empty">
+              <p>
+                {verified
+                  ? "Aún no hay movimiento. Publica un caso para empezar a recibir apoyo."
+                  : "Verifica tu cuenta para publicar casos y ver donaciones aquí."}
+              </p>
+              <button
+                type="button"
+                className="purple-button"
+                onClick={() => navigate(verified ? "/rescuer/publish" : "/rescuer/verification")}
+              >
+                {verified ? "Publicar caso" : "Ir a verificación"}
+              </button>
+            </div>
+          )}
         </section>
+
+        <section className="profile-links" aria-label="Accesos">
+          <h2 className="profile-links-title">Accesos</h2>
+          <div className="list-stack">
+            <SettingsRow
+              icon="icon-settings.svg"
+              title="Configuración"
+              subtitle="Verificación, redes y datos bancarios"
+              onClick={() => navigate("/rescuer/settings")}
+            />
+            <SettingsRow
+              icon="rtab-cases.svg"
+              title="Mis casos"
+              subtitle="Gestiona adopción y donación"
+              onClick={() => navigate("/rescuer/cases")}
+            />
+            <SettingsRow
+              icon="icon-messages.svg"
+              title="Mensajes"
+              subtitle="Habla con adoptantes"
+              onClick={() => navigate("/rescuer/messages")}
+            />
+            <SettingsRow
+              icon="icon-help.svg"
+              title="Centro de ayuda"
+              onClick={() => navigate("/help")}
+            />
+          </div>
+        </section>
+
+        <article className="switch-card profile-switch">
+          <div>
+            <strong>Modo donante</strong>
+            <small>Adopta, apoya y sigue impacto</small>
+          </div>
+          <button
+            className="switch"
+            role="switch"
+            aria-checked="false"
+            aria-label="Cambiar a modo donante"
+            onClick={switchToDonor}
+          >
+            <i />
+          </button>
+        </article>
       </div>
     </ScreenShell>
   );
@@ -6104,23 +6343,641 @@ function RescuerSettings() {
 }
 
 function HelpCenter() {
-  const accountMode = usePrototypeStore((state) => state.accountMode);
-  const faqs = accountMode === "rescuer" ? rescuerFaqs : donorFaqs;
-  const [open, setOpen] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { accountMode, guardianActive, setGuardian, cases, emptyStates } = usePrototypeStore();
+  const [topicId, setTopicId] = useState<string | null>(null);
+  const [openFaq, setOpenFaq] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [cancelGuardian, setCancelGuardian] = useState(true);
+  const [confirmPendings, setConfirmPendings] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportSent, setSupportSent] = useState(false);
+  const [supportTopic, setSupportTopic] = useState(helpTopics[0]?.id ?? "apoyos");
+  const [supportCase, setSupportCase] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportImage, setSupportImage] = useState("");
+  const supportFileRef = useRef<HTMLInputElement>(null);
+  const [toast, setToast] = useState("");
+
+  const { primaryTopics, secondaryTopics } = useMemo(() => {
+    const primary: HelpTopic[] = [];
+    const secondary: HelpTopic[] = [];
+    helpTopics.forEach((topic) => {
+      const isPrimary =
+        topic.audience === "both" ||
+        (accountMode === "rescuer" ? topic.audience === "rescuer" : topic.audience === "donor");
+      (isPrimary ? primary : secondary).push(topic);
+    });
+    return { primaryTopics: primary, secondaryTopics: secondary };
+  }, [accountMode]);
+
+  const activeTopic = helpTopics.find((topic) => topic.id === topicId) ?? null;
+
+  useEffect(() => {
+    setOpenFaq(null);
+  }, [topicId]);
+
+  const rescuerPendings = useMemo(() => {
+    if (emptyStates) return [] as { id: string; caseName: string; kind: string; detail: string }[];
+    const items: { id: string; caseName: string; kind: string; detail: string }[] = [];
+    cases.forEach((item) => {
+      if (item.caseStatus === "closed") return;
+      if (item.caseStatus === "active") {
+        items.push({
+          id: `${item.id}-active`,
+          caseName: item.name,
+          kind: "Caso activo",
+          detail: "Sigue publicado y recibiendo apoyo o adopción.",
+        });
+      }
+      item.needs.forEach((need) => {
+        if (need.funded > 0 && need.funded < need.requested && need.status === "active") {
+          items.push({
+            id: `${item.id}-${need.id}-funds`,
+            caseName: item.name,
+            kind: "Fondos pendientes",
+            detail: `${need.title}: $${need.funded} de $${need.requested} recaudados.`,
+          });
+        }
+        if (need.status === "funded" || need.status === "evidence") {
+          items.push({
+            id: `${item.id}-${need.id}-evidence`,
+            caseName: item.name,
+            kind: "Evidencia por subir",
+            detail: `${need.title}: falta comprobar el uso del apoyo.`,
+          });
+        }
+      });
+    });
+    return items;
+  }, [cases, emptyStates]);
+
+  const hasPendings = rescuerPendings.length > 0;
+  const canDelete = (!guardianActive || cancelGuardian) && (!hasPendings || confirmPendings);
+
+  const closeDelete = () => {
+    setDeleteOpen(false);
+    setCancelGuardian(true);
+    setConfirmPendings(false);
+  };
+
+  const confirmDelete = () => {
+    if (!canDelete) return;
+    if (guardianActive && cancelGuardian) setGuardian(false);
+    closeDelete();
+    setToast("Cuenta eliminada (ambos perfiles)");
+    window.setTimeout(() => navigate("/"), 800);
+  };
+
+  const openSupport = () => {
+    setSupportTopic(topicId ?? primaryTopics[0]?.id ?? helpTopics[0].id);
+    setSupportCase("");
+    setSupportMessage("");
+    setSupportImage("");
+    setSupportSent(false);
+    setSupportOpen(true);
+  };
+
+  const submitSupport = (event: FormEvent) => {
+    event.preventDefault();
+    if (!supportMessage.trim()) return;
+    setSupportSent(true);
+  };
+
+  const renderTopicChip = (topic: HelpTopic) => (
+    <button
+      key={topic.id}
+      type="button"
+      className={`help-topic-chip${topicId === topic.id ? " is-active" : ""}`}
+      onClick={() => setTopicId((current) => (current === topic.id ? null : topic.id))}
+    >
+      {topic.label}
+    </button>
+  );
+
   return (
     <div className="plain-screen">
-      <TopBar title="Centro de ayuda" back="/settings" />
-      <div className="content-pad list-stack">
-        {faqs.map((item) => (
-          <article className={`faq-row ${open === item.q ? "open" : ""}`} key={item.q}>
-            <button onClick={() => setOpen(open === item.q ? null : item.q)}>
-              <strong>{item.q}</strong>
-              <Chevron />
+      <TopBar title="Centro de ayuda" back={accountMode === "rescuer" ? "/rescuer/settings" : "/profile"} />
+      <div className="content-pad help-center">
+        <header className="help-hero">
+          <h1>¿En qué te ayudamos?</h1>
+          <p>Encuentra respuestas rápidas o escríbenos.</p>
+        </header>
+
+        <section className="help-topics" aria-label="Temas de ayuda">
+          <div className="help-topic-group">
+            <p className="help-topic-label">
+              {accountMode === "rescuer" ? "Para rescatistas" : "Para adoptantes"}
+            </p>
+            <div className="help-topic-chips">{primaryTopics.map(renderTopicChip)}</div>
+          </div>
+          {secondaryTopics.length ? (
+            <div className="help-topic-group">
+              <p className="help-topic-label">
+                {accountMode === "rescuer" ? "También para adoptantes" : "También para rescatistas"}
+              </p>
+              <div className="help-topic-chips">{secondaryTopics.map(renderTopicChip)}</div>
+            </div>
+          ) : null}
+        </section>
+
+        {activeTopic ? (
+          <section className="help-topic-content" aria-live="polite">
+            <h2>{activeTopic.label}</h2>
+            <div className="help-blocks">
+              {activeTopic.blocks.map((block, index) => {
+                if (block.type === "heading") {
+                  return (
+                    <h3 key={`${activeTopic.id}-h-${index}`} className="help-block-heading">
+                      {block.text}
+                    </h3>
+                  );
+                }
+                if (block.type === "paragraph") {
+                  return (
+                    <p key={`${activeTopic.id}-p-${index}`} className="help-block-copy">
+                      {block.text}
+                    </p>
+                  );
+                }
+                if (block.type === "bullets") {
+                  return (
+                    <ul key={`${activeTopic.id}-b-${index}`} className="help-block-list">
+                      {block.items.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  );
+                }
+                if (block.type === "action") {
+                  return (
+                    <button
+                      key={`${activeTopic.id}-a-${index}`}
+                      type="button"
+                      className="danger-button help-delete-account"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      {block.label}
+                    </button>
+                  );
+                }
+                const faqKey = `${activeTopic.id}-${block.q}`;
+                const isOpen = openFaq === faqKey;
+                return (
+                  <article className={`faq-row ${isOpen ? "open" : ""}`} key={faqKey}>
+                    <button type="button" onClick={() => setOpenFaq(isOpen ? null : faqKey)}>
+                      <strong>{block.q}</strong>
+                      <Chevron />
+                    </button>
+                    {isOpen ? <p>{block.a}</p> : null}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : (
+          <p className="help-pick-hint">Elige un tema para ver las respuestas.</p>
+        )}
+
+        <section className="help-support-card">
+          <h2>¿No encontraste lo que buscabas?</h2>
+          <p>Escríbenos y te respondemos lo antes posible.</p>
+          <button type="button" className="primary-button" onClick={openSupport}>
+            Contactar a soporte
+          </button>
+        </section>
+
+        <footer className="help-footer">
+          <button type="button" onClick={() => navigate("/about")}>
+            Sobre nosotros
+          </button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onClick={() => navigate("/terms/donor")}>
+            Términos y Condiciones
+          </button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onClick={() => navigate("/privacy/donor")}>
+            Aviso de privacidad
+          </button>
+        </footer>
+      </div>
+
+      {supportOpen ? (
+        <div className="modal-backdrop center" onClick={() => setSupportOpen(false)}>
+          <div
+            className="dialog-card help-support-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="help-support-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="dialog-close" onClick={() => setSupportOpen(false)} aria-label="Cerrar">
+              ×
             </button>
-            {open === item.q ? <p>{item.a}</p> : null}
-          </article>
-        ))}
-        <p className="help-footnote">¿No encontraste respuesta? Escríbenos a hola@dopmi.mx</p>
+            {supportSent ? (
+              <>
+                <h2 id="help-support-title">Recibimos tu mensaje.</h2>
+                <p>
+                  Te respondemos lo antes posible, normalmente el mismo día, al correo de tu cuenta.
+                </p>
+                <button type="button" className="primary-button" onClick={() => setSupportOpen(false)}>
+                  Entendido
+                </button>
+              </>
+            ) : (
+              <form className="help-support-form" onSubmit={submitSupport}>
+                <h2 id="help-support-title">Contactar a soporte</h2>
+                <label>
+                  Tema
+                  <select value={supportTopic} onChange={(event) => setSupportTopic(event.target.value)}>
+                    {helpTopics.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Caso relacionado <span className="help-optional">(opcional)</span>
+                  <input
+                    value={supportCase}
+                    onChange={(event) => setSupportCase(event.target.value)}
+                    placeholder="Ej. Rocky, Luna…"
+                  />
+                </label>
+                <label>
+                  Mensaje
+                  <textarea
+                    rows={4}
+                    value={supportMessage}
+                    onChange={(event) => setSupportMessage(event.target.value)}
+                    placeholder="Cuéntanos qué necesitas"
+                    required
+                  />
+                </label>
+                <input
+                  ref={supportFileRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file || !file.type.startsWith("image/")) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      if (typeof reader.result === "string") setSupportImage(reader.result);
+                    };
+                    reader.readAsDataURL(file);
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => supportFileRef.current?.click()}
+                >
+                  {supportImage ? "Cambiar imagen" : "Adjuntar imagen (opcional)"}
+                </button>
+                {supportImage ? (
+                  <img className="help-support-preview" src={supportImage} alt="Adjunto seleccionado" />
+                ) : null}
+                <button type="submit" className="primary-button" disabled={!supportMessage.trim()}>
+                  Enviar mensaje
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {deleteOpen ? (
+        <div className="modal-backdrop center" onClick={closeDelete}>
+          <div
+            className="dialog-card delete-account-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-account-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button type="button" className="dialog-close" onClick={closeDelete} aria-label="Cerrar">
+              ×
+            </button>
+            <h2 id="delete-account-title">¿Eliminar tu cuenta?</h2>
+            <p>
+              Se eliminarán ambos perfiles vinculados: <strong>Adoptante</strong> y{" "}
+              <strong>Rescatista</strong>. No podrás recuperar el acceso después.
+            </p>
+
+            <aside className="delete-account-note">
+              <strong>Historial de apoyos</strong>
+              <p>
+                Tu historial de aportaciones se conserva en el panel de administración y la base de datos por
+                motivos fiscales y de trazabilidad, aunque la cuenta se elimine.
+              </p>
+            </aside>
+
+            {guardianActive ? (
+              <label className="delete-account-check">
+                <input
+                  type="checkbox"
+                  checked={cancelGuardian}
+                  onChange={(event) => setCancelGuardian(event.target.checked)}
+                />
+                <span>
+                  Tienes <strong>Guardián</strong> activo. Al continuar, cancelamos la suscripción como parte
+                  del proceso.
+                </span>
+              </label>
+            ) : null}
+
+            {hasPendings ? (
+              <div className="delete-account-blockers">
+                <strong>Pendientes como rescatista</strong>
+                <p>No puedes eliminar la cuenta hasta confirmar que cerrarás estos pendientes:</p>
+                <ul>
+                  {rescuerPendings.map((item) => (
+                    <li key={item.id}>
+                      <strong>
+                        {item.caseName} · {item.kind}
+                      </strong>
+                      <small>{item.detail}</small>
+                    </li>
+                  ))}
+                </ul>
+                <label className="delete-account-check">
+                  <input
+                    type="checkbox"
+                    checked={confirmPendings}
+                    onChange={(event) => setConfirmPendings(event.target.checked)}
+                  />
+                  <span>
+                    Confirmo que quiero eliminar mi cuenta y con ello todos los casos activos mismos que se
+                    cerrarán y ya no recibiré el apoyo de servicio o económico brindado por el uso de la app
+                    DopMi.
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              className="destructive-button"
+              disabled={!canDelete}
+              onClick={confirmDelete}
+            >
+              Sí, eliminar mi cuenta
+            </button>
+            <button type="button" className="secondary-button" onClick={closeDelete}>
+              Conservar mi cuenta
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+    </div>
+  );
+}
+
+function AboutUs() {
+  const navigate = useNavigate();
+  const [toast, setToast] = useState("");
+
+  const whatWeDo = [
+    {
+      title: "Adoptar",
+      detail: "Mascotas reales, publicadas por rescatistas reales. Hablas directo con quien la cuida.",
+      icon: "tab-adoption.svg",
+    },
+    {
+      title: "Apoyar",
+      detail: "Ayudas con una necesidad concreta, como comida, medicina o una consulta, y ves qué pasó después.",
+      icon: "tab-donate.svg",
+    },
+    {
+      title: "Rescatar",
+      detail: "Las rescatistas publican sus casos en minutos y DopMi les ayuda a encontrar quién apoye.",
+      icon: "intent-rescuer.svg",
+    },
+  ] as const;
+
+  const trustItems = [
+    {
+      title: "Personas verificadas",
+      detail: "Detrás de cada caso que pide apoyo hay una rescatista verificada, no un perfil anónimo.",
+    },
+    {
+      title: "Mascotas reales",
+      detail: "Revisamos cada publicación antes de mostrarla, y también cada cambio.",
+    },
+    {
+      title: "Seguimiento con evidencia",
+      detail: "Te mostramos en qué se usó cada apoyo, con nombre, foto y desenlace.",
+    },
+  ] as const;
+
+  return (
+    <div className="plain-screen">
+      <TopBar title="Sobre Nosotros" back="/profile" />
+      <div className="content-pad about-section">
+        <section className="about-block">
+          <h2>Ayudar se siente bien.</h2>
+          <p>DopMi nació entre rescatistas, para rescatistas y para todas las personas que quieren sumar.</p>
+        </section>
+
+        <section className="about-block">
+          <h2>Nuestra historia</h2>
+          <p>
+            En México, rescatar a un perro o un gato se hace a pura fuerza de voluntad: publicaciones que se
+            pierden en redes, grupos de WhatsApp y la suerte de que alguien vea el post a tiempo.
+          </p>
+          <p>
+            Quienes rescatan no necesitan más ruido. Necesitan que su trabajo llegue a las personas correctas.
+            Por eso hicimos DopMi: un solo lugar para adoptar, apoyar y darle seguimiento a cada rescate.
+          </p>
+        </section>
+
+        <section className="about-block">
+          <h2>Lo que hacemos</h2>
+          <div className="about-cards">
+            {whatWeDo.map((item) => (
+              <article className="about-card" key={item.title}>
+                <span className="about-card-icon" aria-hidden="true">
+                  <Icon name={item.icon} size={20} />
+                </span>
+                <strong>{item.title}</strong>
+                <p>{item.detail}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="about-block">
+          <h2>Por qué puedes confiar</h2>
+          <p>No te pedimos que confíes. Te mostramos por qué puedes hacerlo.</p>
+          <ul className="about-trust-list">
+            {trustItems.map((item) => (
+              <li key={item.title}>
+                <strong>{item.title}.</strong> {item.detail}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="about-block">
+          <h2>Guardianes</h2>
+          <p>
+            Algunas personas eligen estar siempre. Con Guardián, tu aportación mensual ayuda directamente a los
+            casos de apoyo activos para responder principalmente a las urgencias de rescate. Cada mes te
+            contamos qué casos se atendieron.
+          </p>
+        </section>
+
+        <section className="about-block about-closing">
+          <h2>No estás ayudando solo.</h2>
+          <p>Cada pequeña ayuda suma, y aquí celebramos todas.</p>
+        </section>
+
+        <div className="about-actions">
+          <button type="button" className="secondary-button" onClick={() => navigate("/transparency")}>
+            Transparencia
+          </button>
+        </div>
+
+        <footer className="about-footer">
+          <button type="button" onClick={() => navigate("/help")}>
+            Centro de ayuda
+          </button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onClick={() => navigate("/terms/donor")}>
+            Términos y Condiciones
+          </button>
+          <span aria-hidden="true">·</span>
+          <button type="button" onClick={() => navigate("/privacy/donor")}>
+            Aviso de privacidad
+          </button>
+          <span aria-hidden="true">·</span>
+          <a href="mailto:hola@dopmi.mx">Contacto</a>
+          <span aria-hidden="true">·</span>
+          <span className="about-footer-social">
+            Síguenos en{" "}
+            <button type="button" onClick={() => setToast("Instagram de DopMi (simulado)")}>
+              Instagram
+            </button>
+            {" / "}
+            <button type="button" onClick={() => setToast("Facebook de DopMi (simulado)")}>
+              Facebook
+            </button>
+          </span>
+        </footer>
+      </div>
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+    </div>
+  );
+}
+
+function Transparency() {
+  const [showCriteria, setShowCriteria] = useState(false);
+
+  return (
+    <div className="plain-screen">
+      <TopBar title="Transparencia" back="/about" />
+      <div className="content-pad about-section transparency-section">
+        <section className="about-block">
+          <h2>Cuando apoyas un caso</h2>
+          <p>
+            Tu apoyo va a la necesidad que elegiste de esa mascota: comida, medicina o consulta veterinaria.
+          </p>
+        </section>
+
+        <section className="about-block">
+          <h2>¿A dónde va cada peso?</h2>
+          <p>De cada $100 que aportas:</p>
+          <ul className="transparency-breakdown">
+            <li>
+              <strong>$93</strong> llegan a la rescatista para esa necesidad.
+            </li>
+            <li>
+              <strong>$5</strong> cubren la comisión del procesador de pago. No es de DopMi.
+            </li>
+            <li>
+              <strong>$2</strong> mantienen funcionando DopMi.
+            </li>
+          </ul>
+          <p>
+            Antes de pagar, ves el desglose exacto de tu apoyo. Tu apoyo no es deducible de impuestos.
+          </p>
+        </section>
+
+        <section className="about-block">
+          <h2>Cómo se usa el dinero</h2>
+          <p>
+            La rescatista recibe los fondos cuando comprueba el gasto con un ticket o una factura, y DopMi lo
+            revisa. Esa evidencia queda visible en el caso.
+          </p>
+        </section>
+
+        <section className="about-block">
+          <h2>¿Y si…?</h2>
+          <ul className="transparency-list">
+            <li>
+              …el caso junta más de lo necesario? El excedente se reasigna a otra necesidad activa de la misma
+              mascota o, si ya no hay, a urgencias del fondo Guardián.
+            </li>
+            <li>
+              …la mascota es adoptada o fallece antes? Se cierra el caso, se detienen nuevos apoyos y los fondos
+              pendientes se destinan solo a gastos comprobados de esa mascota o se reasignan según la política
+              de cierre.
+            </li>
+            <li>
+              …la rescatista no comprueba el gasto? Los fondos no se liberan y el caso queda en revisión hasta
+              que suba evidencia válida o DopMi resuelva el pendiente.
+            </li>
+          </ul>
+        </section>
+
+        <section className="about-block">
+          <h2>Cuando eres Guardián</h2>
+          <p>
+            Tu suscripción mensual es un pago a DopMi por mantener un fondo de respuesta listo para urgencias
+            de rescate, con reportes de lo que logra. DopMi decide cómo se usa el fondo con reglas públicas. Tu
+            cuota no se destina a una mascota en particular.
+          </p>
+          <ul className="about-trust-list">
+            <li>
+              <strong>Urgencias primero.</strong> El fondo atiende primero operaciones, hospitalizaciones y
+              traslados.
+            </li>
+            <li>
+              <strong>Reglas públicas.</strong> Cuando hay excedente, completa casos que llevan tiempo
+              esperando.{" "}
+              <button
+                type="button"
+                className="transparency-inline-link"
+                onClick={() => setShowCriteria((value) => !value)}
+              >
+                {showCriteria ? "Ocultar criterios" : "Ver criterios"}
+              </button>
+              {showCriteria ? (
+                <span className="transparency-criteria">
+                  Priorizamos urgencia médica, tiempo en espera y avance de meta. No se asigna a dedo ni por
+                  popularidad del caso.
+                </span>
+              ) : null}
+            </li>
+            <li>
+              <strong>Te contamos qué logró.</strong> Cada mes recibes un reporte con los casos que atendió el
+              fondo: foto, necesidad cubierta y cómo les fue.
+            </li>
+            <li>
+              <strong>Cambia tu monto o cancela cuando quieras.</strong>
+            </li>
+          </ul>
+        </section>
+
+        <p className="transparency-meta">
+          Última actualización: 30 sep 2026 · ¿Dudas?{" "}
+          <a href="mailto:hola@dopmi.mx">hola@dopmi.mx</a>
+        </p>
       </div>
     </div>
   );
@@ -6329,6 +7186,79 @@ function AdoptStartDialog({
   );
 }
 
+function RescuerModeDialog({
+  onClose,
+  onConfirm,
+}: {
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const steps = [
+    {
+      title: "Cambias de navegación",
+      detail: "Ves Inicio, Casos y Publicar pensados para quien rescata.",
+      icon: "rtab-home.svg",
+    },
+    {
+      title: "Armas el perfil del compañerito",
+      detail: "Nombre, fotos e historia para que alguien se enamore de verdad.",
+      icon: "onb-camera.svg",
+    },
+    {
+      title: "Publicas cuando estés listo",
+      detail: "Te guiamos paso a paso y puedes pausar cuando quieras.",
+      icon: "rtab-publish.svg",
+    },
+    {
+      title: "Vuelves a Adoptante en un toque",
+      detail: "Tu perfil de Adoptante no se borra: regresas cuando lo necesites.",
+      icon: "onb-adopt-heart.svg",
+    },
+  ] as const;
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose}>
+      <div
+        className="dialog-card rescuer-mode-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rescuer-mode-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <div className="rescuer-mode-intro">
+          <h2 id="rescuer-mode-title">¿Activamos tu modo Rescatista?</h2>
+          <p>Publica casos de mascotas con necesidad de un hogar.</p>
+          <span className="rescuer-mode-badge">Tu perfil de Adoptante se queda intacto.</span>
+        </div>
+        <ul className="rescuer-mode-steps">
+          {steps.map((step) => (
+            <li key={step.title}>
+              <span className="rescuer-mode-step-icon" aria-hidden="true">
+                <Icon name={step.icon} size={18} />
+              </span>
+              <span>
+                <strong>{step.title}</strong>
+                <small>{step.detail}</small>
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="rescuer-mode-actions">
+          <button type="button" className="primary-button" onClick={onConfirm}>
+            Sí, cambiar a Rescatista
+          </button>
+          <button type="button" className="text-link-button" onClick={onClose}>
+            Ahora no
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReportDialog({ title, onClose }: { title: string; onClose: (sent: boolean) => void }) {
   const [reason, setReason] = useState("");
   return (
@@ -6351,14 +7281,13 @@ function ReportDialog({ title, onClose }: { title: string; onClose: (sent: boole
 function PublicRescuerProfile() {
   const navigate = useNavigate();
   const { caseId = "" } = useParams();
-  const { cases, savedRescuerIds, toggleSavedRescuer, savedPetIds, toggleSavedPet } = usePrototypeStore();
+  const { cases, savedPetIds, toggleSavedPet } = usePrototypeStore();
   const fromCase = cases.find((item) => item.id === caseId);
   const name = fromCase?.rescuer ?? decodeURIComponent(caseId);
   const rescuer = rescuers.find((item) => item.name === name) ?? rescuers[0];
   const [tab, setTab] = useState<"adoption" | "cases" | "activity">("activity");
   const [report, setReport] = useState(false);
   const [toast, setToast] = useState("");
-  const saved = savedRescuerIds.includes(rescuer.name);
   const ownCases = cases.filter((item) => item.rescuer === rescuer.name);
   const adoptionList = [
     ...ownCases.filter((item) => item.adoption).map((item) => ({ id: item.id, name: item.name, age: item.age, image: item.image, distance: item.distance, link: `/case/${item.id}` })),
@@ -6372,14 +7301,9 @@ function PublicRescuerProfile() {
       <TopBar
         back={fromCase ? `/case/${fromCase.id}` : "/saved-rescuers"}
         actions={
-          <>
-            <button className="icon-button" onClick={() => setToast("Enlace del perfil copiado")} aria-label="Compartir">
-              <Icon name="send.svg" size={20} />
-            </button>
-            <button className={`icon-button ${saved ? "selected" : ""}`} onClick={() => toggleSavedRescuer(rescuer.name)} aria-label="Guardar rescatista">
-              <Icon name="icon-bookmark.svg" size={20} />
-            </button>
-          </>
+          <button className="icon-button" onClick={() => setToast("Enlace del perfil copiado")} aria-label="Compartir">
+            <Icon name="send.svg" size={20} />
+          </button>
         }
       />
       <div className="content-pad rescuer-public">
@@ -6650,6 +7574,8 @@ export default function App() {
           <Route path="/settings/payment-methods" element={<PaymentMethods />} />
           <Route path="/settings/billing" element={<Billing />} />
           <Route path="/help" element={<HelpCenter />} />
+          <Route path="/about" element={<AboutUs />} />
+          <Route path="/transparency" element={<Transparency />} />
           <Route path="/rescuer-profile/:caseId" element={<PublicRescuerProfile />} />
           <Route path="/rescuer" element={<RescuerHome />} />
           <Route path="/rescuer/verification" element={<VerificationFlow />} />
