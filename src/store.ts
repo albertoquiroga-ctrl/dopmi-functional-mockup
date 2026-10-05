@@ -280,6 +280,7 @@ export const usePrototypeStore = create<PrototypeState>()(
           const name = String(state.draft.petName || "Nuevo caso");
           const mode = state.draft.publishMode === "donation" ? "donation" : "adoption";
           const photos = Array.isArray(state.draft.photos) ? state.draft.photos : [];
+          const mainPetPhoto = String(state.draft.mainPetPhoto || "");
           let donationNeeds: Need[] = [];
           if (mode === "donation") {
             try {
@@ -316,7 +317,9 @@ export const usePrototypeStore = create<PrototypeState>()(
             age: String(state.draft.age || "Edad pendiente"),
             sex: state.draft.sex === "Hembra" ? "Hembra" : "Macho",
             species: state.draft.species === "Gato" ? "Gato" : "Perro",
-            image: String(photos[0] || "/assets/luna-card.png"),
+            image: String(
+              (mode === "donation" ? mainPetPhoto : photos[0]) || mainPetPhoto || photos[0] || "/assets/luna-card.png",
+            ),
             story: String(state.draft.story || "Historia por completar."),
             location: String(state.draft.location || "Monterrey, MX"),
             rescuer: "María R.",

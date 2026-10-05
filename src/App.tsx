@@ -1,4 +1,14 @@
-import { type FormEvent, type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type PointerEvent,
+  type ReactNode,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   adoptionPets,
@@ -159,19 +169,62 @@ function BottomNav({ mode }: { mode: AccountMode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const items = mode === "donor" ? donorTabs : rescuerTabs;
-  const iconOnly = mode === "donor";
+
+  const isNavActive = (path: string) =>
+    path === "/rescuer" ? location.pathname === path : location.pathname.startsWith(path);
+
+  if (mode === "donor") {
+    return (
+      <nav className="bottom-nav donor-pill" aria-label="Navegación principal">
+        {items.map((item) => {
+          const active = isNavActive(item.path);
+          return (
+            <button
+              key={item.path}
+              type="button"
+              className={active ? "active" : ""}
+              onClick={() => navigate(item.path)}
+              aria-label={item.label}
+              aria-current={active ? "page" : undefined}
+            >
+              <span className="nav-icon-wrap" aria-hidden="true">
+                <Icon name={item.icon} size={item.size} />
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+    );
+  }
+
+  const publishIndex = 2;
+
   return (
-    <nav className={`bottom-nav${mode === "rescuer" ? " five" : " donor-pill"}`} aria-label="Navegación principal">
-      {items.map((item) => {
-        const active =
-          item.path === "/rescuer"
-            ? location.pathname === item.path
-            : location.pathname.startsWith(item.path);
+    <nav className="bottom-nav rescuer-fab-nav" aria-label="Navegación principal">
+      {items.map((item, index) => {
+        const active = isNavActive(item.path);
+        if (index === publishIndex) {
+          return (
+            <div key={item.path} className="rescuer-nav-fab-slot">
+              <button
+                type="button"
+                className="rescuer-nav-fab"
+                onClick={() => navigate(item.path)}
+                aria-label={item.label}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="nav-icon-wrap" aria-hidden="true">
+                  <Icon name={item.icon} size={26} />
+                </span>
+              </button>
+            </div>
+          );
+        }
         return (
           <button
             key={item.path}
             type="button"
-            className={active ? "active" : ""}
+            className={`rescuer-nav-item${active ? " active" : ""}`}
             onClick={() => navigate(item.path)}
             aria-label={item.label}
             aria-current={active ? "page" : undefined}
@@ -179,7 +232,7 @@ function BottomNav({ mode }: { mode: AccountMode }) {
             <span className="nav-icon-wrap" aria-hidden="true">
               <Icon name={item.icon} size={item.size} />
             </span>
-            {iconOnly ? null : <span>{item.label}</span>}
+            <span>{item.label}</span>
           </button>
         );
       })}
@@ -1044,107 +1097,158 @@ function LegalDoc({ kind }: { kind: "terms" | "privacy" }) {
 
 const DISCOVER_DONATE_EVERY = 2;
 
-type PetSize = "Chico" | "Mediano" | "Grande";
-type PetPersonality =
-  | "alegre"
-  | "feliz"
-  | "esperanzado"
-  | "emocionado"
-  | "triste"
-  | "enojado"
-  | "ansioso"
-  | "tranquilo"
-  | "contento"
-  | "satisfecho"
-  | "solo"
-  | "nervioso";
+const ADOPTION_SIZES = ["Chico", "Mediano", "Grande"] as const;
+const ADOPTION_AGE_BANDS = ["Cachorro", "Adulto", "Senior"] as const;
+const ADOPTION_PET_PLACEHOLDER_ICON = "notif-pet.svg";
+const ADOPTION_SIZE_ICON_PX: Record<(typeof ADOPTION_SIZES)[number], number> = {
+  Chico: 14,
+  Mediano: 22,
+  Grande: 30,
+};
+const ADOPTION_PERSONALITY = [
+  "Alegre",
+  "Juguetón",
+  "Tranquilo",
+  "Nervioso",
+  "Dormilón",
+  "Protector",
+  "Obediente",
+  "Cariñoso",
+  "Tímido",
+] as const;
 
-const PERSONALITY_FILTERS: Array<{ id: PetPersonality; label: string; tone: string }> = [
-  { id: "alegre", label: "Alegre", tone: "cheerful" },
-  { id: "feliz", label: "Feliz", tone: "happy" },
-  { id: "esperanzado", label: "Esperanzado", tone: "hopeful" },
-  { id: "emocionado", label: "Emocionado", tone: "excited" },
-  { id: "triste", label: "Triste", tone: "sad" },
-  { id: "enojado", label: "Enojado", tone: "angry" },
-  { id: "ansioso", label: "Ansioso", tone: "anxious" },
-  { id: "tranquilo", label: "Tranquilo", tone: "calm" },
-  { id: "contento", label: "Contento", tone: "pleased" },
-  { id: "satisfecho", label: "Satisfecho", tone: "satisfied" },
-  { id: "solo", label: "Solo", tone: "lonely" },
-  { id: "nervioso", label: "Nervioso", tone: "nervous" },
+const ADOPTION_PERSONALITY_TONE: Record<(typeof ADOPTION_PERSONALITY)[number], string> = {
+  Alegre: "alegre",
+  Juguetón: "jugueton",
+  Tranquilo: "tranquilo",
+  Nervioso: "nervioso",
+  Dormilón: "dormilon",
+  Protector: "protector",
+  Obediente: "obediente",
+  Cariñoso: "cariñoso",
+  Tímido: "timido",
+};
+
+type PetSize = (typeof ADOPTION_SIZES)[number];
+type PetAgeBand = (typeof ADOPTION_AGE_BANDS)[number];
+type PetPersonality = (typeof ADOPTION_PERSONALITY_TONE)[(typeof ADOPTION_PERSONALITY)[number]];
+
+function adoptionPublishedAgeLabel(value: string) {
+  const trimmed = value.trim();
+  return ADOPTION_AGE_BANDS.includes(trimmed as PetAgeBand) ? trimmed : "";
+}
+
+const PERSONALITY_FILTERS = ADOPTION_PERSONALITY.map((label) => ({
+  id: ADOPTION_PERSONALITY_TONE[label],
+  label,
+  tone: ADOPTION_PERSONALITY_TONE[label],
+}));
+
+const PERSONALITY_LABEL_BY_SLUG = Object.fromEntries(
+  PERSONALITY_FILTERS.map((trait) => [trait.id, trait.label]),
+) as Record<string, string>;
+
+function resolvePersonalityChip(trait: string) {
+  const fromLabel = ADOPTION_PERSONALITY_TONE[trait as keyof typeof ADOPTION_PERSONALITY_TONE];
+  if (fromLabel) return { label: trait, tone: fromLabel };
+  const label = PERSONALITY_LABEL_BY_SLUG[trait] ?? trait;
+  return { label, tone: trait };
+}
+
+function PetDetailPersonalityBlock({ personality }: { personality: readonly string[] }) {
+  if (!personality.length) return null;
+
+  return (
+    <div className="pet-detail-traits-block pet-detail-personality-block">
+      <ul className="pet-detail-traits-list pet-detail-traits-list--wrap">
+        {personality.map((trait) => {
+          const chip = resolvePersonalityChip(trait);
+          return (
+            <li key={`${chip.tone}-${chip.label}`}>
+              <span
+                className={`publish-chip publish-chip--personality tone-${chip.tone} pet-detail-traits-personality`}
+              >
+                {chip.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function PetDetailCharacteristics({
+  health,
+  convivencia,
+}: {
+  health: { vaccinated: boolean; sterilized: boolean; specialCare: boolean };
+  convivencia: readonly string[];
+}) {
+  const healthTags = [
+    health.vaccinated && "Vacunado",
+    health.sterilized && "Esterilizado",
+    health.specialCare && "Requiere cuidados especiales",
+  ].filter((tag): tag is string => Boolean(tag));
+
+  if (!convivencia.length && !healthTags.length) return null;
+
+  return (
+    <section className="pet-detail-traits" aria-label="Características de la mascota">
+      {convivencia.length ? (
+        <div className="pet-detail-traits-block">
+          <h3>Convivencia y hogar</h3>
+          <ul className="pet-detail-traits-checklist">
+            {convivencia.map((tag) => (
+              <li key={tag}>
+                <Icon name="check.svg" size={16} aria-hidden="true" />
+                <span>{tag}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {healthTags.length ? (
+        <div className="pet-detail-traits-block">
+          <h3>Salud</h3>
+          <ul className="pet-detail-traits-list pet-detail-traits-list--wrap">
+            {healthTags.map((tag) => (
+              <li key={tag} className="pet-detail-traits-pill pet-detail-traits-pill--convivencia">{tag}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type SupportCauseKibble = {
+  id: string;
+  species: "Perro" | "Gato";
+  brand: string;
+  kilos: string;
+  age: PetAgeBand;
+  size: PetSize;
+  marcaKey: PetPersonality;
+};
+
+const SUPPORT_CAUSE_KIBBLE: SupportCauseKibble[] = [
+  { id: "k1", species: "Perro", brand: "PawNutri", kilos: "3 kg", age: "Adulto", size: "Mediano", marcaKey: "obediente" },
+  { id: "k2", species: "Perro", brand: "Royal Bark", kilos: "15 kg", age: "Adulto", size: "Grande", marcaKey: "protector" },
+  { id: "k3", species: "Perro", brand: "LittlePaws", kilos: "1.5 kg", age: "Cachorro", size: "Chico", marcaKey: "jugueton" },
+  { id: "k4", species: "Perro", brand: "NutriCan", kilos: "8 kg", age: "Senior", size: "Mediano", marcaKey: "tranquilo" },
+  { id: "k5", species: "Perro", brand: "HappyTail", kilos: "2 kg", age: "Cachorro", size: "Chico", marcaKey: "alegre" },
+  { id: "k6", species: "Gato", brand: "MeowChef", kilos: "1 kg", age: "Adulto", size: "Chico", marcaKey: "cariñoso" },
+  { id: "k7", species: "Gato", brand: "WhiskerPro", kilos: "3 kg", age: "Cachorro", size: "Chico", marcaKey: "timido" },
+  { id: "k8", species: "Gato", brand: "FelineGold", kilos: "5 kg", age: "Senior", size: "Mediano", marcaKey: "dormilon" },
+  { id: "k9", species: "Gato", brand: "MiauPlus", kilos: "2.5 kg", age: "Adulto", size: "Mediano", marcaKey: "nervioso" },
+  { id: "k10", species: "Perro", brand: "CampoVital", kilos: "20 kg", age: "Adulto", size: "Grande", marcaKey: "obediente" },
 ];
 
-function SizeDogIcon({ size, active }: { size: PetSize; active: boolean }) {
-  const dims = size === "Chico" ? 30 : size === "Mediano" ? 40 : 52;
-  const stroke = active ? 0 : 1.8;
-  const fill = active ? "currentColor" : "none";
-  return (
-    <svg width={dims} height={dims * 0.78} viewBox="0 0 72 56" fill="none" aria-hidden="true">
-      {/* cola */}
-      <path
-        d="M10 28c-6-2-9 2-9 7 0 2 2 3.5 4 2.5l7-3.5"
-        fill={fill}
-        stroke="currentColor"
-        strokeWidth={stroke || 1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* cuerpo */}
-      <ellipse
-        cx="30"
-        cy="32"
-        rx="18"
-        ry="12"
-        fill={fill}
-        stroke="currentColor"
-        strokeWidth={stroke || 1.8}
-      />
-      {/* cabeza */}
-      <circle
-        cx="50"
-        cy="22"
-        r="11"
-        fill={fill}
-        stroke="currentColor"
-        strokeWidth={stroke || 1.8}
-      />
-      {/* oreja */}
-      <path
-        d="M46 12c2-8 12-10 16-4 1.2 1.8 0 4-2.2 4.2L50 13"
-        fill={fill}
-        stroke="currentColor"
-        strokeWidth={stroke || 1.8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      {/* hocico */}
-      <ellipse
-        cx="60"
-        cy="26"
-        rx="6"
-        ry="4.5"
-        fill={fill}
-        stroke="currentColor"
-        strokeWidth={stroke || 1.8}
-      />
-      {/* ojo */}
-      <circle cx="52" cy="20" r="1.8" fill={active ? "#fff" : "currentColor"} />
-      {/* patas traseras */}
-      <path
-        d="M18 42v8M26 43v7"
-        stroke="currentColor"
-        strokeWidth={active ? 3.2 : 2.2}
-        strokeLinecap="round"
-      />
-      {/* patas delanteras */}
-      <path
-        d="M38 42v8M46 41v9"
-        stroke="currentColor"
-        strokeWidth={active ? 3.2 : 2.2}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+function supportCauseKilosValue(kilos: string) {
+  const n = parseFloat(kilos.replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) ? n : 0;
 }
 
 type DiscoverPet = (typeof adoptionPets)[number];
@@ -1156,11 +1260,216 @@ type DiscoverDonateCard = {
 };
 type DiscoverPetCard = { kind: "pet"; id: string; pet: DiscoverPet };
 type DiscoverCard = DiscoverPetCard | DiscoverDonateCard;
+type DiscoverSpeciesChoice = "Perro" | "Gato";
+
+function DiscoverFilterButton({ active, onClick }: { active?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`discover-filter-inline${active ? " is-active" : ""}`}
+      onClick={onClick}
+      aria-label="Filtros"
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+        <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+      </svg>
+    </button>
+  );
+}
+
+function DiscoverSpeciesFilterBar({
+  species,
+  onSpeciesChange,
+  filtersActive,
+  onOpenFilters,
+}: {
+  species: DiscoverSpeciesChoice;
+  onSpeciesChange: (next: DiscoverSpeciesChoice) => void;
+  filtersActive: boolean;
+  onOpenFilters: () => void;
+}) {
+  return (
+    <div className="discover-species-row">
+      <div className="discover-species" role="tablist" aria-label="Tipo de mascota">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={species === "Perro"}
+          className={`discover-species-tab${species === "Perro" ? " is-active" : ""}`}
+          onClick={() => onSpeciesChange("Perro")}
+        >
+          Perros
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={species === "Gato"}
+          className={`discover-species-tab${species === "Gato" ? " is-active" : ""}`}
+          onClick={() => onSpeciesChange("Gato")}
+        >
+          Gatos
+        </button>
+      </div>
+      <DiscoverFilterButton active={filtersActive} onClick={onOpenFilters} />
+    </div>
+  );
+}
+
+type AdoptionFilterModalProps = {
+  open: boolean;
+  onClose: () => void;
+  variant?: "adoption" | "supportCause";
+  draftSex: "Macho" | "Hembra" | null;
+  setDraftSex: (value: "Macho" | "Hembra" | null) => void;
+  draftAge?: PetAgeBand | null;
+  setDraftAge?: (value: PetAgeBand | null) => void;
+  draftSize: PetSize | null;
+  setDraftSize: (value: PetSize | null) => void;
+  draftPersonality: PetPersonality[];
+  setDraftPersonality: Dispatch<SetStateAction<PetPersonality[]>>;
+  onApply: () => void;
+  onClear: () => void;
+};
+
+function AdoptionFilterModal({
+  open,
+  onClose,
+  variant = "adoption",
+  draftSex,
+  setDraftSex,
+  draftAge = null,
+  setDraftAge,
+  draftSize,
+  setDraftSize,
+  draftPersonality,
+  setDraftPersonality,
+  onApply,
+  onClear,
+}: AdoptionFilterModalProps) {
+  const isSupportCause = variant === "supportCause";
+  if (!open) return null;
+  return (
+    <div className="modal-backdrop center" onClick={onClose}>
+      <div className="dialog-card adoption-filter-dialog" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">×</button>
+        <header className="adoption-filter-header">
+          <h2>Filtros</h2>
+        </header>
+        <div className="adoption-filter-grid adoption-filter-grid--stacked">
+          {!isSupportCause ? (
+            <section>
+              <h3>Sexo</h3>
+              <div className="filter-gender" role="group" aria-label="Sexo">
+                <button
+                  type="button"
+                  className={`filter-gender-btn female${draftSex === "Hembra" ? " is-active" : ""}`}
+                  onClick={() => setDraftSex(draftSex === "Hembra" ? null : "Hembra")}
+                >
+                  Hembra
+                </button>
+                <button
+                  type="button"
+                  className={`filter-gender-btn male${draftSex === "Macho" ? " is-active" : ""}`}
+                  onClick={() => setDraftSex(draftSex === "Macho" ? null : "Macho")}
+                >
+                  Macho
+                </button>
+              </div>
+            </section>
+          ) : (
+            <section>
+              <h3>Edad</h3>
+              <div
+                className="publish-choice-row publish-choice-row--three adoption-filter-age-row"
+                role="group"
+                aria-label="Edad"
+              >
+                {ADOPTION_AGE_BANDS.map((ageBand) => {
+                  const active = draftAge === ageBand;
+                  return (
+                    <button
+                      type="button"
+                      key={ageBand}
+                      className={`publish-choice${active ? " selected" : ""}`}
+                      aria-pressed={active}
+                      onClick={() => setDraftAge?.(active ? null : ageBand)}
+                    >
+                      {ageBand}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <h3>{isSupportCause ? "Tamaño de Raza" : "Tamaño"}</h3>
+            <div
+              className="publish-choice-row publish-choice-row--three adoption-filter-size-row"
+              role="group"
+              aria-label={isSupportCause ? "Tamaño de Raza" : "Tamaño"}
+            >
+              {ADOPTION_SIZES.map((size) => {
+                const active = draftSize === size;
+                return (
+                  <button
+                    type="button"
+                    key={size}
+                    className={`publish-choice publish-choice--pet-size${active ? " selected" : ""}`}
+                    aria-pressed={active}
+                    onClick={() => setDraftSize(active ? null : size)}
+                  >
+                    <span className="publish-choice-icon" aria-hidden="true">
+                      <Icon name={ADOPTION_PET_PLACEHOLDER_ICON} size={ADOPTION_SIZE_ICON_PX[size]} />
+                    </span>
+                    {size}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="adoption-filter-personality">
+            <h3>{isSupportCause ? "Marca" : "Personalidad"}</h3>
+            <div
+              className="publish-chip-grid adoption-filter-personality-grid"
+              role="group"
+              aria-label={isSupportCause ? "Marca" : "Personalidad"}
+            >
+              {PERSONALITY_FILTERS.map((trait) => {
+                const active = draftPersonality.includes(trait.id);
+                return (
+                  <button
+                    type="button"
+                    key={trait.id}
+                    className={`publish-chip publish-chip--personality tone-${trait.tone}${active ? " selected" : ""}`}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setDraftPersonality((current) => (current.includes(trait.id) ? [] : [trait.id]))
+                    }
+                  >
+                    {trait.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+        <div className="adoption-filter-actions">
+          <button type="button" className="primary-button" onClick={onApply}>Aplicar filtros</button>
+          <button type="button" className="secondary-button" onClick={onClear}>Limpiar filtros</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AdoptionHome() {
   const navigate = useNavigate();
-  const { savedPetIds, toggleSavedPet, emptyStates, cases, donorProfile } = usePrototypeStore();
-  const donorCity = donorProfile.city.trim() || "Monterrey, NL";
+  const { savedPetIds, toggleSavedPet, emptyStates, cases } = usePrototypeStore();
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftSex, setDraftSex] = useState<"Macho" | "Hembra" | null>(null);
   const [sexFilter, setSexFilter] = useState<"Macho" | "Hembra" | null>(null);
@@ -1169,7 +1478,7 @@ function AdoptionHome() {
   const [draftPersonality, setDraftPersonality] = useState<PetPersonality[]>([]);
   const [personalityFilter, setPersonalityFilter] = useState<PetPersonality[]>([]);
   const [chatConfirmId, setChatConfirmId] = useState<string | null>(null);
-  const [species, setSpecies] = useState<"Perro" | "Gato">("Perro");
+  const [species, setSpecies] = useState<DiscoverSpeciesChoice>("Perro");
   const [index, setIndex] = useState(0);
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -1269,7 +1578,7 @@ function AdoptionHome() {
     setFilterOpen(false);
   };
 
-  const selectSpecies = (next: "Perro" | "Gato") => {
+  const selectSpecies = (next: DiscoverSpeciesChoice) => {
     if (next === species) return;
     setSpecies(next);
     setDragX(0);
@@ -1359,94 +1668,32 @@ function AdoptionHome() {
     : `translateX(${dragX}px) rotate(${dragX / 28}deg)`;
 
   const mosaicPets = pets.length ? pets : adoptionPets;
+  const mosaicEndPets: DiscoverPet[] = [];
+  const mosaicSeen = new Set<string>();
+  for (const pet of mosaicPets) {
+    if (mosaicSeen.has(pet.id)) continue;
+    mosaicSeen.add(pet.id);
+    mosaicEndPets.push(pet);
+    if (mosaicEndPets.length === 4) break;
+  }
 
   return (
     <ScreenShell
       className="adoption-shell"
       overlay={
         <>
-        {filterOpen ? (
-          <div className="modal-backdrop center" onClick={() => setFilterOpen(false)}>
-            <div className="dialog-card adoption-filter-dialog" onClick={(event) => event.stopPropagation()}>
-              <button className="dialog-close" onClick={() => setFilterOpen(false)} aria-label="Cerrar">×</button>
-              <header className="adoption-filter-header">
-                <h2>Filtros</h2>
-              </header>
-              <div className="adoption-filter-grid adoption-filter-grid--stacked">
-                <section>
-                  <h3>Género</h3>
-                  <div className="filter-gender" role="group" aria-label="Género">
-                    <button
-                      type="button"
-                      className={`filter-gender-btn female${draftSex === "Hembra" ? " is-active" : ""}`}
-                      onClick={() => setDraftSex(draftSex === "Hembra" ? null : "Hembra")}
-                    >
-                      Hembra
-                    </button>
-                    <button
-                      type="button"
-                      className={`filter-gender-btn male${draftSex === "Macho" ? " is-active" : ""}`}
-                      onClick={() => setDraftSex(draftSex === "Macho" ? null : "Macho")}
-                    >
-                      Macho
-                    </button>
-                  </div>
-                </section>
-
-                <section>
-                  <h3>Tamaño</h3>
-                  <div className="filter-size" role="group" aria-label="Tamaño">
-                    {(["Chico", "Mediano", "Grande"] as const).map((size) => {
-                      const active = draftSize === size;
-                      return (
-                        <button
-                          type="button"
-                          key={size}
-                          className={`filter-size-btn${active ? " is-active" : ""}`}
-                          aria-pressed={active}
-                          aria-label={size}
-                          onClick={() => setDraftSize(active ? null : size)}
-                        >
-                          <SizeDogIcon size={size} active={active} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                <section className="adoption-filter-personality">
-                  <h3>Personalidad</h3>
-                  <div className="filter-personality" role="group" aria-label="Personalidad">
-                    {PERSONALITY_FILTERS.map((trait) => {
-                      const active = draftPersonality.includes(trait.id);
-                      return (
-                        <button
-                          type="button"
-                          key={trait.id}
-                          className={`filter-personality-chip tone-${trait.tone}${active ? " is-active" : ""}`}
-                          aria-pressed={active}
-                          onClick={() =>
-                            setDraftPersonality((current) =>
-                              current.includes(trait.id)
-                                ? current.filter((item) => item !== trait.id)
-                                : [...current, trait.id],
-                            )
-                          }
-                        >
-                          {trait.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              </div>
-              <div className="adoption-filter-actions">
-                <button type="button" className="primary-button" onClick={applyFilters}>Aplicar filtros</button>
-                <button type="button" className="secondary-button" onClick={clearFilters}>Limpiar filtros</button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        <AdoptionFilterModal
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          draftSex={draftSex}
+          setDraftSex={setDraftSex}
+          draftSize={draftSize}
+          setDraftSize={setDraftSize}
+          draftPersonality={draftPersonality}
+          setDraftPersonality={setDraftPersonality}
+          onApply={applyFilters}
+          onClear={clearFilters}
+        />
         {chatConfirmId ? (
           <AdoptStartDialog
             onClose={() => setChatConfirmId(null)}
@@ -1458,73 +1705,46 @@ function AdoptionHome() {
     >
       <div className="discover donor-chrome">
         <DonorChromeTop
-          leading={
-            <p className="discover-place">
-              <AssetIcon name="location.svg" size={14} alt="" />
-              <span>{donorCity}</span>
-            </p>
+          brand={
+            <img
+              className="discover-wordmark"
+              src={`${A}dopmi-wordmark.png`}
+              alt="DopMi"
+              width={108}
+              height={36}
+            />
           }
         />
 
-        <div className="discover-species-row">
-          <div className="discover-species" role="tablist" aria-label="Tipo de mascota">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={species === "Perro"}
-              className={`discover-species-tab${species === "Perro" ? " is-active" : ""}`}
-              onClick={() => selectSpecies("Perro")}
-            >
-              Perros
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={species === "Gato"}
-              className={`discover-species-tab${species === "Gato" ? " is-active" : ""}`}
-              onClick={() => selectSpecies("Gato")}
-            >
-              Gatos
-            </button>
-          </div>
-          <button
-            type="button"
-            className={`discover-filter-inline${filtersActive ? " is-active" : ""}`}
-            onClick={openFilters}
-            aria-label="Filtros"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
-              <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
-            </svg>
-          </button>
-        </div>
+        <DiscoverSpeciesFilterBar
+          species={species}
+          onSpeciesChange={selectSpecies}
+          filtersActive={filtersActive}
+          onOpenFilters={openFilters}
+        />
 
         {deckDone ? (
           <section className="discover-end">
-            <div className="discover-end-mosaic" aria-hidden="true">
-              {Array.from({ length: 4 }, (_, mosaicIndex) => {
-                const pet = mosaicPets[mosaicIndex % mosaicPets.length];
-                return (
-                  <div className="discover-end-polaroid" key={`${pet.id}-mosaic-${mosaicIndex}`}>
+            <div className="discover-end-cluster">
+              <div className="discover-end-mosaic" aria-hidden="true">
+                {mosaicEndPets.map((pet) => (
+                  <div className="discover-end-polaroid" key={`${pet.id}-mosaic`}>
                     <img src={pet.image} alt="" />
                   </div>
-                );
-              })}
+                ))}
+              </div>
+              <article className="discover-end-card">
+                <h2>Nuestra manada llegó hasta aquí por ahora</h2>
+                <p className="discover-end-lead">¡No te desanimes! nuestro feed se actualiza constantemente.</p>
+                <p className="discover-end-tip">Tip: Ajusta los filtros para descubrir más historias.</p>
+                <button type="button" className="discover-end-primary" onClick={() => navigate("/messages")}>
+                  Ir a mis <strong>favoritos</strong>
+                </button>
+                <button type="button" className="discover-end-secondary" onClick={() => setIndex(0)}>
+                  Volver a <strong>descubrir</strong>
+                </button>
+              </article>
             </div>
-            <article className="discover-end-card">
-              <h2>Nuestra manada llegó hasta aquí por ahora</h2>
-              <p className="discover-end-lead">¡No te desanimes! nuestro feed se actualiza constantemente.</p>
-              <p className="discover-end-tip">Tip: Ajusta los filtros para descubrir más historias.</p>
-              <button type="button" className="discover-end-primary" onClick={() => navigate("/messages")}>
-                Ir a mis <strong>favoritos</strong>
-              </button>
-              <button type="button" className="discover-end-secondary" onClick={() => setIndex(0)}>
-                Volver a <strong>descubrir</strong>
-              </button>
-            </article>
           </section>
         ) : !pets.length ? (
           <section className="discover-empty">
@@ -1700,11 +1920,57 @@ function AdoptionHome() {
   );
 }
 
+function PetDetailPhotoHero({
+  photos,
+  alt,
+  children,
+}: {
+  photos: readonly string[];
+  alt: string;
+  children?: ReactNode;
+}) {
+  const gallery = photos.filter((src) => Boolean(src?.trim()));
+  const items = gallery.length ? gallery : [""];
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const activeIndex = Math.min(photoIndex, items.length - 1);
+  const showCarousel = items.length > 1;
+
+  return (
+    <div className="pet-detail-hero">
+      <img src={items[activeIndex]} alt={alt} />
+      {children}
+      {showCarousel ? (
+        <div className="pet-detail-dots" role="tablist" aria-label="Fotos">
+          {items.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              role="tab"
+              className={index === activeIndex ? "is-active" : ""}
+              aria-label={`Foto ${index + 1}`}
+              aria-selected={index === activeIndex}
+              onClick={() => setPhotoIndex(index)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function adoptionPetGalleryPhotos(pet: (typeof adoptionPets)[number]) {
+  const published =
+    "photos" in pet && Array.isArray(pet.photos) ? pet.photos.filter((src) => Boolean(src?.trim())) : [];
+  if (published.length > 1) return published;
+  return [pet.image];
+}
+
 function AdoptionDetail() {
   const { petId = "toby" } = useParams();
   const navigate = useNavigate();
   const { savedPetIds, toggleSavedPet } = usePrototypeStore();
   const pet = adoptionPets.find((item) => item.id === petId) ?? adoptionPets[0];
+  const galleryPhotos = adoptionPetGalleryPhotos(pet);
   const isSaved = savedPetIds.includes(pet.id);
   const [report, setReport] = useState(false);
   const [adoptConfirm, setAdoptConfirm] = useState(false);
@@ -1712,7 +1978,7 @@ function AdoptionDetail() {
   const stats = [
     { value: pet.sex, label: "Sexo" },
     { value: pet.size, label: "Tamaño" },
-    { value: pet.distance, label: "Distancia" },
+    { value: adoptionPublishedAgeLabel(pet.age) || "—", label: "Edad" },
   ];
 
   return (
@@ -1741,8 +2007,7 @@ function AdoptionDetail() {
     >
       <div className="pet-detail">
         <div className="pet-detail-scroll">
-          <div className="pet-detail-hero">
-            <img src={pet.image} alt={pet.name} />
+          <PetDetailPhotoHero photos={galleryPhotos} alt={pet.name}>
             <button type="button" className="pet-detail-back" onClick={() => navigate("/adoption")} aria-label="Volver">
               <Icon name="back.svg" size={20} />
             </button>
@@ -1756,12 +2021,7 @@ function AdoptionDetail() {
                 {pet.rescuer.charAt(0)}
               </span>
             </button>
-            <div className="pet-detail-dots" aria-hidden="true">
-              <i className="is-active" />
-              <i />
-              <i />
-            </div>
-          </div>
+          </PetDetailPhotoHero>
 
           <div className="pet-detail-sheet">
             <div className="pet-detail-heading">
@@ -1791,8 +2051,8 @@ function AdoptionDetail() {
             <div className="pet-detail-stats">
               {stats.map((stat) => (
                 <article className="pet-detail-stat" key={stat.label}>
-                  <strong>{stat.value}</strong>
                   <span>{stat.label}</span>
+                  <strong>{stat.value}</strong>
                 </article>
               ))}
             </div>
@@ -1802,11 +2062,22 @@ function AdoptionDetail() {
               <p>{pet.story}</p>
             </section>
 
-            <button type="button" className="pet-detail-report" onClick={() => setReport(true)}>
-              <Icon name="icon-alert-circle.svg" size={16} />
-              Reportar publicación
-            </button>
+            <PetDetailPersonalityBlock personality={pet.personality} />
           </div>
+
+          <PetDetailCharacteristics
+            health={{
+              vaccinated: pet.health.vaccinated,
+              sterilized: pet.health.sterilized,
+              specialCare: Boolean(pet.health.specialCare),
+            }}
+            convivencia={pet.convivencia}
+          />
+
+          <button type="button" className="pet-detail-report pet-detail-report--footer" onClick={() => setReport(true)}>
+            <Icon name="icon-alert-circle.svg" size={16} />
+            Reportar publicación
+          </button>
         </div>
 
         <div className="pet-detail-bar">
@@ -1932,7 +2203,7 @@ function DonationHome() {
 
         <section className="donate-discover">
           <div className="donate-discover-head">
-            <h1>Descubre casos</h1>
+            <h1>Ayudar se siente bien</h1>
           </div>
 
           {!caseItems.length ? null : (
@@ -1953,7 +2224,7 @@ function DonationHome() {
         </section>
 
         <section className="donate-guardian">
-          <h2>Sé un Guardián</h2>
+          <h2>Apoya a casos urgentes</h2>
           <p>Con cada aporte mensual ayudarás a cubrir necesidades reales de mascotas que buscan un hogar.</p>
           <button
             type="button"
@@ -1966,7 +2237,7 @@ function DonationHome() {
             </div>
             <div className="donate-guardian-body">
               <div className="donate-guardian-copy">
-                <strong>Apoya a casos urgentes</strong>
+                <strong>Sé un Guardián</strong>
                 <ul>
                   <li>
                     <Icon name="icon-shield.svg" size={14} />
@@ -2011,11 +2282,13 @@ function NeedCard({
   need,
   defaultOpen = false,
   onDonate,
+  showDonateAction = true,
 }: {
   need: Need;
   caseId?: string;
   defaultOpen?: boolean;
   onDonate: (needId: string) => void;
+  showDonateAction?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const remaining = Math.max(0, need.requested - need.funded);
@@ -2056,15 +2329,17 @@ function NeedCard({
             <Chevron />
           </span>
         </button>
-        <button
-          type="button"
-          className="donate-need-action"
-          disabled={fullyFunded}
-          onClick={() => onDonate(need.id)}
-          aria-label={fullyFunded ? "Necesidad completada" : `Donar a ${need.title}`}
-        >
-          <Icon name="tab-donate.svg" size={18} />
-        </button>
+        {showDonateAction ? (
+          <button
+            type="button"
+            className="donate-need-action"
+            disabled={fullyFunded}
+            onClick={() => onDonate(need.id)}
+            aria-label={fullyFunded ? "Necesidad completada" : `Donar a ${need.title}`}
+          >
+            <Icon name="tab-donate.svg" size={18} />
+          </button>
+        ) : null}
       </div>
       {open ? (
         <div className="donate-need-details">
@@ -2770,38 +3045,141 @@ function ImpactError() {
   );
 }
 
+const RESCUER_CHAT_ADOPTERS: Record<string, string> = {
+  luna: "Ana P.",
+  rocky: "Carlos M.",
+  milo: "Lucía G.",
+};
+
+type RescuerAdoptionChatThread = {
+  petId: string;
+  adopter: string;
+  adopterInitial: string;
+  preview: string;
+  time: string;
+  unread: number;
+};
+
+const RESCUER_ADOPTION_CHAT_THREADS: RescuerAdoptionChatThread[] = [
+  {
+    petId: "luna",
+    adopter: "Ana P.",
+    adopterInitial: "A",
+    preview: "¡Hola! Me interesa adoptar a Luna",
+    time: "5m",
+    unread: 1,
+  },
+  {
+    petId: "luna",
+    adopter: "Sofía L.",
+    adopterInitial: "S",
+    preview: "¿Sigue disponible para visitas?",
+    time: "2d",
+    unread: 0,
+  },
+  {
+    petId: "rocky",
+    adopter: "Carlos M.",
+    adopterInitial: "C",
+    preview: "¿Puedo visitarlo este fin de semana?",
+    time: "1h",
+    unread: 0,
+  },
+];
+
+function rescuerOpenChatCountLabel(count: number) {
+  if (count === 0) return "Sin chats abiertos";
+  if (count === 1) return "1 chat abierto";
+  return `${count} chats abiertos`;
+}
+
+function rescuerThreadUnreadTotal(chats: { unread: number }[]) {
+  return chats.reduce((sum, chat) => sum + chat.unread, 0);
+}
+
+function sortRescuerChatsByUnread<T extends { unread: number; adopter: string }>(chats: T[]) {
+  return [...chats].sort((a, b) => {
+    if (b.unread !== a.unread) return b.unread - a.unread;
+    return a.adopter.localeCompare(b.adopter, "es");
+  });
+}
+
+function rescuerAdopterName(threadId: string, adopterHint?: string) {
+  if (adopterHint) {
+    const exact = RESCUER_ADOPTION_CHAT_THREADS.find(
+      (thread) => thread.petId === threadId && thread.adopter === adopterHint,
+    );
+    if (exact) return exact.adopter;
+  }
+  const first = RESCUER_ADOPTION_CHAT_THREADS.find((thread) => thread.petId === threadId);
+  return first?.adopter ?? RESCUER_CHAT_ADOPTERS[threadId];
+}
+
+function resolveRescuerCaseId(threadId: string, petName: string | undefined, cases: PetCase[]) {
+  const byId = cases.find((item) => item.id === threadId);
+  if (byId) return byId.id;
+  if (petName) {
+    const byName = cases.find((item) => item.name === petName);
+    if (byName) return byName.id;
+  }
+  return threadId;
+}
+
 function Messages() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { threadId = "luna" } = useParams();
-  const { messages, sendMessage, startAdoptionChat, accountMode } = usePrototypeStore();
+  const { messages, sendMessage, startAdoptionChat, accountMode, setAccountMode, cases } = usePrototypeStore();
   const [text, setText] = useState("");
-  const pet = adoptionPets.find((item) => item.id === threadId);
+  const rescuerChatRoute = location.pathname.startsWith("/rescuer/messages/");
+  const isRescuerView = rescuerChatRoute || accountMode === "rescuer";
+  const adopterHint = (location.state as { adopter?: string } | null)?.adopter;
+  const adoptionPet = adoptionPets.find((item) => item.id === threadId);
+  const casePet = cases.find((item) => item.id === threadId);
+  const pet = adoptionPet ?? (casePet ? { id: casePet.id, name: casePet.name, image: casePet.image, rescuer: casePet.rescuer } : undefined);
   const chatTitle = pet?.name ?? (threadId === "luna" ? "Luna" : "Chat");
+  const chatSubtitle = isRescuerView
+    ? rescuerAdopterName(threadId, adopterHint)
+    : adoptionPet?.rescuer;
+  const rescuerCaseId = resolveRescuerCaseId(threadId, pet?.name, cases);
   const threadMessages = messages.filter((message) => (message.threadId ?? "luna") === threadId);
+  const chatMode: AccountMode = isRescuerView ? "rescuer" : "donor";
 
   useEffect(() => {
-    if (accountMode !== "donor" || !pet) return;
-    startAdoptionChat({ id: pet.id, name: pet.name, image: pet.image });
-  }, [accountMode, pet?.id, pet?.name, pet?.image, startAdoptionChat]);
+    if (rescuerChatRoute) setAccountMode("rescuer");
+  }, [rescuerChatRoute, setAccountMode]);
+
+  useEffect(() => {
+    if (isRescuerView || !adoptionPet) return;
+    startAdoptionChat({ id: adoptionPet.id, name: adoptionPet.name, image: adoptionPet.image });
+  }, [isRescuerView, adoptionPet?.id, adoptionPet?.name, adoptionPet?.image, startAdoptionChat]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!text.trim()) return;
-    sendMessage(accountMode, text.trim(), threadId);
+    sendMessage(chatMode, text.trim(), threadId);
     setText("");
   };
   return (
-    <div className={`plain-screen chat-screen ${accountMode === "donor" ? "adopter-chat" : "rescuer-chat"}`}>
+    <div className={`plain-screen chat-screen ${isRescuerView ? "rescuer-chat rescuer-theme" : "adopter-chat"}`}>
       <TopBar
         title={chatTitle}
-        subtitle={accountMode === "donor" ? pet?.rescuer : undefined}
-        back={accountMode === "donor" ? "/messages" : "/rescuer/messages"}
+        subtitle={chatSubtitle}
+        back={isRescuerView ? "/rescuer/messages" : "/messages"}
         actions={
-          pet && accountMode === "donor" ? (
+          pet && !isRescuerView ? (
             <button
               type="button"
               className="online-label chat-detail-link"
               onClick={() => navigate(`/adoption/${pet.id}`)}
+            >
+              Ver detalle
+            </button>
+          ) : pet || casePet ? (
+            <button
+              type="button"
+              className="online-label chat-detail-link"
+              onClick={() => navigate(`/rescuer/cases/${rescuerCaseId}`)}
             >
               Ver detalle
             </button>
@@ -2810,7 +3188,7 @@ function Messages() {
       />
       <div className="chat-messages">
         {threadMessages.map((message) => (
-          <div key={message.id} className={`bubble ${message.author === accountMode ? "mine" : ""}${message.image ? " has-media" : ""}`}>
+          <div key={message.id} className={`bubble ${message.author === chatMode ? "mine" : ""}${message.image ? " has-media" : ""}`}>
             {message.image ? (
               <img className="bubble-photo" src={message.image} alt={pet?.name ?? "Mascota"} />
             ) : null}
@@ -3051,10 +3429,10 @@ const notificationIcons: Record<NotificationKind, string> = {
 
 function NotificationList() {
   const navigate = useNavigate();
-  const { notifications, markNotificationRead } = usePrototypeStore();
+  const { notifications, markNotificationRead, accountMode } = usePrototypeStore();
   return (
-    <div className="plain-screen">
-      <TopBar title="Notificaciones" back="/profile" />
+    <div className={`plain-screen${accountMode === "rescuer" ? " rescuer-theme" : ""}`}>
+      <TopBar title="Notificaciones" back={accountMode === "rescuer" ? "/rescuer/messages" : "/profile"} />
       <div className="content-pad notification-stack">
         {notifications.map((item) => (
           <button
@@ -3203,6 +3581,128 @@ function useDonationLogRows(limit?: number) {
   return limit ? rows.slice(0, limit) : rows;
 }
 
+function SupportCause() {
+  const [species, setSpecies] = useState<DiscoverSpeciesChoice>("Perro");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [draftAge, setDraftAge] = useState<PetAgeBand | null>(null);
+  const [ageFilter, setAgeFilter] = useState<PetAgeBand | null>(null);
+  const [draftSize, setDraftSize] = useState<PetSize | null>(null);
+  const [sizeFilter, setSizeFilter] = useState<PetSize | null>(null);
+  const [draftPersonality, setDraftPersonality] = useState<PetPersonality[]>([]);
+  const [personalityFilter, setPersonalityFilter] = useState<PetPersonality[]>([]);
+  const [kiloSort, setKiloSort] = useState<"asc" | "desc">("asc");
+  const filtersActive = Boolean(ageFilter || sizeFilter || personalityFilter.length > 0);
+
+  const openFilters = () => {
+    setDraftAge(ageFilter);
+    setDraftSize(sizeFilter);
+    setDraftPersonality(personalityFilter);
+    setFilterOpen(true);
+  };
+
+  const applyFilters = () => {
+    setAgeFilter(draftAge);
+    setSizeFilter(draftSize);
+    setPersonalityFilter(draftPersonality);
+    setFilterOpen(false);
+  };
+
+  const clearFilters = () => {
+    setDraftAge(null);
+    setDraftSize(null);
+    setDraftPersonality([]);
+    setAgeFilter(null);
+    setSizeFilter(null);
+    setPersonalityFilter([]);
+    setFilterOpen(false);
+  };
+
+  const visibleKibble = useMemo(() => {
+    const filtered = SUPPORT_CAUSE_KIBBLE.filter((item) => {
+      if (item.species !== species) return false;
+      if (ageFilter && item.age !== ageFilter) return false;
+      if (sizeFilter && item.size !== sizeFilter) return false;
+      if (personalityFilter.length && !personalityFilter.includes(item.marcaKey)) return false;
+      return true;
+    });
+    return filtered.sort((a, b) => {
+      const diff = supportCauseKilosValue(a.kilos) - supportCauseKilosValue(b.kilos);
+      return kiloSort === "asc" ? diff : -diff;
+    });
+  }, [species, ageFilter, sizeFilter, personalityFilter, kiloSort]);
+
+  return (
+    <div className="plain-screen support-cause-screen">
+      <TopBar title="Croquetas con causa" back="/profile" />
+      <AdoptionFilterModal
+        variant="supportCause"
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        draftSex={null}
+        setDraftSex={() => {}}
+        draftAge={draftAge}
+        setDraftAge={setDraftAge}
+        draftSize={draftSize}
+        setDraftSize={setDraftSize}
+        draftPersonality={draftPersonality}
+        setDraftPersonality={setDraftPersonality}
+        onApply={applyFilters}
+        onClear={clearFilters}
+      />
+      <div className="content-pad support-cause-body">
+        <div className="publish-needs-note support-cause-intro-note">
+          Busca las croquetas de tu preferencia y compra con nuestro enlace de referidos que te dará un{" "}
+          <strong>5% de descuento.</strong> Al seleccionar una, te llevará a la tienda correspondiente, donde podrás
+          pagar. ¡Gracias por tu apoyo!
+        </div>
+        <DiscoverSpeciesFilterBar
+          species={species}
+          onSpeciesChange={setSpecies}
+          filtersActive={filtersActive}
+          onOpenFilters={openFilters}
+        />
+        <button
+          type="button"
+          className="match-sort-btn"
+          onClick={() => setKiloSort((value) => (value === "asc" ? "desc" : "asc"))}
+          aria-label={
+            kiloSort === "asc" ? "Ordenar de mayor a menor kg" : "Ordenar de menor a mayor kg"
+          }
+        >
+          Ordenar
+          <small>{kiloSort === "asc" ? "Menor a mayor kg" : "Mayor a menor kg"}</small>
+        </button>
+        {visibleKibble.length ? (
+          <div className="support-cause-grid">
+            {visibleKibble.map((item) => (
+              <article key={item.id} className="support-cause-card">
+                <div className="support-cause-card-media" aria-hidden="true">
+                  <span>🥣</span>
+                </div>
+                <div className="support-cause-card-body">
+                  <strong className="support-cause-card-brand">{item.brand}</strong>
+                  <div className="support-cause-card-meta">
+                    <span className="support-cause-card-value">{item.kilos}</span>
+                    <span
+                      className={`support-cause-age-tag support-cause-age-tag--${item.age.toLowerCase()}`}
+                    >
+                      {item.age}
+                    </span>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="support-cause-empty">
+            No hay croquetas con estos filtros. Prueba otra combinación o limpia los filtros.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function DonorProfile() {
   const navigate = useNavigate();
   const {
@@ -3242,6 +3742,14 @@ function DonorProfile() {
               <strong>{fullName}</strong>
               <small>{city}</small>
             </div>
+            <button
+              type="button"
+              className="profile-intro-edit"
+              onClick={() => navigate("/settings/basic-info")}
+              aria-label="Editar información básica"
+            >
+              <Icon name="icon-edit.svg" size={18} />
+            </button>
           </div>
         </section>
 
@@ -3275,31 +3783,19 @@ function DonorProfile() {
           </button>
         )}
 
-        <section className="profile-access" aria-label="Preferencias">
-          <h2>Preferencias</h2>
-          <div className="profile-access-grid profile-access-grid--two">
-            <button
-              type="button"
-              className="profile-access-item"
-              onClick={() => navigate("/settings/basic-info")}
-            >
-              <span className="profile-access-icon" aria-hidden="true">
-                <Icon name="icon-user.svg" size={22} />
-              </span>
-              <span>Mi cuenta</span>
-            </button>
-            <button
-              type="button"
-              className="profile-access-item"
-              onClick={() => navigate("/messages")}
-            >
-              <span className="profile-access-icon" aria-hidden="true">
-                <Icon name="icon-heart.svg" size={22} />
-              </span>
-              <span>Mis mascotas</span>
-            </button>
-          </div>
-        </section>
+        <button
+          type="button"
+          className="profile-feature profile-feature--cause"
+          onClick={() => navigate("/apoya-causa")}
+        >
+          <span className="profile-feature-copy">
+            <strong>Croquetas con causa</strong>
+            <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
+          </span>
+          <span className="profile-feature-cta" aria-hidden="true">
+            <Icon name="icon-chevron-right.svg" size={22} />
+          </span>
+        </button>
 
         <section className="profile-access" aria-label="Pagos y suscripciones">
           <h2>Pagos y suscripciones</h2>
@@ -3508,12 +4004,19 @@ function BasicInfo() {
     reader.readAsDataURL(file);
   };
 
+  const requiredFilled =
+    Boolean(form.firstName.trim()) && Boolean(form.lastName.trim()) && Boolean(form.email.trim());
+
   const save = () => {
+    const firstName = form.firstName.trim();
+    const lastName = form.lastName.trim();
+    const email = form.email.trim();
+    if (!firstName || !lastName || !email) return;
     const city = form.city.trim() || "Monterrey, NL";
     updateDonorProfile({
-      firstName: form.firstName.trim() || "Alberto",
-      lastName: form.lastName.trim() || "Quiroga",
-      email: form.email.trim(),
+      firstName,
+      lastName,
+      email,
       phone: form.phone.trim(),
       city,
       avatar: form.avatar || undefined,
@@ -3560,23 +4063,29 @@ function BasicInfo() {
           </button>
         </div>
         <label>
-          Nombre
+          Nombre *
           <input
+            required
+            autoComplete="given-name"
             value={form.firstName}
             onChange={(event) => setForm({ ...form, firstName: event.target.value })}
           />
         </label>
         <label>
-          Apellido
+          Apellido *
           <input
+            required
+            autoComplete="family-name"
             value={form.lastName}
             onChange={(event) => setForm({ ...form, lastName: event.target.value })}
           />
         </label>
         <label>
-          Correo electrónico
+          Correo electrónico *
           <input
             type="email"
+            required
+            autoComplete="email"
             value={form.email}
             onChange={(event) => setForm({ ...form, email: event.target.value })}
           />
@@ -3600,7 +4109,7 @@ function BasicInfo() {
             }}
           />
         </label>
-        <button type="button" className="primary-button" onClick={save}>
+        <button type="button" className="primary-button" disabled={!requiredFilled} onClick={save}>
           Guardar cambios
         </button>
       </div>
@@ -4329,6 +4838,7 @@ function RescuerCases() {
   return (
     <ScreenShell
       mode="rescuer"
+      className="match-shell"
       overlay={
         <>
           {deleteId ? (
@@ -4346,12 +4856,17 @@ function RescuerCases() {
         </>
       }
     >
-      <div className="content-pad">
-        <div className="section-heading">
-          <div>
-            <h1>Mis Casos</h1>
-            <p>{visible.length === 0 ? "Aún no tienes mascotas publicadas" : `${visible.length} mascotas a tu cuidado`}</p>
-          </div>
+      <div className="match-page rescuer-match-page donor-chrome rescuer-cases-page">
+        <DonorChromeTop />
+        <header className="match-top">
+          <h1>Mis Casos</h1>
+        </header>
+
+        <div className="rescuer-cases-content">
+        <div className="section-heading rescuer-cases-heading">
+          <p>
+            {visible.length === 0 ? "Aún no tienes mascotas publicadas" : `${visible.length} mascotas a tu cuidado`}
+          </p>
           {visible.length > 0 ? (
             <button className="purple-button compact" onClick={() => navigate("/rescuer/publish")}>
               <Icon name="icon-plus-circle.svg" size={16} />
@@ -4471,6 +4986,7 @@ function RescuerCases() {
           })}
         </div>
         )}
+        </div>
       </div>
     </ScreenShell>
   );
@@ -4659,21 +5175,19 @@ function RescuerCaseDetail() {
 }
 
 function PublishStepper({ step, total = 3 }: { step: number; total?: number }) {
-  const steps = Array.from({ length: total }, (_, i) => i + 1);
+  const segments = Array.from({ length: total }, (_, i) => i + 1);
   return (
-    <div className="publish-stepper" aria-label={`Paso ${step} de ${total}`}>
-      {steps.map((n) => {
-        const done = n < step;
-        const active = n === step;
-        return (
-          <div className="publish-step-seg" key={n}>
-            <span className={`publish-step-dot ${done || active ? "on" : ""}`}>
-              {done ? <AssetIcon name="publish-step-check.svg" size={16} /> : n}
-            </span>
-            {n < total ? <span className={`publish-step-line ${n < step ? "on" : ""}`} /> : null}
-          </div>
-        );
-      })}
+    <div
+      className="publish-stepper publish-stepper--segments"
+      role="progressbar"
+      aria-valuenow={step}
+      aria-valuemin={1}
+      aria-valuemax={total}
+      aria-label={`Paso ${step} de ${total}`}
+    >
+      {segments.map((n) => (
+        <span key={n} className={`publish-step-segment${n <= step ? " is-filled" : ""}`} />
+      ))}
     </div>
   );
 }
@@ -4684,16 +5198,12 @@ type DraftNeedItem = {
   title: string;
   amount: number;
   detail?: string;
+  notes?: string;
+  receiptPhoto?: string;
+  contextEvidencePhoto?: string;
   urgent?: boolean;
   badge?: string;
 };
-
-const FOOD_CATALOG = [
-  { id: "food-adult", title: "Premium Adult Dog Food 3kg", brand: "PawNutri", amount: 280 },
-  { id: "food-puppy", title: "Puppy Dry Food 1.5kg", brand: "LittlePaws", amount: 180 },
-  { id: "food-kitten-wet", title: "Kitten Wet Food Pack x12", brand: "MeowChef", amount: 220 },
-  { id: "food-kitten-dry", title: "Kitten Dry Food 1kg", brand: "MeowChef", amount: 160 },
-];
 
 const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
   Comida: "🥣",
@@ -4701,9 +5211,320 @@ const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
   Veterinario: "🩺",
 };
 
+const VET_SERVICE_AMOUNT_MIN = 150;
+const MOCK_THANK_YOU_VIDEO_MARKER = "mock:thank-you-video";
+
+const VET_SERVICE_DESCRIPTIONS = [
+  "Consulta y diagnóstico",
+  "Cirugía",
+  "Estudios",
+  "Vacunas y desparasitación",
+  "Otro",
+] as const;
+
+function sanitizePublishAmountInput(raw: string) {
+  const cleaned = raw.replace(/[^\d.]/g, "");
+  if (!cleaned) return "";
+  const [whole, ...rest] = cleaned.split(".");
+  if (!rest.length) return whole;
+  return `${whole}.${rest.join("").slice(0, 2)}`;
+}
+
+const ADOPTION_SPECIES_ICON: Record<"Perro" | "Gato", string> = {
+  Perro: ADOPTION_PET_PLACEHOLDER_ICON,
+  Gato: "publish-species-cat.svg",
+};
+const ADOPTION_SUPPLEMENTARY_PHOTO_MAX = 5;
+const ADOPTION_CONVIVENCIA = [
+  "Social con niños",
+  "Social con otras mascotas",
+  "Ideal para departamento",
+  "Necesita patio",
+  "Ideal para primerizos",
+  "Mejor para alguien con experiencia",
+] as const;
+function parseDraftStringArray(value: unknown) {
+  if (typeof value !== "string" || !value) return [] as string[];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [] as string[];
+  }
+}
+
+function formatDraftAge(years: string, months: string) {
+  const y = years.trim();
+  const m = months.trim();
+  if (y && m) return `${y} años, ${m} meses`;
+  if (y) return `${y} años`;
+  if (m) return `${m} meses`;
+  return "";
+}
+
+function formatAdoptionPreviewLocation(location: string) {
+  const trimmed = location.trim();
+  if (!trimmed) return "Monterrey, MX";
+  if (/,\s*MX$/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/,\s*Nuevo León$/i, ", MX").replace(/,\s*NL$/i, ", MX");
+}
+
+function PetDetailReportPreviewStatic() {
+  return (
+    <p className="pet-detail-report pet-detail-report--footer publish-preview-static" aria-hidden="true">
+      <Icon name="icon-alert-circle.svg" size={16} />
+      Reportar publicación
+    </p>
+  );
+}
+
+function formatRescuerPreviewName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "María R.";
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[1].charAt(0).toUpperCase()}.`;
+}
+
+function draftNeedItemsToPreviewNeeds(items: DraftNeedItem[]): Need[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    type: item.type,
+    requested: Number(item.amount) || 0,
+    funded: 0,
+    urgent: item.urgent,
+    recurring: item.type === "Comida",
+    status: "active",
+  }));
+}
+
+function PublishDonationDetailPreview({
+  name,
+  location,
+  story,
+  photos,
+  rescuerName,
+  needs,
+}: {
+  name: string;
+  location: string;
+  story: string;
+  photos: string[];
+  rescuerName: string;
+  needs: Need[];
+}) {
+  const hero = photos[0] || `${A}luna-card.png`;
+  const gallerySource = photos.length ? photos : [hero];
+  const gallery = [...gallerySource, ...gallerySource, ...gallerySource].slice(0, 6);
+  const heroDots = photos.length > 1 ? photos : [hero];
+  const total = needs.reduce((sum, need) => sum + need.requested, 0);
+  const funded = 0;
+  const missionPct = total ? Math.round((funded / total) * 100) : 0;
+  const tags = Array.from(new Set(needs.map((need) => need.type))).map(needTypeLabel);
+  const rescuerDisplay = formatRescuerPreviewName(rescuerName);
+  const rescuerInitial = (rescuerDisplay.charAt(0) || "R").toUpperCase();
+  return (
+    <div className="publish-donation-detail-preview pet-detail donate-case-detail" aria-label="Vista previa para quienes apoyan">
+      <div className="pet-detail-scroll publish-preview-static">
+        <div className="pet-detail-hero">
+          <img src={hero} alt={name} />
+          <div className="pet-detail-rescuer publish-preview-rescuer-static">
+            <span>{rescuerDisplay}</span>
+            <span className="pet-detail-rescuer-avatar" aria-hidden="true">{rescuerInitial}</span>
+          </div>
+          <div className="pet-detail-dots" aria-hidden="true">
+            {heroDots.map((_, index) => (
+              <button key={index} type="button" className={index === 0 ? "is-active" : ""} tabIndex={-1} />
+            ))}
+          </div>
+        </div>
+
+        <div className="pet-detail-sheet">
+          <div className="pet-detail-heading">
+            <div className="pet-detail-heading-copy">
+              <h1>{name}</h1>
+              <p className="pet-detail-location">
+                <Icon name="location.svg" size={14} />
+                {formatAdoptionPreviewLocation(location)}
+              </p>
+              <p className="pet-detail-verified">
+                <AssetIcon name="icon-verified.svg" size={16} alt="" />
+                Rescatista verificado
+              </p>
+            </div>
+            <span className="pet-detail-share publish-preview-share-static" aria-hidden="true">
+              <Icon name="icon-share.svg" size={18} />
+            </span>
+          </div>
+
+          <section className="donate-case-funding" aria-label="Progreso de donación">
+            <div className="donate-case-funding-stats">
+              <div className="donate-case-funding-stat">
+                <span className="donate-case-funding-icon received" aria-hidden="true">
+                  <Icon name="tab-impact.svg" size={16} />
+                </span>
+                <div>
+                  <strong>${funded.toLocaleString("es-MX")}</strong>
+                  <span>Recibido</span>
+                </div>
+              </div>
+              <div className="donate-case-funding-stat">
+                <span className="donate-case-funding-icon goal" aria-hidden="true">
+                  <Icon name="icon-star.svg" size={16} />
+                </span>
+                <div>
+                  <strong>${total.toLocaleString("es-MX")}</strong>
+                  <span>Objetivo</span>
+                </div>
+              </div>
+            </div>
+            <div className="donate-case-funding-bar" aria-hidden="true">
+              <i style={{ width: `${missionPct}%` }} />
+            </div>
+          </section>
+
+          {tags.length ? (
+            <div className="donate-case-tags" aria-label="Categorías">
+              {tags.map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
+            </div>
+          ) : null}
+
+          <section className="pet-detail-story">
+            <h2>Mi historia</h2>
+            <p>{story || "—"}</p>
+          </section>
+
+          {needs.length ? (
+            <section className="donate-case-needs">
+              <h2>Ayúdame a recuperar:</h2>
+              <div className="donate-needs-stack">
+                {needs.map((need) => (
+                  <NeedCard
+                    key={need.id}
+                    need={need}
+                    defaultOpen={false}
+                    showDonateAction={false}
+                    onDonate={() => undefined}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="donate-case-gallery" aria-label="Galería">
+            <div className="donate-case-gallery-grid">
+              {gallery.map((src, index) => (
+                <div className="donate-case-gallery-item" key={`${src}-${index}`}>
+                  <img src={src} alt="" />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <p className="pet-detail-report publish-preview-static" aria-hidden="true">
+            <Icon name="icon-alert-circle.svg" size={16} />
+            Reportar
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PublishAdoptionDetailPreview({
+  name,
+  location,
+  story,
+  sex,
+  size,
+  age,
+  photos,
+  rescuerName,
+  health,
+  convivencia,
+  personality,
+}: {
+  name: string;
+  location: string;
+  story: string;
+  sex: string;
+  size: string;
+  age: string;
+  photos: string[];
+  rescuerName: string;
+  health: { vaccinated: boolean; sterilized: boolean; specialCare: boolean };
+  convivencia: readonly string[];
+  personality: readonly string[];
+}) {
+  const hero = photos[0] || `${A}publish-sample-pet.jpg`;
+  const galleryPhotos = photos.length ? photos : [hero];
+  const stats = [
+    { value: sex || "—", label: "Sexo" },
+    { value: size || "—", label: "Tamaño" },
+    { value: age || "—", label: "Edad" },
+  ];
+  const rescuerInitial = (rescuerName.trim().charAt(0) || "R").toUpperCase();
+
+  return (
+    <div className="publish-adoption-detail-preview" aria-label="Vista previa para adoptantes">
+      <div className="pet-detail">
+        <div className="pet-detail-scroll">
+          <PetDetailPhotoHero photos={galleryPhotos} alt={name}>
+            <div className="pet-detail-rescuer publish-preview-rescuer-static">
+              <span>{rescuerName}</span>
+              <span className="pet-detail-rescuer-avatar" aria-hidden="true">{rescuerInitial}</span>
+            </div>
+          </PetDetailPhotoHero>
+
+          <div className="pet-detail-sheet">
+            <div className="pet-detail-heading">
+              <div className="pet-detail-heading-copy">
+                <h1>{name}</h1>
+                <p className="pet-detail-location">
+                  <Icon name="location.svg" size={14} />
+                  {formatAdoptionPreviewLocation(location)}
+                </p>
+                <p className="pet-detail-verified">
+                  <AssetIcon name="icon-verified.svg" size={16} alt="" />
+                  Rescatista verificado
+                </p>
+              </div>
+              <span className="pet-detail-share publish-preview-share-static" aria-hidden="true">
+                <Icon name="icon-share.svg" size={18} />
+              </span>
+            </div>
+
+            <div className="pet-detail-stats">
+              {stats.map((stat) => (
+                <article className="pet-detail-stat" key={stat.label}>
+                  <span>{stat.label}</span>
+                  <strong>{stat.value}</strong>
+                </article>
+              ))}
+            </div>
+
+            <section className="pet-detail-story">
+              <h2>Su historia</h2>
+              <p>{story || "—"}</p>
+            </section>
+
+            <PetDetailPersonalityBlock personality={personality} />
+          </div>
+
+          <PetDetailCharacteristics health={health} convivencia={convivencia} />
+
+          <PetDetailReportPreviewStatic />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublishFlow() {
   const navigate = useNavigate();
-  const { verification, draft, updateDraft, publishDraft } = usePrototypeStore();
+  const { verification, draft, updateDraft, publishDraft, donorProfile, rescuerProfile } = usePrototypeStore();
   const location = useLocation();
   const correcting = location.search.includes("correct");
   const continuing = location.search.includes("draft");
@@ -4711,6 +5532,7 @@ function PublishFlow() {
   const [step, setStep] = useState(correcting || continuing ? 1 : 0);
   const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
   const photos = Array.isArray(draft.photos) ? (draft.photos as string[]) : [];
+  const mainPetPhotoStored = String(draft.mainPetPhoto || "");
   const [needItems, setNeedItems] = useState<DraftNeedItem[]>(() => {
     try {
       return JSON.parse(String(draft.needItemsJson || "[]")) as DraftNeedItem[];
@@ -4719,20 +5541,114 @@ function PublishFlow() {
     }
   });
   const [sheet, setSheet] = useState<"food" | "medicine" | "vet" | null>(null);
-  const [foodQuery, setFoodQuery] = useState("");
-  const [medForm, setMedForm] = useState({ name: "", amount: "", treatment: "", urgent: false });
-  const emptyVetForm = {
-    reason: "",
+  const emptyFoodForm = {
+    name: "",
     amount: "",
+    receiptPhoto: "",
+    contextEvidencePhoto: "",
+  };
+  const [foodForm, setFoodForm] = useState(emptyFoodForm);
+  const emptyMedForm = {
+    name: "",
+    amount: "",
+    treatment: "",
+    receiptPhoto: "",
+    contextEvidencePhoto: "",
     urgent: false,
+    urgentReason: "",
+  };
+  const [medForm, setMedForm] = useState(emptyMedForm);
+  const emptyVetForm = {
+    amount: "",
+    serviceDescription: "",
+    serviceDescriptionOther: "",
+    receiptPhoto: "",
+    contextEvidencePhoto: "",
+    urgent: false,
+    urgentReason: "",
   };
   const [vetForm, setVetForm] = useState(emptyVetForm);
-  const [urgentVideo, setUrgentVideo] = useState(Boolean(draft.urgentVideo));
+  const [editingNeedId, setEditingNeedId] = useState<string | null>(null);
+  const [publishTypeChoice, setPublishTypeChoice] = useState<"adoption" | "donation" | null>(null);
+  const [verifyInfoOpen, setVerifyInfoOpen] = useState(false);
+  const [thankYouVideoInfoOpen, setThankYouVideoInfoOpen] = useState(false);
+  const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
+  const adoptionPetPhotoRef = useRef<HTMLInputElement>(null);
+  const thankYouVideoRef = useRef<HTMLInputElement>(null);
+  const urgentComplementMediaRef = useRef<HTMLInputElement>(null);
+  const foodReceiptPhotoRef = useRef<HTMLInputElement>(null);
+  const foodContextEvidencePhotoRef = useRef<HTMLInputElement>(null);
+  const medReceiptPhotoRef = useRef<HTMLInputElement>(null);
+  const medContextEvidencePhotoRef = useRef<HTMLInputElement>(null);
+  const vetReceiptPhotoRef = useRef<HTMLInputElement>(null);
+  const vetContextEvidencePhotoRef = useRef<HTMLInputElement>(null);
+  const thankYouVideo = String(draft.thankYouVideo || "");
+  const hasThankYouVideo = Boolean(thankYouVideo);
+  const detectedLocation = donorProfile.city.trim() || "Monterrey, Nuevo León";
+  const adoptionPetPhoto =
+    mainPetPhotoStored || (mode === "adoption" ? photos[0] ?? "" : "");
+  const supplementaryPhotos = mainPetPhotoStored
+    ? photos
+    : mode === "adoption"
+      ? photos.slice(1)
+      : [];
+  const urgentComplementMedia = String(draft.urgentComplementMedia || "");
+  const urgentComplementMediaType =
+    draft.urgentComplementMediaType === "video"
+      ? "video"
+      : draft.urgentComplementMediaType === "image"
+        ? "image"
+        : urgentComplementMedia.startsWith("data:video/")
+          ? "video"
+          : urgentComplementMedia
+            ? "image"
+            : "";
+  const hasUrgentComplementMedia = Boolean(urgentComplementMedia);
+  const convivenciaSelected = parseDraftStringArray(draft.convivenciaJson);
+  const personalitySelected = parseDraftStringArray(draft.personalityJson);
+  const adoptionAgeBand = String(draft.age || "");
+  const hasAdoptionAge = ADOPTION_AGE_BANDS.includes(adoptionAgeBand as PetAgeBand);
+
+  useEffect(() => {
+    if (step !== 1) return;
+    if (mode !== "adoption" && mode !== "donation") return;
+    if (!draft.location) updateDraft({ location: detectedLocation });
+  }, [mode, step, draft.location, detectedLocation, updateDraft]);
+
+  const publishTypeOptions = [
+    {
+      id: "adoption" as const,
+      label: "Dar en adopción",
+      title: "Dar en adopción",
+      copy: "Publica una mascota que esté lista para encontrar un hogar",
+      icon: "intent-adopter.svg",
+      verifyHint: true,
+    },
+    {
+      id: "donation" as const,
+      label: "Recibir Apoyo",
+      title: "Recibir Apoyo",
+      copy: "Crea un caso para apoyarte a solventar los gastos que ya hayas cubierto recientemente de una mascota.",
+      icon: "tab-donate.svg",
+      verifyHint: true,
+    },
+  ];
+  const activePublishType = publishTypeOptions.find((option) => option.id === publishTypeChoice) ?? null;
 
   const totalSteps = mode === "donation" ? 4 : 3;
   const reviewStep = totalSteps;
-  const needsStep = mode === "donation" ? 3 : -1;
-  const hasUrgentNeed = needItems.some((item) => item.urgent);
+  const needsStep = mode === "donation" ? 2 : -1;
+  const donationPhotosStep = mode === "donation" ? 3 : -1;
+  const showUrgentComplementEvidence = needItems.some(
+    (item) =>
+      (item.type === "Veterinario" || item.type === "Medicina") && Boolean(item.urgent),
+  );
+
+  useEffect(() => {
+    if (mode !== "donation") return;
+    if (mainPetPhotoStored || photos.length === 0) return;
+    updateDraft({ mainPetPhoto: photos[0], photos: photos.slice(1) });
+  }, [mode, mainPetPhotoStored, photos, updateDraft]);
 
   const pickType = (nextMode: "adoption" | "donation") => {
     if (nextMode === "donation" && needsVerification) {
@@ -4754,127 +5670,477 @@ function PublishFlow() {
     navigate("/rescuer/cases");
   };
 
+  const petPhotoSamples = [`${A}publish-sample-pet.jpg`, `${A}luna-card.png`, `${A}rocky.png`, `${A}nina-card.png`];
+
   const addPhoto = () => {
-    if (photos.includes(`${A}publish-sample-pet.jpg`)) return;
-    updateDraft({ photos: [...photos, `${A}publish-sample-pet.jpg`] });
+    if (photos.length >= 6) return;
+    const nextSrc = petPhotoSamples[photos.length % petPhotoSamples.length];
+    updateDraft({ photos: [...photos, nextSrc] });
+  };
+
+  const addSupplementaryPhoto = () => {
+    if (!adoptionPetPhoto) return;
+    if (supplementaryPhotos.length >= ADOPTION_SUPPLEMENTARY_PHOTO_MAX) return;
+    const nextSrc = petPhotoSamples[supplementaryPhotos.length % petPhotoSamples.length];
+    updateDraft({
+      mainPetPhoto: adoptionPetPhoto,
+      photos: [...supplementaryPhotos, nextSrc],
+    });
+  };
+
+  const removeSupplementaryPhoto = (src: string) => {
+    if (!adoptionPetPhoto) return;
+    updateDraft({
+      mainPetPhoto: adoptionPetPhoto,
+      photos: supplementaryPhotos.filter((item) => item !== src),
+    });
+  };
+
+  const pickThankYouVideo = (file: File | undefined) => {
+    if (hasThankYouVideo || !file || !file.type.startsWith("video/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        updateDraft({ thankYouVideo: reader.result });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openThankYouVideoPicker = () => {
+    if (hasThankYouVideo) return;
+    updateDraft({ thankYouVideo: MOCK_THANK_YOU_VIDEO_MARKER });
+  };
+
+  const removeThankYouVideo = () => {
+    updateDraft({ thankYouVideo: "" });
+  };
+
+  const pickUrgentComplementMedia = (file: File | undefined) => {
+    if (hasUrgentComplementMedia || !file) return;
+    const isVideo = file.type.startsWith("video/");
+    const isImage = file.type.startsWith("image/");
+    if (!isVideo && !isImage) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      updateDraft({
+        urgentComplementMedia: reader.result,
+        urgentComplementMediaType: isVideo ? "video" : "image",
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openUrgentComplementMediaPicker = () => {
+    if (hasUrgentComplementMedia) return;
+    urgentComplementMediaRef.current?.click();
+  };
+
+  const removeUrgentComplementMedia = () => {
+    updateDraft({ urgentComplementMedia: "", urgentComplementMediaType: "" });
+  };
+
+  const pickAdoptionPetPhoto = (file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      if (mode === "donation") {
+        const complementOnly = mainPetPhotoStored
+          ? photos.filter((p) => p !== reader.result)
+          : photos.slice(1).filter((p) => p !== reader.result);
+        updateDraft({ mainPetPhoto: reader.result, photos: complementOnly });
+        return;
+      }
+      updateDraft({
+        mainPetPhoto: reader.result,
+        photos: mainPetPhotoStored ? photos : photos.slice(1),
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const openAdoptionPetPhotoPicker = () => {
+    adoptionPetPhotoRef.current?.click();
+  };
+
+  const pickVetPhoto = (field: "receiptPhoto" | "contextEvidencePhoto", file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setVetForm((prev) => ({ ...prev, [field]: reader.result }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const pickMedPhoto = (field: "receiptPhoto" | "contextEvidencePhoto", file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setMedForm((prev) => ({ ...prev, [field]: reader.result }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const pickFoodPhoto = (field: "receiptPhoto" | "contextEvidencePhoto", file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setFoodForm((prev) => ({ ...prev, [field]: reader.result }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const toggleConvivencia = (label: string) => {
+    const next = convivenciaSelected.includes(label)
+      ? convivenciaSelected.filter((item) => item !== label)
+      : [...convivenciaSelected, label];
+    updateDraft({ convivenciaJson: JSON.stringify(next) });
+  };
+
+  const togglePersonality = (trait: string) => {
+    if (personalitySelected.includes(trait)) {
+      updateDraft({
+        personalityJson: JSON.stringify(personalitySelected.filter((item) => item !== trait)),
+      });
+      return;
+    }
+    if (personalitySelected.length >= 3) return;
+    updateDraft({ personalityJson: JSON.stringify([...personalitySelected, trait]) });
   };
 
   const removePhoto = (src: string) => {
     updateDraft({ photos: photos.filter((item) => item !== src) });
   };
 
-  const canContinuePhotos = photos.length > 0;
-  const canContinueInfo = Boolean(draft.sex) && Boolean(draft.species);
+  const canContinuePhotos = hasThankYouVideo;
+  const canContinueAdoptionStep1 =
+    Boolean(String(draft.petName || "").trim()) &&
+    Boolean(draft.species) &&
+    Boolean(draft.sex) &&
+    Boolean(draft.petSize) &&
+    hasAdoptionAge &&
+    Boolean(adoptionPetPhoto) &&
+    Boolean(String(draft.story || "").trim());
+  const canContinueAdoptionStep2 = true;
+
+  const finalizePublish = () => {
+    const composedAge = adoptionPublishedAgeLabel(String(draft.age || ""));
+    if (mode === "adoption") {
+      const conv = convivenciaSelected;
+      updateDraft({
+        publishMode: mode,
+        age: composedAge,
+        socialChildren: conv.includes("Social con niños"),
+        socialDogs: conv.includes("Social con otras mascotas"),
+        socialCats: conv.includes("Social con otras mascotas"),
+      });
+    } else {
+      updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
+    }
+    publishDraft("review");
+    setPublishSuccessOpen(false);
+    navigate("/rescuer/cases");
+  };
 
   const goNext = () => {
     if (step < totalSteps) {
       setStep(step + 1);
       return;
     }
-    updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
-    publishDraft("review");
-    navigate("/rescuer/cases");
+    if (step === reviewStep) {
+      setPublishSuccessOpen(true);
+    }
   };
 
-  const addFood = (item: (typeof FOOD_CATALOG)[number]) => {
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Comida",
-        title: item.title,
-        amount: item.amount,
-        detail: "Cada mes",
-        badge: "Patrocinio habilitado",
-      },
-    ]);
+  const closeNeedSheet = () => {
     setSheet(null);
-    setFoodQuery("");
+    setEditingNeedId(null);
+    setVetForm(emptyVetForm);
+    setMedForm(emptyMedForm);
+    setFoodForm(emptyFoodForm);
+  };
+
+  const openNeedItem = (item: DraftNeedItem) => {
+    setEditingNeedId(item.id);
+    if (item.type === "Veterinario") {
+      setVetForm({
+        amount: String(item.amount),
+        serviceDescription: item.title,
+        serviceDescriptionOther: item.notes || "",
+        receiptPhoto: item.receiptPhoto || "",
+        contextEvidencePhoto: item.contextEvidencePhoto || "",
+        urgent: Boolean(item.urgent),
+        urgentReason: item.detail || "",
+      });
+      setSheet("vet");
+      return;
+    }
+    if (item.type === "Medicina") {
+      setMedForm({
+        name: item.title,
+        amount: String(item.amount),
+        treatment: item.notes || (item.urgent ? "" : item.detail || ""),
+        receiptPhoto: item.receiptPhoto || "",
+        contextEvidencePhoto: item.contextEvidencePhoto || "",
+        urgent: Boolean(item.urgent),
+        urgentReason: item.urgent ? item.detail || "" : "",
+      });
+      setSheet("medicine");
+      return;
+    }
+    setFoodForm({
+      name: item.title,
+      amount: String(item.amount),
+      receiptPhoto: item.receiptPhoto || "",
+      contextEvidencePhoto: item.contextEvidencePhoto || "",
+    });
+    setSheet("food");
+  };
+
+  const saveFood = () => {
+    const amount = Number(foodForm.amount || 0);
+    if (
+      !foodForm.name.trim() ||
+      !amount ||
+      !foodForm.receiptPhoto ||
+      !foodForm.contextEvidencePhoto
+    ) {
+      return;
+    }
+    const entry: DraftNeedItem = {
+      id: editingNeedId || `need-${Date.now()}`,
+      type: "Comida",
+      title: foodForm.name.trim(),
+      amount,
+      receiptPhoto: foodForm.receiptPhoto,
+      contextEvidencePhoto: foodForm.contextEvidencePhoto,
+    };
+    const next = editingNeedId
+      ? needItems.map((need) => (need.id === editingNeedId ? entry : need))
+      : [...needItems, entry];
+    persistNeeds(next);
+    closeNeedSheet();
   };
 
   const saveMedicine = () => {
     const amount = Number(medForm.amount || 0);
-    if (!medForm.name.trim() || !amount) return;
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Medicina",
-        title: medForm.name.trim(),
-        amount,
-        detail: medForm.treatment.trim() || undefined,
-        urgent: medForm.urgent,
-      },
-    ]);
-    setMedForm({ name: "", amount: "", treatment: "", urgent: false });
-    setSheet(null);
+    const urgentReason = medForm.urgentReason.trim();
+    const treatment = medForm.treatment.trim();
+    if (
+      !medForm.name.trim() ||
+      !treatment ||
+      !amount ||
+      !medForm.receiptPhoto ||
+      !medForm.contextEvidencePhoto ||
+      (medForm.urgent && !urgentReason)
+    ) {
+      return;
+    }
+    const entry: DraftNeedItem = {
+      id: editingNeedId || `need-${Date.now()}`,
+      type: "Medicina",
+      title: medForm.name.trim(),
+      amount,
+      notes: treatment,
+      detail: medForm.urgent ? urgentReason : treatment,
+      receiptPhoto: medForm.receiptPhoto,
+      contextEvidencePhoto: medForm.contextEvidencePhoto,
+      urgent: medForm.urgent,
+    };
+    const next = editingNeedId
+      ? needItems.map((need) => (need.id === editingNeedId ? entry : need))
+      : [...needItems, entry];
+    persistNeeds(next);
+    closeNeedSheet();
   };
 
   const saveVet = () => {
     const amount = Number(vetForm.amount || 0);
-    if (!vetForm.reason.trim() || !amount) return;
-    persistNeeds([
-      ...needItems,
-      {
-        id: `need-${Date.now()}`,
-        type: "Veterinario",
-        title: vetForm.reason.trim(),
-        amount,
-        urgent: vetForm.urgent,
-      },
-    ]);
-    setVetForm(emptyVetForm);
-    setSheet(null);
-  };
-
-  const addUrgentVideo = () => {
-    setUrgentVideo(true);
-    updateDraft({ urgentVideo: true });
-  };
-
-  const clearUrgentVideo = () => {
-    setUrgentVideo(false);
-    updateDraft({ urgentVideo: false });
+    const selectedService = vetForm.serviceDescription.trim();
+    const serviceDetail = vetForm.serviceDescriptionOther.trim();
+    const urgentReason = vetForm.urgentReason.trim();
+    if (
+      !selectedService ||
+      !serviceDetail ||
+      amount < VET_SERVICE_AMOUNT_MIN ||
+      !vetForm.receiptPhoto ||
+      !vetForm.contextEvidencePhoto ||
+      (vetForm.urgent && !urgentReason)
+    ) {
+      return;
+    }
+    const entry: DraftNeedItem = {
+      id: editingNeedId || `need-${Date.now()}`,
+      type: "Veterinario",
+      title: selectedService,
+      amount,
+      notes: serviceDetail,
+      detail: vetForm.urgent ? urgentReason : undefined,
+      receiptPhoto: vetForm.receiptPhoto,
+      contextEvidencePhoto: vetForm.contextEvidencePhoto,
+      urgent: vetForm.urgent,
+    };
+    const next = editingNeedId
+      ? needItems.map((need) => (need.id === editingNeedId ? entry : need))
+      : [...needItems, entry];
+    persistNeeds(next);
+    closeNeedSheet();
   };
 
   const removeNeed = (id: string) => {
     const next = needItems.filter((item) => item.id !== id);
     persistNeeds(next);
-    if (!next.some((item) => item.urgent)) clearUrgentVideo();
+    if (editingNeedId === id) {
+      setEditingNeedId(null);
+    }
   };
 
   if (step === 0 && !correcting && !continuing) {
+    const continuePublishType = () => {
+      if (!publishTypeChoice) return;
+      pickType(publishTypeChoice);
+    };
+
     return (
-      <ScreenShell mode="rescuer" className="publish-type-shell">
-        <div className="publish-type-screen">
-          <div className="intent-copy">
-            <h1>¿Qué quieres publicar?</h1>
-            <p>Selecciona el tipo de publicación que deseas crear</p>
+      <ScreenShell
+        mode="rescuer"
+        className="publish-type-shell"
+        overlay={
+          verifyInfoOpen ? (
+            <div className="modal-backdrop center" onClick={() => setVerifyInfoOpen(false)}>
+              <div
+                className="dialog-card publish-verify-dialog"
+                role="dialog"
+                aria-labelledby="publish-verify-title"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="dialog-close"
+                  onClick={() => setVerifyInfoOpen(false)}
+                  aria-label="Cerrar"
+                >
+                  ×
+                </button>
+                <h2 id="publish-verify-title">
+                  {publishTypeChoice === "adoption"
+                    ? "Revisión del caso de adopción"
+                    : "Verificación de Rescatista y Caso de apoyo"}
+                </h2>
+                <ul className="publish-verify-dialog-list">
+                  {publishTypeChoice === "adoption" ? (
+                    <>
+                      <li>
+                        <strong>Qué es:</strong> revisamos la información y las fotos de tu publicación antes de
+                        mostrarla a los adoptantes.
+                      </li>
+                      <li>
+                        <strong>Por qué:</strong> cuidamos a quienes buscan adoptar y a las mascotas frente a casos
+                        incompletos o engañosos.
+                      </li>
+                      <li>
+                        <strong>Cómo funciona:</strong> DopMi revisa tu caso en 1–2 días hábiles y te avisa cuando
+                        esté activo en Adoptar.
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li>
+                        <strong>Qué es:</strong> validamos que eres quien publica y que el apoyo se usa para la
+                        mascota.
+                      </li>
+                      <li>
+                        <strong>Por qué:</strong> cuidamos a donantes y a la comunidad frente a publicaciones falsas.
+                      </li>
+                      <li>
+                        <strong>Cómo funciona:</strong> subes INE, una selfie y datos básicos; DopMi revisa en 1–2 días
+                        hábiles.
+                      </li>
+                    </>
+                  )}
+                </ul>
+                <button type="button" className="purple-button" onClick={() => setVerifyInfoOpen(false)}>
+                  Entendido
+                </button>
+              </div>
+            </div>
+          ) : null
+        }
+      >
+        <div className={`publish-type-screen account-screen--choice${publishTypeChoice ? " has-selection" : ""}`}>
+          <DonorChromeTop />
+          {publishTypeChoice ? (
+            <header className="match-top publish-type-match-top">
+              <h2>¿Qué quieres publicar?</h2>
+            </header>
+          ) : null}
+          <div className="publish-type-body">
+            {!publishTypeChoice ? (
+              <div className="intent-copy publish-type-copy">
+                <h1>¿Qué quieres publicar?</h1>
+                <p>Selecciona el tipo de publicación que deseas crear</p>
+              </div>
+            ) : null}
+
+            <div className="account-tabs-wrap">
+              <div className="account-tabs account-tabs--two" role="radiogroup" aria-label="Tipo de publicación">
+                {publishTypeOptions.map((option) => {
+                  const isSelected = publishTypeChoice === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      className={`account-tab ${option.id === "donation" ? "donate" : "adopt"}${isSelected ? " selected" : ""}`}
+                      onClick={() => setPublishTypeChoice(option.id)}
+                    >
+                      <span className="account-tab-orb">
+                        <AssetIcon name={option.icon} size={32} />
+                      </span>
+                      <span className="account-tab-label">{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="account-summary publish-type-summary" aria-live="polite" aria-hidden={!publishTypeChoice}>
+              <h2>{activePublishType?.title ?? ""}</h2>
+              <p>{activePublishType?.copy ?? ""}</p>
+            </div>
+
+            <div className="account-selected-footer publish-type-footer" aria-hidden={!publishTypeChoice}>
+              {activePublishType?.verifyHint ? (
+                <button type="button" className="publish-verify-hint" onClick={() => setVerifyInfoOpen(true)}>
+                  DopMi revisará el caso antes de publicar
+                  <Icon name="icon-alert-circle.svg" size={14} className="publish-verify-hint-icon" />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="account-detail-cta"
+                onClick={continuePublishType}
+                disabled={!publishTypeChoice}
+              >
+                Continuar
+              </button>
+            </div>
+
+            {publishTypeChoice ? (
+              <button type="button" className="publish-cancel publish-type-cancel" onClick={() => navigate("/rescuer")}>
+                Cancelar
+              </button>
+            ) : null}
           </div>
-          <div className="publish-type-cards">
-            <button type="button" className="intent-card publish-type-card" onClick={() => pickType("adoption")}>
-              <span className="intent-chip publish-adopt">
-                <AssetIcon name="intent-adopter.svg" size={28} />
-              </span>
-              <span className="intent-card-text">
-                <strong>Dar en adopción</strong>
-                <p>Publica una mascota que esté lista para encontrar un hogar</p>
-              </span>
-            </button>
-            <button type="button" className="intent-card publish-type-card" onClick={() => pickType("donation")}>
-              <span className="intent-chip publish-donate">
-                <AssetIcon name="intent-donor.svg" size={28} />
-              </span>
-              <span className="intent-card-text">
-                <strong>Recibir donaciones</strong>
-                <p>Crea un caso de donación para cubrir necesidades de una mascota</p>
-                <span className="publish-verify-hint">⚠️ Requiere verificación</span>
-              </span>
-            </button>
-          </div>
-          <button type="button" className="publish-cancel" onClick={() => navigate("/rescuer")}>
-            Cancelar
-          </button>
         </div>
       </ScreenShell>
     );
@@ -4893,177 +6159,618 @@ function PublishFlow() {
   }
 
   const continueDisabled =
-    step === 1
-      ? !canContinuePhotos
-      : step === 2
-        ? !canContinueInfo
+    mode === "adoption"
+      ? step === 1
+        ? !canContinueAdoptionStep1
+        : step === 2
+          ? !canContinueAdoptionStep2
+          : false
+      : step === 1
+        ? !canContinueAdoptionStep1
         : step === needsStep
-          ? hasUrgentNeed && !urgentVideo
-          : false;
-  const continueLabel =
-    step === reviewStep ? "Publicar caso" : step === needsStep ? "Continuar a revisión" : "Continuar";
-  const headerTitle = step === reviewStep ? "Revisa tu caso" : "Publicar caso";
+          ? false
+          : step === donationPhotosStep
+            ? !canContinuePhotos
+            : false;
+  const continueLabel = step === reviewStep ? "Enviar a revisión" : "Continuar";
+  const vetAmountNumber = Number(vetForm.amount);
+  const vetAmountValid = Number.isFinite(vetAmountNumber) && vetAmountNumber >= VET_SERVICE_AMOUNT_MIN;
+  const vetAmountTooLow =
+    Boolean(vetForm.amount.trim()) &&
+    (!Number.isFinite(vetAmountNumber) || vetAmountNumber < VET_SERVICE_AMOUNT_MIN);
+  const vetServiceDescriptionValid =
+    Boolean(vetForm.serviceDescription.trim()) && Boolean(vetForm.serviceDescriptionOther.trim());
+  const vetUrgentReasonValid = !vetForm.urgent || Boolean(vetForm.urgentReason.trim());
+  const medAmountNumber = Number(medForm.amount);
+  const medAmountValid = Number.isFinite(medAmountNumber) && medAmountNumber > 0;
+  const medUrgentReasonValid = !medForm.urgent || Boolean(medForm.urgentReason.trim());
+  const medTreatmentValid = Boolean(medForm.treatment.trim());
+  const foodAmountNumber = Number(foodForm.amount);
+  const foodAmountValid = Number.isFinite(foodAmountNumber) && foodAmountNumber > 0;
+
+  const headerTitle =
+    step === reviewStep
+      ? "Valida tu caso"
+      : mode === "donation"
+        ? step === 1
+          ? "¿A quién estás apoyando?"
+          : step === needsStep
+            ? "Cuéntanos"
+            : step === donationPhotosStep
+              ? "Un poco más..."
+              : "Publicar caso"
+        : step === 1
+          ? "Empecemos..."
+          : step === 2
+            ? "Un poco más..."
+            : "Publicar caso";
+  const adoptionAgeLabel = adoptionPublishedAgeLabel(String(draft.age || "")) || "—";
   const goPrevStep = () => setStep(step <= 1 ? 0 : step - 1);
-  const filteredFood = FOOD_CATALOG.filter((item) => {
-    const q = foodQuery.trim().toLowerCase();
-    if (!q) return true;
-    return item.title.toLowerCase().includes(q) || item.brand.toLowerCase().includes(q);
-  });
 
   return (
     <ScreenShell
       mode="rescuer"
       className="publish-case-shell"
       overlay={
-        sheet ? (
-          <div className="modal-backdrop center" onClick={() => setSheet(null)}>
+        <>
+        {sheet ? (
+          <div className="modal-backdrop center" onClick={closeNeedSheet}>
             {sheet === "food" ? (
-              <div className="dialog-card publish-food-sheet" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <h2>Catálogo de comida</h2>
-                <label className="publish-food-search">
-                  <span className="visually-hidden">Buscar</span>
-                  <input
-                    placeholder="Buscar por nombre o marca..."
-                    value={foodQuery}
-                    onChange={(e) => setFoodQuery(e.target.value)}
-                  />
-                </label>
-                <div className="publish-food-note">
-                  Selecciona la comida que necesitas. Cuando recibas suficientes donaciones, podrás comprarla, subir evidencia y solicitar el reembolso con las donaciones recibidas.
-                </div>
-                <div className="publish-food-list">
-                  {filteredFood.map((item) => (
-                    <button type="button" className="publish-food-item" key={item.id} onClick={() => addFood(item)}>
-                      <span className="publish-food-thumb" aria-hidden>🥣</span>
-                      <span className="publish-food-meta">
-                        <strong>{item.title}</strong>
-                        <small>{item.brand}</small>
-                      </span>
-                      <span className="publish-food-price">
-                        <strong>${item.amount}</strong>
-                        <small>MXN</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : sheet === "medicine" ? (
-              <div className="dialog-card publish-med-dialog" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <header className="publish-med-head">
-                  <h2>Agregar medicina</h2>
-                  <p>Agrega los detalles de la medicina que necesita la mascota.</p>
+              <div className="dialog-card publish-med-dialog publish-vet-dialog" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={closeNeedSheet} aria-label="Cerrar">×</button>
+                <header className="publish-med-head publish-vet-dialog-head">
+                  <div className="publish-vet-dialog-title-row">
+                    <span className="donate-need-icon tone-food" aria-hidden="true">🥣</span>
+                    <h2 className="publish-vet-dialog-title">Alimento</h2>
+                  </div>
+                  <p>Agrega los detalles del alimento o croquetas que necesitó la mascota.</p>
                 </header>
                 <label className="publish-field">
-                  <span>Nombre de la medicina</span>
+                  <span>Nombre del alimento <em>*</em></span>
                   <input
-                    placeholder="ej. Amoxicilina"
+                    required
+                    placeholder="Ej. Croquetas premium adulto 3 kg, alimento para cachorro, etc."
+                    value={foodForm.name}
+                    onChange={(e) => setFoodForm({ ...foodForm, name: e.target.value })}
+                  />
+                </label>
+                <label className="publish-field publish-vet-amount-field">
+                  <span>Monto a cubrir <em>*</em></span>
+                  <span
+                    className={`publish-vet-amount-input${
+                      foodForm.amount.trim() ? " is-active" : ""
+                    }`}
+                  >
+                    <em aria-hidden="true">$</em>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="150"
+                      value={foodForm.amount}
+                      onChange={(e) =>
+                        setFoodForm({ ...foodForm, amount: sanitizePublishAmountInput(e.target.value) })
+                      }
+                    />
+                  </span>
+                  <small>Monto en MXN</small>
+                </label>
+                <div className="publish-field">
+                  <span>Foto de Recibo <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Puede ser un ticket, recibo o factura de la compra del alimento. El total deberá ser igual al monto
+                    capturado.
+                  </small>
+                  <input
+                    ref={foodReceiptPhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickFoodPhoto("receiptPhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {foodForm.receiptPhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={foodForm.receiptPhoto} alt="Recibo del alimento" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => foodReceiptPhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => foodReceiptPhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir recibo</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <div className="publish-field">
+                  <span>Foto de Evidencia <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Agrega una fotografía que muestre el alimento otorgado.
+                  </small>
+                  <input
+                    ref={foodContextEvidencePhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickFoodPhoto("contextEvidencePhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {foodForm.contextEvidencePhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={foodForm.contextEvidencePhoto} alt="Alimento otorgado" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => foodContextEvidencePhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => foodContextEvidencePhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir evidencia</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="purple-button"
+                  disabled={
+                    !foodForm.name.trim() ||
+                    !foodAmountValid ||
+                    !foodForm.receiptPhoto ||
+                    !foodForm.contextEvidencePhoto
+                  }
+                  onClick={saveFood}
+                >
+                  Guardar alimento
+                </button>
+                <button type="button" className="secondary-button" onClick={closeNeedSheet}>
+                  Cancelar
+                </button>
+              </div>
+            ) : sheet === "medicine" ? (
+              <div className="dialog-card publish-med-dialog publish-vet-dialog" onClick={(e) => e.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={closeNeedSheet} aria-label="Cerrar">×</button>
+                <header className="publish-med-head publish-vet-dialog-head">
+                  <div className="publish-vet-dialog-title-row">
+                    <span className="donate-need-icon tone-meds" aria-hidden="true">💊</span>
+                    <h2 className="publish-vet-dialog-title">Medicina</h2>
+                  </div>
+                  <p>Agrega los detalles de la medicina que necesitó la mascota.</p>
+                </header>
+                <label className="publish-field">
+                  <span>Nombre de la medicina <em>*</em></span>
+                  <input
+                    required
+                    placeholder="Ej. Amoxicilina, Metronidazol, etc."
                     value={medForm.name}
                     onChange={(e) => setMedForm({ ...medForm, name: e.target.value })}
                   />
                 </label>
-                <label className="publish-field">
-                  <span>Costo a cubrir</span>
-                  <span className="publish-amount-wrap">
-                    <em>$</em>
+                <label className="publish-field publish-vet-amount-field">
+                  <span>Monto a cubrir <em>*</em></span>
+                  <span
+                    className={`publish-vet-amount-input${
+                      medForm.amount.trim() ? " is-active" : ""
+                    }`}
+                  >
+                    <em aria-hidden="true">$</em>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="decimal"
-                      placeholder="0.00"
+                      autoComplete="off"
+                      placeholder="150"
                       value={medForm.amount}
-                      onChange={(e) => setMedForm({ ...medForm, amount: e.target.value })}
+                      onChange={(e) =>
+                        setMedForm({ ...medForm, amount: sanitizePublishAmountInput(e.target.value) })
+                      }
                     />
                   </span>
                   <small>Monto en MXN</small>
                 </label>
                 <label className="publish-field">
-                  <span>¿Para qué tratamiento es?</span>
-                  <textarea
-                    rows={2}
-                    placeholder="ej. Infección respiratoria"
+                  <span>¿Para qué tratamiento es? <em>*</em></span>
+                  <input
+                    required
+                    placeholder="Ej. Infección respiratoria, desparasitación, etc."
                     value={medForm.treatment}
                     onChange={(e) => setMedForm({ ...medForm, treatment: e.target.value })}
                   />
                 </label>
-                <label className="publish-check publish-urgent">
+                <div className="publish-field">
+                  <span>Foto de Recibo <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Puede ser un ticket, recibo, factura o similar otorgado por el veterinario. El total deberá ser igual al
+                    monto capturado.
+                  </small>
+                  <input
+                    ref={medReceiptPhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickMedPhoto("receiptPhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {medForm.receiptPhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={medForm.receiptPhoto} alt="Recibo de la medicina" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => medReceiptPhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => medReceiptPhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir recibo</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <div className="publish-field">
+                  <span>Foto de Evidencia <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Agrega una fotografía que muestre la medicina otorgada.
+                  </small>
+                  <input
+                    ref={medContextEvidencePhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickMedPhoto("contextEvidencePhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {medForm.contextEvidencePhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={medForm.contextEvidencePhoto} alt="Mascota y contexto del tratamiento" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => medContextEvidencePhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => medContextEvidencePhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir evidencia</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <label className={`publish-urgent-row${medForm.urgent ? " is-selected" : ""}`}>
+                  <span className="publish-urgent-row-icon" aria-hidden="true">
+                    <Icon name="icon-alert-circle.svg" size={20} />
+                  </span>
+                  <span className="publish-urgent-row-copy">
+                    <strong>Marcar como urgente</strong>
+                    <small>Pasará por revisión de DopMi</small>
+                  </span>
                   <input
                     type="checkbox"
+                    className="publish-urgent-row-check"
                     checked={medForm.urgent}
-                    onChange={(e) => setMedForm({ ...medForm, urgent: e.target.checked })}
+                    onChange={(e) =>
+                      setMedForm({
+                        ...medForm,
+                        urgent: e.target.checked,
+                        urgentReason: e.target.checked ? medForm.urgentReason : "",
+                      })
+                    }
                   />
-                  <span>
-                    Marcar como urgente
-                    <small>Se requiere evidencia de urgencia.</small>
-                  </span>
                 </label>
+                {medForm.urgent ? (
+                  <label className="publish-field">
+                    <span>Motivo de urgencia <em>*</em></span>
+                    <input
+                      placeholder="Explica por qué es urgente"
+                      value={medForm.urgentReason}
+                      onChange={(e) => setMedForm({ ...medForm, urgentReason: e.target.value })}
+                    />
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className="purple-button"
-                  disabled={!medForm.name.trim() || !Number(medForm.amount)}
+                  disabled={
+                    !medForm.name.trim() ||
+                    !medTreatmentValid ||
+                    !medAmountValid ||
+                    !medForm.receiptPhoto ||
+                    !medForm.contextEvidencePhoto ||
+                    !medUrgentReasonValid
+                  }
                   onClick={saveMedicine}
                 >
                   Guardar medicina
                 </button>
-                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
+                <button type="button" className="secondary-button" onClick={closeNeedSheet}>
                   Cancelar
                 </button>
               </div>
             ) : (
               <div className="dialog-card publish-med-dialog publish-vet-dialog" onClick={(e) => e.stopPropagation()}>
-                <button type="button" className="dialog-close" onClick={() => setSheet(null)} aria-label="Cerrar">×</button>
-                <header className="publish-med-head">
-                  <h2>Agregar servicio veterinario</h2>
-                  <p>Agrega los detalles del servicio veterinario que necesita la mascota.</p>
+                <button type="button" className="dialog-close" onClick={closeNeedSheet} aria-label="Cerrar">×</button>
+                <header className="publish-med-head publish-vet-dialog-head">
+                  <div className="publish-vet-dialog-title-row">
+                    <span className="donate-need-icon tone-vet" aria-hidden="true">🩺</span>
+                    <h2 className="publish-vet-dialog-title">Servicio Veterinario</h2>
+                  </div>
+                  <p>Agrega los detalles del servicio veterinario que necesitó la mascota.</p>
                 </header>
                 <label className="publish-field">
-                  <span>Motivo de consulta <em>*</em></span>
-                  <input
-                    placeholder="ej. Vacunación, revisión general"
-                    value={vetForm.reason}
-                    onChange={(e) => setVetForm({ ...vetForm, reason: e.target.value })}
-                  />
+                  <span>Servicio <em>*</em></span>
+                  <select
+                    required
+                    value={vetForm.serviceDescription}
+                    onChange={(e) => setVetForm({ ...vetForm, serviceDescription: e.target.value })}
+                  >
+                    <option value="">Selecciona una opción</option>
+                    {VET_SERVICE_DESCRIPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="publish-field">
+                  <span>Describe el servicio <em>*</em></span>
+                  <input
+                    required
+                    placeholder="Ej. Cirugía de mandíbula, Vacuna antirrabica, etc."
+                    value={vetForm.serviceDescriptionOther}
+                    onChange={(e) => setVetForm({ ...vetForm, serviceDescriptionOther: e.target.value })}
+                  />
+                </label>
+                <label className="publish-field publish-vet-amount-field">
                   <span>Monto de la consulta <em>*</em></span>
-                  <span className="publish-amount-wrap">
-                    <em>$</em>
+                  <span
+                    className={`publish-vet-amount-input${
+                      vetAmountTooLow ? " is-invalid" : vetForm.amount.trim() ? " is-active" : ""
+                    }`}
+                  >
+                    <em aria-hidden="true">$</em>
                     <input
-                      type="number"
+                      type="text"
                       inputMode="decimal"
-                      placeholder="0.00"
+                      autoComplete="off"
+                      placeholder="150"
                       value={vetForm.amount}
-                      onChange={(e) => setVetForm({ ...vetForm, amount: e.target.value })}
+                      aria-invalid={vetAmountTooLow}
+                      aria-describedby={vetAmountTooLow ? "vet-amount-error" : undefined}
+                      onChange={(e) =>
+                        setVetForm({ ...vetForm, amount: sanitizePublishAmountInput(e.target.value) })
+                      }
                     />
                   </span>
-                  <small>Monto en MXN</small>
+                  {vetAmountTooLow ? (
+                    <small id="vet-amount-error" className="publish-field-error" role="alert">
+                      El monto mínimo de solicitud de apoyo es ${VET_SERVICE_AMOUNT_MIN}
+                    </small>
+                  ) : (
+                    <small>Monto en MXN (mínimo ${VET_SERVICE_AMOUNT_MIN})</small>
+                  )}
                 </label>
-                <label className="publish-check publish-urgent">
+                <div className="publish-field">
+                  <span>Foto de Recibo <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Puede ser un ticket, recibo, factura o similar otorgado por el veterinario. El total deberá ser igual al
+                    monto capturado.
+                  </small>
+                  <input
+                    ref={vetReceiptPhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickVetPhoto("receiptPhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {vetForm.receiptPhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={vetForm.receiptPhoto} alt="Recibo del servicio veterinario" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => vetReceiptPhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => vetReceiptPhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir recibo</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <div className="publish-field">
+                  <span>Foto de Evidencia <em>*</em></span>
+                  <small className="publish-field-hint">
+                    Agrega una fotografía que muestre a la mascota y de contexto de porqué necesitó el servicio.
+                  </small>
+                  <input
+                    ref={vetContextEvidencePhotoRef}
+                    className="visually-hidden"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => {
+                      pickVetPhoto("contextEvidencePhoto", event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                  {vetForm.contextEvidencePhoto ? (
+                    <div className="publish-evidence-preview">
+                      <img src={vetForm.contextEvidencePhoto} alt="Mascota y contexto del servicio veterinario" />
+                      <button
+                        type="button"
+                        className="publish-outline-btn publish-evidence-change-btn"
+                        onClick={() => vetContextEvidencePhotoRef.current?.click()}
+                      >
+                        Cambiar foto
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="publish-evidence-drop"
+                      onClick={() => vetContextEvidencePhotoRef.current?.click()}
+                    >
+                      <AssetIcon name="publish-upload.svg" size={28} />
+                      <strong>Subir evidencia</strong>
+                      <small>JPEG o PNG</small>
+                    </button>
+                  )}
+                </div>
+                <label className={`publish-urgent-row${vetForm.urgent ? " is-selected" : ""}`}>
+                  <span className="publish-urgent-row-icon" aria-hidden="true">
+                    <Icon name="icon-alert-circle.svg" size={20} />
+                  </span>
+                  <span className="publish-urgent-row-copy">
+                    <strong>Marcar como urgente</strong>
+                    <small>Pasará por revisión de DopMi</small>
+                  </span>
                   <input
                     type="checkbox"
+                    className="publish-urgent-row-check"
                     checked={vetForm.urgent}
-                    onChange={(e) => setVetForm({ ...vetForm, urgent: e.target.checked })}
+                    onChange={(e) =>
+                      setVetForm({
+                        ...vetForm,
+                        urgent: e.target.checked,
+                        urgentReason: e.target.checked ? vetForm.urgentReason : "",
+                      })
+                    }
                   />
-                  <span>
-                    Marcar como urgente
-                    <small>Se requiere evidencia de urgencia.</small>
-                  </span>
                 </label>
+                {vetForm.urgent ? (
+                  <label className="publish-field">
+                    <span>Motivo de urgencia <em>*</em></span>
+                    <input
+                      placeholder="Explica por qué es urgente"
+                      value={vetForm.urgentReason}
+                      onChange={(e) => setVetForm({ ...vetForm, urgentReason: e.target.value })}
+                    />
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className="purple-button"
-                  disabled={!vetForm.reason.trim() || !Number(vetForm.amount)}
+                  disabled={
+                    !vetServiceDescriptionValid ||
+                    !vetAmountValid ||
+                    !vetForm.receiptPhoto ||
+                    !vetForm.contextEvidencePhoto ||
+                    !vetUrgentReasonValid
+                  }
                   onClick={saveVet}
                 >
                   Guardar consulta
                 </button>
-                <button type="button" className="secondary-button" onClick={() => setSheet(null)}>
+                <button type="button" className="secondary-button" onClick={closeNeedSheet}>
                   Cancelar
                 </button>
               </div>
             )}
           </div>
-        ) : null
+        ) : null}
+        {thankYouVideoInfoOpen ? (
+          <div className="modal-backdrop center" onClick={() => setThankYouVideoInfoOpen(false)}>
+            <div
+              className="dialog-card publish-verify-dialog"
+              role="dialog"
+              aria-labelledby="publish-thank-you-video-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="dialog-close"
+                onClick={() => setThankYouVideoInfoOpen(false)}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+              <h2 id="publish-thank-you-video-title">¿Por qué subir este video?</h2>
+              <ul className="publish-verify-dialog-list">
+                <li>
+                  <strong>Confianza:</strong> quienes apoyan quieren ver que su ayuda llega a la mascota.
+                </li>
+                <li>
+                  <strong>Gratitud:</strong> un mensaje breve refuerza la comunidad y motiva a seguir donando.
+                </li>
+                <li>
+                  <strong>Qué mostrar:</strong> debe salir la mascota; es opcional que aparezcas tú en el video.
+                </li>
+              </ul>
+              <button type="button" className="purple-button" onClick={() => setThankYouVideoInfoOpen(false)}>
+                Entendido
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {publishSuccessOpen ? (
+          <div className="modal-backdrop center" onClick={finalizePublish}>
+            <div
+              className="dialog-card publish-verify-dialog"
+              role="dialog"
+              aria-labelledby="publish-success-title"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h2 id="publish-success-title">Tu caso se envió con éxito.</h2>
+              <p className="publish-hint publish-success-dialog-copy">
+                El equipo DopMi revisará tu publicación lo antes posible. Si todo va bien, se publicará automáticamente
+                y empezarás a recibir tu apoyo.
+              </p>
+              <button type="button" className="purple-button" onClick={finalizePublish}>
+                Entendido
+              </button>
+            </div>
+          </div>
+        ) : null}
+        </>
       }
     >
       <header className="publish-case-header">
@@ -5074,12 +6781,16 @@ function PublishFlow() {
           aria-label="Volver"
         >
           <AssetIcon name="back.svg" size={24} />
-          <h1>{headerTitle}</h1>
         </button>
         <PublishStepper step={step} total={totalSteps} />
+        <div className="match-top publish-case-title">
+          <h1>{headerTitle}</h1>
+        </div>
       </header>
 
-      <div className="publish-case-body">
+      <div
+        className="publish-case-body"
+      >
         {correcting && (
           <div className="error-callout">
             <strong>Corrige antes de reenviar</strong>
@@ -5087,59 +6798,85 @@ function PublishFlow() {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 1 && (mode === "adoption" || mode === "donation") && (
           <section className="publish-section">
-            <h2>Sube fotos de la mascota</h2>
-            <div className="publish-photo-drop">
-              <AssetIcon name="publish-cam-lg.svg" size={48} />
-              <div>
-                <p className="publish-drop-title">Añade fotos de la mascota</p>
-                <p className="publish-drop-copy">Puedes subir una o varias fotos.</p>
-              </div>
-              <div className="publish-photo-actions">
-                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
-                  <AssetIcon name="publish-cam-sm.svg" size={16} />
-                  Tomar foto
+            <input
+              ref={adoptionPetPhotoRef}
+              className="visually-hidden"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                pickAdoptionPetPhoto(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+            />
+            <h2>Perfil</h2>
+
+            <div className="publish-pet-photo-field">
+              <span className="publish-pet-photo-label">
+                Foto de la mascota <em aria-hidden="true">*</em>
+              </span>
+              <small className="publish-pet-photo-hint">Será la foto principal que lo representará.</small>
+              <div className="publish-pet-photo-wrap">
+                <button
+                  type="button"
+                  className={`publish-pet-photo${adoptionPetPhoto ? " has-photo" : ""}${!adoptionPetPhoto ? " is-required-empty" : ""}`}
+                  onClick={openAdoptionPetPhotoPicker}
+                  aria-required="true"
+                  aria-invalid={!adoptionPetPhoto}
+                  aria-label={
+                    adoptionPetPhoto
+                      ? "Cambiar foto de la mascota"
+                      : "Subir foto de la mascota, obligatoria"
+                  }
+                >
+                  {adoptionPetPhoto ? (
+                    <img className="publish-pet-photo-image" src={adoptionPetPhoto} alt="" />
+                  ) : (
+                    <span className="publish-pet-photo-placeholder" aria-hidden="true">
+                      <Icon name={ADOPTION_PET_PLACEHOLDER_ICON} size={36} />
+                    </span>
+                  )}
                 </button>
-                <button type="button" className="publish-outline-btn" onClick={addPhoto}>
-                  <AssetIcon name="publish-upload.svg" size={16} />
-                  Subir desde galería
+                <button
+                  type="button"
+                  className="publish-pet-photo-edit"
+                  onClick={openAdoptionPetPhotoPicker}
+                  aria-label="Editar foto de la mascota"
+                >
+                  <Icon name="icon-edit.svg" size={16} />
                 </button>
               </div>
             </div>
-            {photos.length === 0 ? (
-              <p className="publish-hint">Sube al menos una foto para continuar.</p>
-            ) : (
-              <>
-                <h3>Fotos agregadas</h3>
-                <div className="publish-photo-grid">
-                  {photos.map((src, index) => (
-                    <article className="publish-photo-thumb" key={src}>
-                      <img src={src} alt={`Foto ${index + 1}`} />
-                      {index === 0 && <span className="publish-photo-badge">Principal</span>}
-                      <button type="button" className="publish-photo-remove" aria-label="Quitar foto" onClick={() => removePhoto(src)}>×</button>
-                    </article>
-                  ))}
-                </div>
-              </>
-            )}
-          </section>
-        )}
-
-        {step === 2 && (
-          <section className="publish-section">
-            <h2>Información básica</h2>
 
             <label className="publish-field">
-              <span>Nombre de la mascota</span>
+              <span>Nombre de la mascota <em>*</em></span>
               <input
-                placeholder="Opcional"
+                placeholder="Ej. Luna"
                 maxLength={25}
                 value={String(draft.petName || "")}
                 onChange={(e) => updateDraft({ petName: e.target.value })}
               />
-              <small>Si aún no tiene nombre, puedes dejarlo vacío.</small>
             </label>
+
+            <div className="publish-field">
+              <span>Especie <em>*</em></span>
+              <div className="publish-choice-row">
+                {(["Perro", "Gato"] as const).map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`publish-choice ${draft.species === value ? "selected" : ""}`}
+                    onClick={() => updateDraft({ species: value })}
+                  >
+                    <span className="publish-choice-icon" aria-hidden="true">
+                      <Icon name={ADOPTION_SPECIES_ICON[value]} size={20} />
+                    </span>
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="publish-field">
               <span>Sexo <em>*</em></span>
@@ -5156,51 +6893,220 @@ function PublishFlow() {
                   </button>
                 ))}
               </div>
-              {!draft.sex && <small>Selecciona una opción para continuar.</small>}
             </div>
 
             <div className="publish-field">
-              <span>Especie <em>*</em></span>
-              <div className="publish-choice-row">
-                {(["Perro", "Gato"] as const).map((value) => (
+              <span>Tamaño <em>*</em></span>
+              <div className="publish-choice-row publish-choice-row--three">
+                {ADOPTION_SIZES.map((value) => (
                   <button
                     type="button"
                     key={value}
-                    className={`publish-choice ${draft.species === value ? "selected" : ""}`}
-                    onClick={() => updateDraft({ species: value })}
+                    className={`publish-choice publish-choice--pet-size ${draft.petSize === value ? "selected" : ""}`}
+                    onClick={() => updateDraft({ petSize: value })}
                   >
-                    <span aria-hidden>{value === "Perro" ? "🐶" : "🐱"}</span>
+                    <span className="publish-choice-icon" aria-hidden="true">
+                      <Icon name={ADOPTION_PET_PLACEHOLDER_ICON} size={ADOPTION_SIZE_ICON_PX[value]} />
+                    </span>
                     {value}
                   </button>
                 ))}
               </div>
-              {!draft.species && <small>Selecciona una opción para continuar.</small>}
             </div>
 
-            <label className="publish-field">
-              <span>Edad</span>
-              <input
-                placeholder="ej. 3 meses"
-                value={String(draft.age || "")}
-                onChange={(e) => updateDraft({ age: e.target.value })}
-              />
-              <small>Puede ser aproximada.</small>
-            </label>
+            <div className="publish-field">
+              <span>Edad <em>*</em></span>
+              <div className="publish-choice-row publish-choice-row--three">
+                {ADOPTION_AGE_BANDS.map((value) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={`publish-choice ${adoptionAgeBand === value ? "selected" : ""}`}
+                    onClick={() => updateDraft({ age: value, ageYears: "", ageMonths: "" })}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <h2>Su historia</h2>
 
             <label className="publish-field">
-              <span>Historia de rescate</span>
+              <span>Historia de rescate <em>*</em></span>
               <textarea
-                placeholder="Cuenta cómo la encontraste."
-                rows={3}
+                placeholder="Cuéntanos cómo llegó a ti. Danos una descripción de él/ella."
+                rows={4}
                 value={String(draft.story || "")}
                 onChange={(e) => updateDraft({ story: e.target.value })}
+                required
               />
             </label>
 
-            {mode === "adoption" && (
+            <label className="publish-field">
+              <span>Ubicación</span>
+              <input readOnly value={String(draft.location || detectedLocation)} />
+              <small>Usamos la misma que tu perfil.</small>
+            </label>
+          </section>
+        )}
+
+        {step === donationPhotosStep && (
+          <section className="publish-section">
+            <input
+              ref={thankYouVideoRef}
+              className="visually-hidden"
+              type="file"
+              accept="video/*"
+              onChange={(event) => {
+                pickThankYouVideo(event.target.files?.[0]);
+                event.target.value = "";
+              }}
+            />
+            <h2>Video de agradecimiento <em>*</em></h2>
+            <p className="publish-hint">
+              <strong>Dile gracias a las personas que apoyan a la causa.</strong> En el video deberá salir la
+              mascota. Es opcional que aparezca el/la rescatista.
+            </p>
+            {hasThankYouVideo ? (
+              <article className="publish-urgent-video-done publish-thank-you-video-done">
+                <div>
+                  <strong>Video agregado</strong>
+                  <small>Solo puedes subir un video de agradecimiento</small>
+                </div>
+                <button type="button" className="publish-need-remove" onClick={removeThankYouVideo}>
+                  Quitar
+                </button>
+              </article>
+            ) : (
+              <div className="publish-photo-drop publish-thank-you-video-drop">
+                <AssetIcon name="publish-cam-lg.svg" size={48} />
+                <div className="publish-photo-actions publish-photo-actions--stacked">
+                  <button type="button" className="publish-outline-btn" onClick={openThankYouVideoPicker}>
+                    <AssetIcon name="publish-upload.svg" size={16} />
+                    Subir video
+                  </button>
+                  <button type="button" className="publish-outline-btn" onClick={openThankYouVideoPicker}>
+                    <AssetIcon name="publish-cam-sm.svg" size={16} />
+                    Grabar video
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="publish-verify-hint publish-thank-you-video-hint"
+              onClick={() => setThankYouVideoInfoOpen(true)}
+            >
+              ¿Por qué debo subir este video?
+              <Icon name="icon-alert-circle.svg" size={14} className="publish-verify-hint-icon" />
+            </button>
+
+            {showUrgentComplementEvidence ? (
               <>
-                <article className="publish-trait-card">
-                  <h3>Salud</h3>
+                <input
+                  ref={urgentComplementMediaRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/*"
+                  onChange={(event) => {
+                    pickUrgentComplementMedia(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
+                />
+                <h2>Complementa tu evidencia de urgencia</h2>
+                <p className="publish-hint">
+                  (Opcional) Comparte más contexto de la urgencia en la publicación que verán las personas que
+                  apoyarán. <strong>Las urgencias son más rápidas en fondearse.</strong>
+                </p>
+                {hasUrgentComplementMedia ? (
+                  <article className="publish-urgent-video-done publish-thank-you-video-done">
+                    <div className="publish-urgent-complement-preview">
+                      {urgentComplementMediaType === "video" ? (
+                        <video src={urgentComplementMedia} controls playsInline className="publish-urgent-complement-media" />
+                      ) : (
+                        <img
+                          src={urgentComplementMedia}
+                          alt="Evidencia de urgencia"
+                          className="publish-urgent-complement-media"
+                        />
+                      )}
+                      <strong>{urgentComplementMediaType === "video" ? "Video agregado" : "Imagen agregada"}</strong>
+                      <small>Solo puedes subir un archivo (foto o video)</small>
+                    </div>
+                    <button type="button" className="publish-need-remove" onClick={removeUrgentComplementMedia}>
+                      Quitar
+                    </button>
+                  </article>
+                ) : (
+                  <div className="publish-photo-drop">
+                    <AssetIcon name="publish-cam-lg.svg" size={48} />
+                    <div className="publish-photo-actions publish-photo-actions--stacked">
+                      <button type="button" className="publish-outline-btn" onClick={openUrgentComplementMediaPicker}>
+                        <AssetIcon name="publish-upload.svg" size={16} />
+                        Subir desde galería
+                      </button>
+                      <button type="button" className="publish-outline-btn" onClick={openUrgentComplementMediaPicker}>
+                        <AssetIcon name="publish-cam-sm.svg" size={16} />
+                        Subir video o foto
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </section>
+        )}
+
+        {step === 2 && mode === "adoption" && (
+          <section className="publish-section">
+            <h2>Complementa sus fotos</h2>
+            <p className="publish-hint">Puedes agregar hasta 5 fotos más.</p>
+            {supplementaryPhotos.length < ADOPTION_SUPPLEMENTARY_PHOTO_MAX ? (
+              <div className="publish-photo-drop">
+                <AssetIcon name="publish-cam-lg.svg" size={48} />
+                <div className="publish-photo-actions publish-photo-actions--stacked">
+                  <button type="button" className="publish-outline-btn" onClick={addSupplementaryPhoto}>
+                    <AssetIcon name="publish-upload.svg" size={16} />
+                    Subir desde galería
+                  </button>
+                  <button type="button" className="publish-outline-btn" onClick={addSupplementaryPhoto}>
+                    <AssetIcon name="publish-cam-sm.svg" size={16} />
+                    Tomar foto
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {supplementaryPhotos.length > 0 ? (
+              <>
+                <h3>Fotos agregadas</h3>
+                <div className="publish-photo-grid compact">
+                  {supplementaryPhotos.map((src, index) => (
+                    <article className="publish-photo-thumb" key={`${src}-${index}`}>
+                      <img src={src} alt={`Foto adicional ${index + 1}`} />
+                      <button
+                        type="button"
+                        className="publish-photo-remove"
+                        aria-label="Quitar foto"
+                        onClick={() => removeSupplementaryPhoto(src)}
+                      >
+                        ×
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            <h2>Características de la mascota</h2>
+            <p className="publish-trait-hint">
+              Selecciona las que apliquen. Ninguna es obligatoria pero ayudará al adoptante a motivarse más rápido.
+            </p>
+
+            <div className="publish-field">
+                <h4 className="publish-family-subtitle">Salud</h4>
+                <div className="publish-field-box publish-field-box--checks">
                   <label className="publish-check">
                     <input type="checkbox" checked={Boolean(draft.vaccinated)} onChange={(e) => updateDraft({ vaccinated: e.target.checked })} />
                     <span>Vacunado</span>
@@ -5213,46 +7119,71 @@ function PublishFlow() {
                     <input type="checkbox" checked={Boolean(draft.specialCare)} onChange={(e) => updateDraft({ specialCare: e.target.checked })} />
                     <span>Requiere cuidados especiales</span>
                   </label>
-                </article>
+                </div>
+              </div>
 
-                <article className="publish-trait-card">
-                  <h3>Social</h3>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialDogs)} onChange={(e) => updateDraft({ socialDogs: e.target.checked })} />
-                    <span>Social con perros</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialCats)} onChange={(e) => updateDraft({ socialCats: e.target.checked })} />
-                    <span>Social con gatos</span>
-                  </label>
-                  <label className="publish-check">
-                    <input type="checkbox" checked={Boolean(draft.socialChildren)} onChange={(e) => updateDraft({ socialChildren: e.target.checked })} />
-                    <span>Social con niños</span>
-                  </label>
-                </article>
-              </>
-            )}
+              <div className="publish-family-traits">
+                <h4 className="publish-family-subtitle">Convivencia y hogar</h4>
+                <div className="publish-chip-grid publish-chip-grid--cards">
+                  {ADOPTION_CONVIVENCIA.map((label) => (
+                    <button
+                      type="button"
+                      key={label}
+                      className={`publish-chip publish-chip--card ${convivenciaSelected.includes(label) ? "selected" : ""}`}
+                      onClick={() => toggleConvivencia(label)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="publish-subhead-row">
+                  <h4>Personalidad</h4>
+                  <span className="publish-trait-note">Máximo 3</span>
+                </div>
+                <div className="publish-chip-grid">
+                  {ADOPTION_PERSONALITY.map((trait) => (
+                    <button
+                      type="button"
+                      key={trait}
+                      className={`publish-chip publish-chip--personality tone-${ADOPTION_PERSONALITY_TONE[trait]} ${personalitySelected.includes(trait) ? "selected" : ""}`}
+                      onClick={() => togglePersonality(trait)}
+                      disabled={!personalitySelected.includes(trait) && personalitySelected.length >= 3}
+                    >
+                      {trait}
+                    </button>
+                  ))}
+                </div>
+              </div>
           </section>
         )}
 
         {step === needsStep && (
           <section className="publish-section">
-            <h2>¿Qué necesita la mascota?</h2>
+            <h2>¿En qué necesitaron apoyo?</h2>
             <div className="publish-needs-note">
-              <strong>Nota:</strong> Las necesidades son opcionales. Puedes publicar el caso aunque aún no agregues apoyo económico.
+              Puedes seleccionar uno o más tipos de apoyo. Por seguridad, te solicitaremos evidencia de cada tipo que agregues.
             </div>
-            <button type="button" className="publish-need-card" onClick={() => setSheet("food")}>
-              <span aria-hidden>🥣</span>
+            <button
+              type="button"
+              className="publish-need-card"
+              onClick={() => {
+                setEditingNeedId(null);
+                setVetForm(emptyVetForm);
+                setSheet("vet");
+              }}
+            >
+              <span aria-hidden>🩺</span>
               <span>
-                <strong>Comida</strong>
-                <p>Selecciona croquetas del catálogo y define cada cuánto las necesita.</p>
+                <strong>Veterinario</strong>
+                <p>Agrega consulta o tratamiento veterinario.</p>
               </span>
             </button>
             <button
               type="button"
               className="publish-need-card"
               onClick={() => {
-                setMedForm({ name: "", amount: "", treatment: "", urgent: false });
+                setEditingNeedId(null);
+                setMedForm(emptyMedForm);
                 setSheet("medicine");
               }}
             >
@@ -5266,33 +7197,43 @@ function PublishFlow() {
               type="button"
               className="publish-need-card"
               onClick={() => {
-                setVetForm(emptyVetForm);
-                setSheet("vet");
+                setEditingNeedId(null);
+                setFoodForm(emptyFoodForm);
+                setSheet("food");
               }}
             >
-              <span aria-hidden>🩺</span>
+              <span aria-hidden>🥣</span>
               <span>
-                <strong>Veterinario</strong>
-                <p>Agrega consulta o tratamiento veterinario.</p>
+                <strong>Alimento</strong>
+                <p>Agrega croquetas y el costo a cubrir.</p>
               </span>
             </button>
 
             {needItems.length > 0 && (
               <div className="publish-needs-list">
-                <h3>Necesidades agregadas</h3>
+                <h3>Necesidades agregadas ({needItems.length})</h3>
                 {needItems.map((item) => (
                   <article className="publish-need-row" key={item.id}>
-                    <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
-                    <div>
-                      <strong>{item.title}</strong>
-                      <p>
-                        ${item.amount}
-                        {item.detail ? ` • ${item.detail}` : ""}
-                      </p>
-                      {item.badge ? <span className="publish-need-badge">{item.badge}</span> : null}
-                      {item.urgent ? <span className="publish-need-badge urgent">Urgente</span> : null}
-                    </div>
-                    <button type="button" className="publish-need-remove" onClick={() => removeNeed(item.id)}>
+                    <button
+                      type="button"
+                      className="publish-need-row-main"
+                      onClick={() => openNeedItem(item)}
+                      aria-label={`Ver detalle de ${item.title}`}
+                    >
+                      <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
+                      <div className="publish-need-row-text">
+                        <strong>{item.title}</strong>
+                        <p>${item.amount}</p>
+                        {item.urgent ? <span className="publish-need-badge urgent">Urgente</span> : null}
+                      </div>
+                      <Icon name="icon-edit.svg" size={18} className="publish-need-row-edit" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="publish-need-remove"
+                      onClick={() => removeNeed(item.id)}
+                      aria-label={`Eliminar ${item.title}`}
+                    >
                       Eliminar
                     </button>
                   </article>
@@ -5300,110 +7241,78 @@ function PublishFlow() {
               </div>
             )}
 
-            {hasUrgentNeed && (
-              <section className="publish-urgent-video">
-                <h3>Video de evidencia de urgencia</h3>
-                <p>
-                  Agrega un video explicando la situación. Debes aparecer tú y también la mascota que necesita apoyo. El equipo DopMi revisará el caso y, si se aprueba, podremos apoyarte o priorizar tu caso para que reciba donaciones.
-                </p>
-                {urgentVideo ? (
-                  <article className="publish-urgent-video-done">
-                    <div>
-                      <strong>Video de urgencia agregado</strong>
-                      <small>Listo para revisión del equipo DopMi</small>
-                    </div>
-                    <button type="button" className="publish-need-remove" onClick={clearUrgentVideo}>
-                      Quitar
-                    </button>
-                  </article>
-                ) : (
-                  <div className="publish-photo-drop publish-urgent-drop">
-                    <AssetIcon name="publish-cam-lg.svg" size={40} />
-                    <div>
-                      <p className="publish-drop-title">Grabar o subir video</p>
-                      <p className="publish-drop-copy">Requerido para aprobar urgencia médica</p>
-                    </div>
-                    <button type="button" className="publish-outline-btn" onClick={addUrgentVideo}>
-                      <AssetIcon name="publish-upload.svg" size={16} />
-                      Subir video
-                    </button>
-                  </div>
-                )}
-              </section>
-            )}
           </section>
         )}
 
-        {step === reviewStep && (
+        {step === reviewStep && mode === "adoption" && (
           <section className="publish-section publish-review">
             <div className="publish-review-block">
               <div className="publish-review-head">
-                <h3>Fotos</h3>
-                <button type="button" className="publish-edit-link" onClick={() => setStep(1)}>Editar</button>
+                <h3>Vista previa de la publicación</h3>
               </div>
-              <div className="publish-photo-grid compact">
-                {photos.map((src) => (
-                  <article className="publish-photo-thumb" key={src}>
-                    <img src={src} alt="" />
-                  </article>
-                ))}
-              </div>
+              <p className="publish-adoption-preview-copy">
+                Esta es una previsualización de la publicación que verán los adoptantes.
+              </p>
+              <section className="publish-adoption-preview-frame" aria-label="Vista previa de la publicación">
+                <PublishAdoptionDetailPreview
+                  name={String(draft.petName || "Mascota")}
+                  location={String(draft.location || detectedLocation)}
+                  story={String(draft.story || "")}
+                  sex={String(draft.sex || "")}
+                  size={String(draft.petSize || "")}
+                  age={adoptionAgeLabel}
+                  photos={
+                    adoptionPetPhoto ? [adoptionPetPhoto, ...supplementaryPhotos] : [...supplementaryPhotos]
+                  }
+                  rescuerName={rescuerProfile.name.trim() || "María Rescatista"}
+                  health={{
+                    vaccinated: Boolean(draft.vaccinated),
+                    sterilized: Boolean(draft.sterilized),
+                    specialCare: Boolean(draft.specialCare),
+                  }}
+                  convivencia={convivenciaSelected}
+                  personality={personalitySelected}
+                />
+              </section>
             </div>
+          </section>
+        )}
 
+        {step === reviewStep && mode === "donation" && (
+          <section className="publish-section publish-review">
             <div className="publish-review-block">
               <div className="publish-review-head">
-                <h3>Información básica</h3>
-                <button type="button" className="publish-edit-link" onClick={() => setStep(2)}>Editar</button>
+                <h3>Vista previa de la publicación</h3>
               </div>
-              <article className="publish-review-card">
-                <div><span>Nombre</span><strong>{String(draft.petName || "Sin nombre")}</strong></div>
-                <div><span>Edad</span><strong>{String(draft.age || "—")}</strong></div>
-                <div><span>Historia</span><strong>{String(draft.story || "—")}</strong></div>
-                <div><span>Lista para adopción</span><strong>{mode === "adoption" ? "Sí" : "No"}</strong></div>
-              </article>
+              <p className="publish-adoption-preview-copy">
+                Esta es una previsualización de la publicación que verán quienes apoyen la causa.
+              </p>
+              <section className="publish-adoption-preview-frame" aria-label="Vista previa de la publicación">
+                <PublishDonationDetailPreview
+                  name={String(draft.petName || "Mascota")}
+                  location={String(draft.location || detectedLocation)}
+                  story={String(draft.story || "")}
+                  photos={
+                    adoptionPetPhoto
+                      ? [
+                          adoptionPetPhoto,
+                          ...(showUrgentComplementEvidence &&
+                          hasUrgentComplementMedia &&
+                          urgentComplementMediaType === "image"
+                            ? [urgentComplementMedia]
+                            : []),
+                        ]
+                      : showUrgentComplementEvidence &&
+                          hasUrgentComplementMedia &&
+                          urgentComplementMediaType === "image"
+                        ? [urgentComplementMedia]
+                        : []
+                  }
+                  rescuerName={rescuerProfile.name.trim() || "María Rescatista"}
+                  needs={draftNeedItemsToPreviewNeeds(needItems)}
+                />
+              </section>
             </div>
-
-            {mode === "adoption" ? (
-              <>
-                <article className="publish-trait-card">
-                  <h3>Salud</h3>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.vaccinated)} readOnly /><span>Vacunado</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.sterilized)} readOnly /><span>Esterilizado</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.specialCare)} readOnly /><span>Requiere cuidados especiales</span></label>
-                </article>
-                <article className="publish-trait-card">
-                  <h3>Social</h3>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialDogs)} readOnly /><span>Social con perros</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialCats)} readOnly /><span>Social con gatos</span></label>
-                  <label className="publish-check"><input type="checkbox" checked={Boolean(draft.socialChildren)} readOnly /><span>Social con niños</span></label>
-                </article>
-              </>
-            ) : (
-              <div className="publish-review-block">
-                <div className="publish-review-head">
-                  <h3>Necesidades</h3>
-                  <button type="button" className="publish-edit-link" onClick={() => setStep(3)}>Editar</button>
-                </div>
-                {needItems.length ? (
-                  <div className="publish-needs-list compact">
-                    {needItems.map((item) => (
-                      <article className="publish-need-row" key={item.id}>
-                        <span className="publish-need-emoji" aria-hidden>{NEED_EMOJI[item.type]}</span>
-                        <div>
-                          <strong>{item.title}</strong>
-                          <p>
-                            ${item.amount}
-                            {item.detail ? ` • ${item.detail}` : ""}
-                          </p>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="publish-hint">Sin necesidades agregadas.</p>
-                )}
-              </div>
-            )}
           </section>
         )}
       </div>
@@ -5746,55 +7655,141 @@ function FoodCycle() {
 
 function RescuerMessages() {
   const navigate = useNavigate();
-  const { messages, emptyStates } = usePrototypeStore();
+  const { messages, emptyStates, cases } = usePrototypeStore();
   const last = messages[messages.length - 1];
-  const threads = emptyStates
-    ? []
-    : [
-        { id: "ana", initial: "A", name: "Ana P.", about: "re: Luna", preview: last?.text ?? "", time: last?.time ?? "5m", unread: last?.author === "donor" ? 1 : 0 },
-        { id: "carlos", initial: "C", name: "Carlos M.", about: "re: Rocky", preview: "¿Puedo visitarlo este fin de semana?", time: "1h", unread: 0 },
-        { id: "lucia", initial: "L", name: "Lucía G.", about: "re: Milo", preview: "¡Gracias por la actualización!", time: "Ayer", unread: 0 },
-      ];
+  const [collapsedCaseIds, setCollapsedCaseIds] = useState<Set<string>>(() => new Set());
+
+  const chatThreads = useMemo(() => {
+    if (emptyStates) return [];
+    return RESCUER_ADOPTION_CHAT_THREADS.map((thread) => {
+      const isLunaAna = thread.petId === "luna" && thread.adopter === "Ana P.";
+      return {
+        ...thread,
+        preview: isLunaAna ? (last?.text ?? thread.preview) : thread.preview,
+        time: isLunaAna ? (last?.time ?? thread.time) : thread.time,
+        unread: isLunaAna && last?.author === "donor" ? 1 : thread.unread,
+      };
+    });
+  }, [emptyStates, last?.author, last?.text, last?.time]);
+
+  const adoptionSections = useMemo(() => {
+    const openCases = cases.filter((item) => item.adoption && item.caseStatus === "active");
+    return openCases
+      .map((caseItem) => ({
+        caseItem,
+        chats: sortRescuerChatsByUnread(chatThreads.filter((thread) => thread.petId === caseItem.id)),
+      }))
+      .sort((a, b) => {
+        const unreadA = rescuerThreadUnreadTotal(a.chats);
+        const unreadB = rescuerThreadUnreadTotal(b.chats);
+        if (unreadB !== unreadA) return unreadB - unreadA;
+        return a.caseItem.name.localeCompare(b.caseItem.name, "es");
+      });
+  }, [cases, chatThreads]);
+
+  const hasOpenAdoption = adoptionSections.length > 0;
+
+  const toggleSection = (caseId: string) => {
+    setCollapsedCaseIds((current) => {
+      const next = new Set(current);
+      if (next.has(caseId)) next.delete(caseId);
+      else next.add(caseId);
+      return next;
+    });
+  };
+
   return (
-    <ScreenShell mode="rescuer">
-      <header className="rescuer-header with-icon">
-        <Icon name="icon-messages.svg" size={24} />
-        <h1>Mensajes</h1>
-      </header>
-      <div className="content-pad">
-        <p className="section-lead">Habla con adoptantes</p>
-        {threads.length === 0 ? (
-          <article className="rh-empty-card messages-empty-card">
-            <span className="rh-empty-icon">
-              <Icon name="rtab-messages.svg" size={32} />
-            </span>
-            <h3>No tienes mensajes</h3>
-            <p>
-              Cuando adoptantes te escriban sobre tus mascotas, verás las conversaciones aquí.
-            </p>
-            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
-              <AssetIcon name="empty-publish-plus.svg" size={16} />
-              Publicar caso
-            </button>
-          </article>
-        ) : (
-          <div className="thread-list">
-            {threads.map((thread) => (
-              <button className="thread-row" key={thread.id} onClick={() => navigate("/messages/luna")}>
-                <span className="thread-avatar">{thread.initial}</span>
-                <span className="thread-main">
-                  <span className="thread-head">
-                    <strong>{thread.name}</strong>
-                    <time>{thread.time}</time>
-                  </span>
-                  <small>{thread.about}</small>
-                  <p>{thread.preview}</p>
-                </span>
-                {thread.unread > 0 && <span className="thread-badge">{thread.unread}</span>}
+    <ScreenShell mode="rescuer" className="match-shell">
+      <div className="match-page rescuer-match-page donor-chrome">
+        <DonorChromeTop />
+        <header className="match-top">
+          <h1>Mensajes</h1>
+        </header>
+
+        <section className="match-chats rescuer-adoption-chats" aria-label="Chats por caso en adopción">
+          {!hasOpenAdoption ? (
+            <div className="match-chats-empty-block">
+              <p className="match-chats-empty">
+                No tienes casos en adopción abiertos. Activa la adopción en un caso activo para recibir
+                mensajes de interesados.
+              </p>
+              <button type="button" className="purple-button" onClick={() => navigate("/rescuer/cases")}>
+                Ver mis casos
               </button>
-            ))}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="rescuer-adoption-chats-stack">
+              {adoptionSections.map(({ caseItem, chats }) => {
+                const expanded = !collapsedCaseIds.has(caseItem.id);
+                const openCount = chats.length;
+                const sectionUnread = rescuerThreadUnreadTotal(chats);
+                return (
+                  <article
+                    key={caseItem.id}
+                    className={`rescuer-adoption-chats-section${expanded ? "" : " is-collapsed"}`}
+                  >
+                    <button
+                      type="button"
+                      className="rescuer-adoption-chats-head"
+                      aria-expanded={expanded}
+                      onClick={() => toggleSection(caseItem.id)}
+                    >
+                      <span className="rescuer-adoption-pet-thumb-wrap">
+                        <img className="rescuer-adoption-pet-thumb" src={caseItem.image} alt="" />
+                        {sectionUnread > 0 ? (
+                          <span className="rescuer-adoption-section-badge" aria-label={`${sectionUnread} sin leer`}>
+                            {sectionUnread > 9 ? "9+" : sectionUnread}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="rescuer-adoption-chats-meta">
+                        <strong>{caseItem.name}</strong>
+                        <span className="rescuer-adoption-chats-count">
+                          {rescuerOpenChatCountLabel(openCount)}
+                        </span>
+                      </span>
+                      <span className="rescuer-adoption-chats-chevron" aria-hidden="true">
+                        <Chevron />
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <div className="rescuer-adoption-chats-body">
+                        {chats.length === 0 ? (
+                          <p className="rescuer-adoption-chats-empty">Aún no hay mensajes para este caso.</p>
+                        ) : (
+                          <div className="thread-list donor-thread-list match-thread-list rescuer-thread-list">
+                            {chats.map((thread) => (
+                              <button
+                                type="button"
+                                className="thread-row chats-thread-row"
+                                key={`${caseItem.id}-${thread.adopter}`}
+                                onClick={() =>
+                                  navigate(`/rescuer/messages/${thread.petId}`, { state: { adopter: thread.adopter } })
+                                }
+                              >
+                                <span className="thread-avatar adopter-thread-avatar" aria-hidden="true">
+                                  {thread.adopterInitial}
+                                </span>
+                                <span className="thread-main">
+                                  <span className="thread-head">
+                                    <strong>{thread.adopter}</strong>
+                                    <time>{thread.time}</time>
+                                  </span>
+                                  <p>{thread.preview}</p>
+                                </span>
+                                {thread.unread > 0 ? <span className="thread-badge">{thread.unread}</span> : null}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </ScreenShell>
   );
@@ -6456,7 +8451,7 @@ function HelpCenter() {
   );
 
   return (
-    <div className="plain-screen">
+    <div className={`plain-screen${accountMode === "rescuer" ? " rescuer-theme" : ""}`}>
       <TopBar title="Centro de ayuda" back={accountMode === "rescuer" ? "/rescuer/settings" : "/profile"} />
       <div className="content-pad help-center">
         <header className="help-hero">
@@ -7567,6 +9562,7 @@ export default function App() {
           <Route path="/notifications" element={<NotificationList />} />
           <Route path="/history" element={<History />} />
           <Route path="/profile" element={<DonorProfile />} />
+          <Route path="/apoya-causa" element={<SupportCause />} />
           <Route path="/saved" element={<SavedPets />} />
           <Route path="/saved-rescuers" element={<SavedRescuers />} />
           <Route path="/settings" element={<Settings />} />
@@ -7585,6 +9581,7 @@ export default function App() {
           <Route path="/rescuer/evidence/:caseId/:needId" element={<EvidenceFlow />} />
           <Route path="/rescuer/food/:caseId/:needId" element={<FoodCycle />} />
           <Route path="/rescuer/messages" element={<RescuerMessages />} />
+          <Route path="/rescuer/messages/:threadId" element={<Messages />} />
           <Route path="/rescuer/profile" element={<RescuerProfile />} />
           <Route path="/rescuer/profile/edit" element={<RescuerEditPublicProfile />} />
           <Route path="/rescuer/settings" element={<RescuerSettings />} />
