@@ -8720,7 +8720,11 @@ div.profile-activity-row {
   align-items: start;
   justify-content: start;
   justify-items: stretch;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   padding-bottom: 88px;
+  box-sizing: border-box;
   /* Sin min-height:100%: el contenido arranca arriba y solo crece con scroll */
   min-height: 0;
   height: auto;
@@ -8762,6 +8766,9 @@ div.profile-activity-row {
   margin-top: 8px;
   padding: 2px 2px 4px;
   min-height: 46px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .match-top h1 {
   margin: 0;
@@ -8801,6 +8808,8 @@ div.profile-activity-row {
   gap: 12px;
   align-content: start;
   min-height: 0;
+  width: 100%;
+  min-width: 0;
 }
 .match-page.rescuer-match-page.donor-chrome {
   padding-bottom: 88px;
@@ -8824,11 +8833,20 @@ div.profile-activity-row {
   line-height: 1.45;
   color: var(--muted);
 }
+.match-chats.rescuer-adoption-chats {
+  width: 100%;
+  min-width: 0;
+}
 .rescuer-adoption-chats-stack {
   display: grid;
   gap: 14px;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
 }
 .rescuer-adoption-chats-section {
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 20px;
   overflow: hidden;

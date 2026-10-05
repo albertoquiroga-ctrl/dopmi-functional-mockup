@@ -23,7 +23,7 @@ import {
   type NotificationKind,
   type PetCase,
 } from "./data";
-import { usePrototypeStore, type AccountMode, type Verification } from "./store";
+import { adoptionChatIntroText, usePrototypeStore, type AccountMode, type Verification } from "./store";
 
 const A = "/assets/";
 
@@ -1677,6 +1677,8 @@ function AdoptionHome() {
     if (mosaicEndPets.length === 4) break;
   }
 
+  const chatConfirmPet = chatConfirmId ? adoptionPets.find((item) => item.id === chatConfirmId) : undefined;
+
   return (
     <ScreenShell
       className="adoption-shell"
@@ -1694,10 +1696,12 @@ function AdoptionHome() {
           onApply={applyFilters}
           onClear={clearFilters}
         />
-        {chatConfirmId ? (
+        {chatConfirmPet ? (
           <AdoptStartDialog
+            petName={chatConfirmPet.name}
+            rescuer={chatConfirmPet.rescuer}
             onClose={() => setChatConfirmId(null)}
-            onConfirm={() => navigate(`/messages/${chatConfirmId}`)}
+            onConfirm={() => navigate(`/messages/${chatConfirmPet.id}`)}
           />
         ) : null}
         </>
@@ -1997,6 +2001,8 @@ function AdoptionDetail() {
           ) : null}
           {adoptConfirm ? (
             <AdoptStartDialog
+              petName={pet.name}
+              rescuer={pet.rescuer}
               onClose={() => setAdoptConfirm(false)}
               onConfirm={() => navigate(`/messages/${pet.id}`)}
             />
@@ -2104,7 +2110,7 @@ function AdoptionDetail() {
             className="pet-detail-cta"
             onClick={() => setAdoptConfirm(true)}
           >
-            Quiero adoptar
+            Quiero saber más
           </button>
         </div>
       </div>
@@ -3065,7 +3071,7 @@ const RESCUER_ADOPTION_CHAT_THREADS: RescuerAdoptionChatThread[] = [
     petId: "luna",
     adopter: "Ana P.",
     adopterInitial: "A",
-    preview: "¡Hola! Me interesa adoptar a Luna",
+    preview: adoptionChatIntroText({ name: "Luna", sex: "Hembra" }),
     time: "5m",
     unread: 1,
   },
@@ -3151,8 +3157,13 @@ function Messages() {
 
   useEffect(() => {
     if (isRescuerView || !adoptionPet) return;
-    startAdoptionChat({ id: adoptionPet.id, name: adoptionPet.name, image: adoptionPet.image });
-  }, [isRescuerView, adoptionPet?.id, adoptionPet?.name, adoptionPet?.image, startAdoptionChat]);
+    startAdoptionChat({
+      id: adoptionPet.id,
+      name: adoptionPet.name,
+      image: adoptionPet.image,
+      sex: adoptionPet.sex,
+    });
+  }, [isRescuerView, adoptionPet?.id, adoptionPet?.name, adoptionPet?.image, adoptionPet?.sex, startAdoptionChat]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -3291,14 +3302,18 @@ function DonorMessages() {
     </article>
   );
 
+  const chatConfirmPet = chatConfirmId ? adoptionPets.find((item) => item.id === chatConfirmId) : undefined;
+
   return (
     <ScreenShell
       className="match-shell"
       overlay={
-        chatConfirmId ? (
+        chatConfirmPet ? (
           <AdoptStartDialog
+            petName={chatConfirmPet.name}
+            rescuer={chatConfirmPet.rescuer}
             onClose={() => setChatConfirmId(null)}
-            onConfirm={() => navigate(`/messages/${chatConfirmId}`)}
+            onConfirm={() => navigate(`/messages/${chatConfirmPet.id}`)}
           />
         ) : null
       }
@@ -9147,13 +9162,26 @@ function DonateAmountDialog({
   );
 }
 
+function rescuerDefiniteArticle(rescuerName: string): "el" | "la" {
+  const first = rescuerName.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (first.includes("refugio")) return "el";
+  const feminine = ["maría", "maria", "patricia", "ana", "sofía", "sofia", "lucía", "lucia", "irlanda"];
+  if (feminine.some((name) => first === name || first.startsWith(name))) return "la";
+  return "el";
+}
+
 function AdoptStartDialog({
+  petName,
+  rescuer,
   onClose,
   onConfirm,
 }: {
+  petName: string;
+  rescuer?: string;
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const rescuerArticle = rescuerDefiniteArticle(rescuer ?? "María R.");
   return (
     <div className="modal-backdrop center" onClick={onClose}>
       <div
@@ -9166,8 +9194,11 @@ function AdoptStartDialog({
         <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
           ×
         </button>
-        <h2 id="adopt-start-title">¿Iniciamos el proceso?</h2>
-        <p>Contactaremos al rescatista para que pueda resolver tus dudas y explicarte los siguientes pasos</p>
+        <h2 id="adopt-start-title">Conectar con {petName}</h2>
+        <p>
+          Iniciaremos un chat con {rescuerArticle} rescatista para que pueda resolver tus dudas y ayudarte a conocer a
+          tu nuevo mejor amigo.
+        </p>
         <div className="adopt-start-actions">
           <button type="button" className="secondary-button" onClick={onClose}>
             Todavía no

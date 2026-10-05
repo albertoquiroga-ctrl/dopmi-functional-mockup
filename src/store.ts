@@ -7,6 +7,11 @@ export type DonorIntent = "adopt";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
 export type PaymentOutcome = "success" | "error";
 
+export function adoptionChatIntroText(pet: { name: string; sex?: "Macho" | "Hembra" }) {
+  const pronoun = pet.sex === "Hembra" ? "ella" : "él";
+  return `¡Hola! 👋 Me encantó ${pet.name}, me gustaría saber un poquito más sobre ${pronoun} 🐾`;
+}
+
 export type RescuerProfile = {
   name: string;
   email: string;
@@ -76,7 +81,7 @@ type PrototypeState = {
   donate: (caseId: string, needId: string, amount: number) => void;
   setGuardian: (active: boolean, amount?: number) => void;
   sendMessage: (author: "donor" | "rescuer", text: string, threadId?: string) => void;
-  startAdoptionChat: (pet: { id: string; name: string; image: string }) => void;
+  startAdoptionChat: (pet: { id: string; name: string; image: string; sex?: "Macho" | "Hembra" }) => void;
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
   publishDraft: (status?: PetCase["caseStatus"]) => void;
@@ -92,7 +97,7 @@ const baseMessages: ChatMessage[] = [
     id: "m1",
     threadId: "luna",
     author: "donor",
-    text: "¡Hola! Me interesa adoptar a Luna",
+    text: adoptionChatIntroText({ name: "Luna", sex: "Hembra" }),
     image: "/assets/luna-card.png",
     time: "10:30",
   },
@@ -263,7 +268,7 @@ export const usePrototypeStore = create<PrototypeState>()(
                 id: `intro-${pet.id}-${Date.now()}`,
                 threadId: pet.id,
                 author: "donor" as const,
-                text: `¡Hola! Me interesa adoptar a ${pet.name}`,
+                text: adoptionChatIntroText(pet),
                 image: pet.image,
                 time: new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date()),
               },
