@@ -1,6 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { initialCases, initialNotifications, rescuerAccount, type Need, type Notification, type PetCase } from "./data";
+import {
+  initialCases,
+  initialNotifications,
+  rescuerAccount,
+  type Need,
+  type Notification,
+  type PetCase,
+  type PetCaseCloseMeta,
+} from "./data";
 
 export type AccountMode = "donor" | "rescuer";
 export type DonorIntent = "adopt";
@@ -31,6 +39,16 @@ export type Donation = {
   amount: number;
   date: string;
   status: "success";
+};
+
+/** Donación recibida en casos de apoyo (bandeja del inicio rescatista). */
+export type RescuerSupportPaymentEvent = {
+  id: string;
+  caseId: string;
+  receivedAt: number;
+  amount: string;
+  title: string;
+  metaSuffix: string;
 };
 
 export type ChatMessage = {
@@ -65,6 +83,9 @@ type PrototypeState = {
   donations: Donation[];
   notifications: Notification[];
   messages: ChatMessage[];
+  rescuerSupportPaymentEvents: RescuerSupportPaymentEvent[];
+  /** Marca de tiempo: pagos con receivedAt mayor se cuentan como nuevos en inicio. */
+  rescuerHomePaymentsAcknowledgedAt: number;
   draft: Record<string, string | boolean | string[]>;
   emptyStates: boolean;
   donorProfile: DonorProfile;
@@ -85,12 +106,59 @@ type PrototypeState = {
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
   publishDraft: (status?: PetCase["caseStatus"]) => void;
-  updateCaseStatus: (id: string, status: PetCase["caseStatus"]) => void;
+  updateCaseStatus: (
+    id: string,
+    status: PetCase["caseStatus"],
+    closeMeta?: PetCaseCloseMeta,
+  ) => void;
   toggleCaseAdoption: (id: string) => void;
-  updateCase: (id: string, values: Partial<Pick<PetCase, "name" | "age" | "story" | "adoption">> & { needs?: PetCase["needs"] }) => void;
+  updateCase: (
+    id: string,
+    values: Partial<Pick<PetCase, "name" | "age" | "story" | "adoption" | "image">> & { needs?: PetCase["needs"] },
+  ) => void;
   submitNeedEvidence: (caseId: string, needId: string) => void;
+  acknowledgeRescuerHomePayments: () => void;
   resetPrototype: () => void;
 };
+
+const MS_PER_DAY = 86_400_000;
+
+function buildInitialRescuerSupportPaymentEvents(now = Date.now()): RescuerSupportPaymentEvent[] {
+  return [
+    {
+      id: "pay-milo-week",
+      caseId: "milo",
+      receivedAt: now - 5 * MS_PER_DAY,
+      amount: "+$75",
+      title: "Donaciones de 9 personas",
+      metaSuffix: "Esta semana",
+    },
+    {
+      id: "pay-milo-vet",
+      caseId: "milo",
+      receivedAt: now - 3 * MS_PER_DAY,
+      amount: "+$25",
+      title: "Sofía R. — Veterinario",
+      metaSuffix: "Hace 2 días",
+    },
+    {
+      id: "pay-nina-week",
+      caseId: "nina",
+      receivedAt: now - MS_PER_DAY,
+      amount: "+$95",
+      title: "Donaciones de 12 personas",
+      metaSuffix: "Esta semana",
+    },
+    {
+      id: "pay-nina-med",
+      caseId: "nina",
+      receivedAt: now - 12 * 3_600_000,
+      amount: "+$15",
+      title: "Luis G. — Medicina",
+      metaSuffix: "Hace 3 días",
+    },
+  ];
+}
 
 const baseMessages: ChatMessage[] = [
   {
@@ -120,8 +188,10 @@ const initialState = {
   donations: [] as Donation[],
   notifications: initialNotifications,
   messages: baseMessages,
+  rescuerSupportPaymentEvents: buildInitialRescuerSupportPaymentEvents(),
+  rescuerHomePaymentsAcknowledgedAt: Date.now() - 2 * MS_PER_DAY,
   draft: {} as Record<string, string | boolean | string[]>,
-  emptyStates: true,
+  emptyStates: false,
   donorProfile: {
     firstName: "Alberto",
     lastName: "Quiroga",
@@ -167,47 +237,66 @@ export const usePrototypeStore = create<PrototypeState>()(
             : [...state.savedRescuerIds, id],
         })),
       donate: (caseId, needId, amount) =>
-        set((state) => ({
-          cases: state.cases.map((item) =>
-            item.id === caseId
+        set((state) => {
+          const caseItem = state.cases.find((item) => item.id === caseId);
+          const need = caseItem?.needs.find((entry) => entry.id === needId);
+          const receivedAt = Date.now();
+          const rescuerPaymentEvent =
+            caseItem && !caseItem.adoption
               ? {
-                  ...item,
-                  needs: item.needs.map((need) =>
-                    need.id === needId
-                      ? {
-                          ...need,
-                          funded: Math.min(need.requested, need.funded + amount),
-                          status: need.funded + amount >= need.requested ? "funded" : need.status,
-                        }
-                      : need,
-                  ),
+                  id: `pay-${receivedAt}`,
+                  caseId,
+                  receivedAt,
+                  amount: `+$${amount}`,
+                  title: need ? `Donación — ${need.title}` : "Donación recibida",
+                  metaSuffix: "Ahora",
                 }
-              : item,
-          ),
-          donations: [
-            {
-              id: `donation-${Date.now()}`,
-              caseId,
-              needId,
-              amount,
-              date: new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(new Date()),
-              status: "success" as const,
-            },
-            ...state.donations,
-          ],
-          notifications: [
-            {
-              id: `notification-${Date.now()}`,
-              kind: "donation" as const,
-              title: "Donación enviada exitosamente",
-              body: `Tu aportación de $${amount} MXN ya aparece en el caso.`,
-              time: "Ahora",
-              target: `/case/${caseId}`,
-              read: false,
-            },
-            ...state.notifications,
-          ],
-        })),
+              : null;
+          return {
+            cases: state.cases.map((item) =>
+              item.id === caseId
+                ? {
+                    ...item,
+                    needs: item.needs.map((entry) =>
+                      entry.id === needId
+                        ? {
+                            ...entry,
+                            funded: Math.min(entry.requested, entry.funded + amount),
+                            status: entry.funded + amount >= entry.requested ? "funded" : entry.status,
+                          }
+                        : entry,
+                    ),
+                  }
+                : item,
+            ),
+            donations: [
+              {
+                id: `donation-${receivedAt}`,
+                caseId,
+                needId,
+                amount,
+                date: new Intl.DateTimeFormat("es-MX", { dateStyle: "medium" }).format(new Date()),
+                status: "success" as const,
+              },
+              ...state.donations,
+            ],
+            rescuerSupportPaymentEvents: rescuerPaymentEvent
+              ? [rescuerPaymentEvent, ...state.rescuerSupportPaymentEvents]
+              : state.rescuerSupportPaymentEvents,
+            notifications: [
+              {
+                id: `notification-${receivedAt}`,
+                kind: "donation" as const,
+                title: "Donación enviada exitosamente",
+                body: `Tu aportación de $${amount} MXN ya aparece en el caso.`,
+                time: "Ahora",
+                target: `/case/${caseId}`,
+                read: false,
+              },
+              ...state.notifications,
+            ],
+          };
+        }),
       setGuardian: (guardianActive, guardianAmount) =>
         set((state) => ({
           guardianActive,
@@ -345,9 +434,37 @@ export const usePrototypeStore = create<PrototypeState>()(
           };
           return { cases: [created, ...state.cases], draft: {} };
         }),
-      updateCaseStatus: (id, status) =>
+      updateCaseStatus: (id, status, closeMeta) =>
         set((state) => ({
-          cases: state.cases.map((item) => (item.id === id ? { ...item, caseStatus: status } : item)),
+          cases: state.cases.map((item) => {
+            if (item.id !== id) return item;
+            if (status === "closed") {
+              if (closeMeta?.closeReason) {
+                return {
+                  ...item,
+                  caseStatus: status,
+                  closeReason: closeMeta.closeReason,
+                  adoptedWithDopmiSupport:
+                    closeMeta.closeReason === "adoptada" ? closeMeta.adoptedWithDopmiSupport : undefined,
+                  closeReasonDescription:
+                    closeMeta.closeReason === "otro"
+                      ? closeMeta.closeReasonDescription?.trim() || undefined
+                      : undefined,
+                };
+              }
+              return { ...item, caseStatus: status };
+            }
+            if (status === "draft") {
+              return {
+                ...item,
+                caseStatus: status,
+                closeReason: undefined,
+                adoptedWithDopmiSupport: undefined,
+                closeReasonDescription: undefined,
+              };
+            }
+            return { ...item, caseStatus: status };
+          }),
         })),
       toggleCaseAdoption: (id) =>
         set((state) => ({
@@ -388,28 +505,61 @@ export const usePrototypeStore = create<PrototypeState>()(
             ],
           };
         }),
-      resetPrototype: () => set({ ...initialState }),
+      acknowledgeRescuerHomePayments: () =>
+        set({ rescuerHomePaymentsAcknowledgedAt: Date.now() }),
+      resetPrototype: () =>
+        set({
+          ...initialState,
+          rescuerSupportPaymentEvents: buildInitialRescuerSupportPaymentEvents(),
+          rescuerHomePaymentsAcknowledgedAt: Date.now() - 2 * MS_PER_DAY,
+        }),
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 15,
-      // Las versiones previas no tienen los casos ni las notificaciones con el formato actual.
-      migrate: (persisted) => ({
-        ...(persisted as PrototypeState),
-        cases: initialCases,
-        notifications: initialNotifications,
-        emptyStates: true,
-        guardianImpactReady: false,
-        messages: baseMessages,
-        donorProfile: {
-          firstName: "Alberto",
-          lastName: "Quiroga",
-          email: "alberto@email.com",
-          phone: "+52 55 1234 5678",
-          city: "Monterrey, NL",
-        },
-        rescuerProfile: { ...rescuerAccount },
-      }),
+      version: 23,
+      migrate: (persisted, version) => {
+        const state = persisted as PrototypeState;
+        if (version < 19) {
+          return {
+            ...state,
+            cases: initialCases,
+            notifications: initialNotifications,
+            emptyStates: false,
+            guardianImpactReady: false,
+            messages: baseMessages,
+            donorProfile: {
+              firstName: "Alberto",
+              lastName: "Quiroga",
+              email: "alberto@email.com",
+              phone: "+52 55 1234 5678",
+              city: "Monterrey, NL",
+            },
+            rescuerProfile: { ...rescuerAccount },
+          };
+        }
+        if (version < 21) {
+          return {
+            ...state,
+            cases: initialCases,
+            emptyStates: false,
+          };
+        }
+        if (version < 22) {
+          const now = Date.now();
+          return {
+            ...state,
+            rescuerSupportPaymentEvents: buildInitialRescuerSupportPaymentEvents(now),
+            rescuerHomePaymentsAcknowledgedAt: now - 2 * MS_PER_DAY,
+          };
+        }
+        if (version < 23) {
+          return {
+            ...state,
+            cases: initialCases,
+          };
+        }
+        return state;
+      },
     },
   ),
 );

@@ -23,7 +23,13 @@ import {
   type NotificationKind,
   type PetCase,
 } from "./data";
-import { adoptionChatIntroText, usePrototypeStore, type AccountMode, type Verification } from "./store";
+import {
+  adoptionChatIntroText,
+  usePrototypeStore,
+  type AccountMode,
+  type RescuerSupportPaymentEvent,
+  type Verification,
+} from "./store";
 
 const A = "/assets/";
 
@@ -264,9 +270,11 @@ function ScreenShell({
 function DonorChromeTop({
   leading,
   brand,
+  actions,
 }: {
   leading?: ReactNode;
   brand?: ReactNode;
+  actions?: ReactNode;
 }) {
   const navigate = useNavigate();
   const { notifications } = usePrototypeStore();
@@ -280,15 +288,17 @@ function DonorChromeTop({
         {leading}
       </div>
       <div className="discover-actions">
-        <button
-          type="button"
-          className="discover-icon-btn"
-          onClick={() => navigate("/notifications")}
-          aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
-        >
-          <Icon name="icon-bell.svg" size={20} />
-          {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
-        </button>
+        {actions ?? (
+          <button
+            type="button"
+            className="discover-icon-btn"
+            onClick={() => navigate("/notifications")}
+            aria-label={`Notificaciones${unread > 0 ? `, ${unread} sin leer` : ""}`}
+          >
+            <Icon name="icon-bell.svg" size={20} />
+            {unread > 0 ? <span className="notification-dot">{unread}</span> : null}
+          </button>
+        )}
       </div>
     </header>
   );
@@ -2284,6 +2294,16 @@ function needTypeLabel(type: Need["type"]) {
   return "Otro";
 }
 
+const NEED_TYPE_DISPLAY_ORDER: Need["type"][] = ["Veterinario", "Medicina", "Comida", "Otra"];
+
+function sortNeedsByType(needs: Need[]) {
+  const rank = (type: Need["type"]) => {
+    const index = NEED_TYPE_DISPLAY_ORDER.indexOf(type);
+    return index === -1 ? NEED_TYPE_DISPLAY_ORDER.length : index;
+  };
+  return [...needs].sort((a, b) => rank(a.type) - rank(b.type));
+}
+
 function NeedCard({
   need,
   defaultOpen = false,
@@ -2327,7 +2347,7 @@ function NeedCard({
               <i style={{ width: `${pct}%` }} />
             </span>
             <span className="donate-need-amounts">
-              <b>${need.funded.toLocaleString("es-MX")} donados</b>
+              <b>${need.funded.toLocaleString("es-MX")} recibidos</b>
               <span>${remaining.toLocaleString("es-MX")} faltantes</span>
             </span>
           </span>
@@ -2516,7 +2536,7 @@ function CaseDetail() {
             <section className="donate-case-needs">
               <h2>Ayúdame a recuperar:</h2>
               <div className="donate-needs-stack">
-                {item.needs.map((need) => (
+                {sortNeedsByType(item.needs).map((need) => (
                   <NeedCard
                     key={need.id}
                     need={need}
@@ -3064,6 +3084,7 @@ type RescuerAdoptionChatThread = {
   preview: string;
   time: string;
   unread: number;
+  archived?: boolean;
 };
 
 const RESCUER_ADOPTION_CHAT_THREADS: RescuerAdoptionChatThread[] = [
@@ -3082,6 +3103,7 @@ const RESCUER_ADOPTION_CHAT_THREADS: RescuerAdoptionChatThread[] = [
     preview: "¿Sigue disponible para visitas?",
     time: "2d",
     unread: 0,
+    archived: true,
   },
   {
     petId: "rocky",
@@ -3092,16 +3114,6 @@ const RESCUER_ADOPTION_CHAT_THREADS: RescuerAdoptionChatThread[] = [
     unread: 0,
   },
 ];
-
-function rescuerOpenChatCountLabel(count: number) {
-  if (count === 0) return "Sin chats abiertos";
-  if (count === 1) return "1 chat abierto";
-  return `${count} chats abiertos`;
-}
-
-function rescuerThreadUnreadTotal(chats: { unread: number }[]) {
-  return chats.reduce((sum, chat) => sum + chat.unread, 0);
-}
 
 function sortRescuerChatsByUnread<T extends { unread: number; adopter: string }>(chats: T[]) {
   return [...chats].sort((a, b) => {
@@ -4353,97 +4365,353 @@ const rescuerActivity = [
   { amount: "+$42", title: "Donaciones de 5 personas", meta: "Para Rocky · El mes pasado" },
 ];
 
+function buildSupportPaymentActivity(
+  cases: PetCase[],
+  events: RescuerSupportPaymentEvent[],
+  emptyStates: boolean,
+) {
+  if (emptyStates) return [];
+  const activeSupportIds = new Set(
+    cases.filter((item) => !item.adoption && item.caseStatus === "active").map((item) => item.id),
+  );
+  return events
+    .filter((event) => activeSupportIds.has(event.caseId))
+    .sort((a, b) => b.receivedAt - a.receivedAt)
+    .map((event) => {
+      const caseItem = cases.find((item) => item.id === event.caseId);
+      const petName = caseItem?.name ?? "Mascota";
+      return {
+        amount: event.amount,
+        title: event.title,
+        meta: `Para ${petName} · ${event.metaSuffix}`,
+        image: caseItem?.image ?? "/assets/milo-card.png",
+        petName,
+      };
+    });
+}
+
+function countUnseenRescuerHomePayments(
+  cases: PetCase[],
+  events: RescuerSupportPaymentEvent[],
+  acknowledgedAt: number,
+  emptyStates: boolean,
+) {
+  if (emptyStates) return 0;
+  const activeSupportIds = new Set(
+    cases.filter((item) => !item.adoption && item.caseStatus === "active").map((item) => item.id),
+  );
+  return events.filter(
+    (event) => activeSupportIds.has(event.caseId) && event.receivedAt > acknowledgedAt,
+  ).length;
+}
+
+const RESCUER_HOME_QUICK_ACTIONS: {
+  id: string;
+  label: string;
+  icon: string;
+  target: string;
+  asset?: boolean;
+}[] = [
+  { id: "adoption", label: "Adopción", icon: "rtab-cases.svg", target: "/rescuer/cases?program=adoption" },
+  { id: "support", label: "Apoyo", icon: "rtab-cases.svg", target: "/rescuer/cases?program=support" },
+  { id: "messages", label: "Mensajes", icon: "icon-messages.svg", target: "/rescuer/messages" },
+  { id: "payments", label: "Pagos", icon: "icon-billing.svg", target: "/settings/billing" },
+];
+
+type RescuerHomeActivityView = "none" | "payments" | "adoption" | "support";
+
+function buildRescuerHomeCaseSummary(cases: PetCase[], emptyStates: boolean, adoption: boolean) {
+  const pool = emptyStates ? [] : cases.filter((item) => item.adoption === adoption);
+  const countByStatus = (status: PetCase["caseStatus"]) =>
+    pool.filter((item) => item.caseStatus === status).length;
+  return [
+    {
+      id: "active",
+      title: "Casos activos",
+      meta: adoption ? "Buscando hogar" : "Recibiendo apoyo",
+      count: countByStatus("active"),
+    },
+    {
+      id: "review",
+      title: "Casos en revisión",
+      meta: "Pendiente de aprobación",
+      count: countByStatus("review"),
+    },
+    {
+      id: "draft",
+      title: "Casos en borrador",
+      meta: "Publicación incompleta",
+      count: countByStatus("draft"),
+    },
+    {
+      id: "rejected",
+      title: "Casos rechazados",
+      meta: "Requieren corrección",
+      count: countByStatus("rejected"),
+    },
+  ];
+}
+
+const RESCUER_HOME_PENDING_STATUSES: PetCase["caseStatus"][] = ["draft", "review", "rejected"];
+
+type RescuerPendingTaskCard = {
+  id: string;
+  program: "adoption" | "support";
+  kind: string;
+  title: string;
+  status?: string;
+  progress?: number;
+  surface: "white" | "lavender" | "sky";
+  target: string;
+  variant?: "views" | "matches" | "messages";
+  viewCount?: number;
+};
+
+function rescuerCaseBelongsToProfile(caseRescuer: string, profileName: string) {
+  const profileFirst = profileName.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  const caseFirst = caseRescuer.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  return profileFirst.length > 0 && caseFirst === profileFirst;
+}
+
+/** Visualizaciones en Adoptar: casos activos del rescatista que aparecen en el mazo discover. */
+function computeRescuerDiscoverProfileViews(
+  cases: PetCase[],
+  rescuerProfileName: string,
+  emptyStates: boolean,
+) {
+  if (emptyStates) return 0;
+  const discoverPetIds = new Set(adoptionPets.filter((pet) => pet.listed !== false).map((pet) => pet.id));
+  const fromDiscoverListed = cases.reduce((sum, item) => {
+    if (!item.adoption || item.caseStatus !== "active") return sum;
+    if (!discoverPetIds.has(item.id)) return sum;
+    if (!rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName)) return sum;
+    return sum + (item.profileViews ?? 0);
+  }, 0);
+  if (fromDiscoverListed > 0) return fromDiscoverListed;
+  return cases
+    .filter(
+      (item) =>
+        item.adoption &&
+        item.caseStatus === "active" &&
+        rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName),
+    )
+    .reduce((sum, item) => sum + (item.profileViews ?? 0), 0);
+}
+
+/** Mascotas del rescatista vistas en Adoptar y guardadas en Mis match. */
+function computeRescuerPetsInMatches(
+  cases: PetCase[],
+  savedPetIds: string[],
+  rescuerProfileName: string,
+  emptyStates: boolean,
+) {
+  if (emptyStates) return 0;
+  return cases.filter(
+    (item) =>
+      item.adoption &&
+      item.caseStatus === "active" &&
+      rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName) &&
+      (item.profileViews ?? 0) > 0 &&
+      ((item.matchSaves ?? 0) > 0 || savedPetIds.includes(item.id)),
+  ).length;
+}
+
+function rescuerAdoptionUnreadMessages(messages: { author?: string }[], emptyStates: boolean) {
+  if (emptyStates) return 0;
+  const last = messages[messages.length - 1];
+  return RESCUER_ADOPTION_CHAT_THREADS.filter((thread) => !thread.archived).reduce((sum, thread) => {
+    const isLunaAna = thread.petId === "luna" && thread.adopter === "Ana P.";
+    const unread = isLunaAna && last?.author === "donor" ? 1 : thread.unread;
+    return sum + unread;
+  }, 0);
+}
+
+function rescuerHomeQuickActionCounts(
+  cases: PetCase[],
+  emptyStates: boolean,
+  messages: { author?: string }[],
+  paymentEvents: RescuerSupportPaymentEvent[],
+  paymentsAcknowledgedAt: number,
+) {
+  if (emptyStates) {
+    return { adoption: 0, support: 0, messages: 0, payments: 0 };
+  }
+  const adoption = cases.filter(
+    (item) => item.adoption && RESCUER_HOME_PENDING_STATUSES.includes(item.caseStatus),
+  ).length;
+  const support = cases.filter(
+    (item) => !item.adoption && RESCUER_HOME_PENDING_STATUSES.includes(item.caseStatus),
+  ).length;
+  const messagesCount = rescuerAdoptionUnreadMessages(messages, emptyStates);
+  const payments = countUnseenRescuerHomePayments(
+    cases,
+    paymentEvents,
+    paymentsAcknowledgedAt,
+    emptyStates,
+  );
+  return { adoption, support, messages: messagesCount, payments };
+}
+
 function RescuerHome() {
   const navigate = useNavigate();
-  const { verification, setVerification, emptyStates } = usePrototypeStore();
+  const {
+    verification,
+    setVerification,
+    emptyStates,
+    rescuerProfile,
+    cases,
+    messages,
+    rescuerSupportPaymentEvents,
+    rescuerHomePaymentsAcknowledgedAt,
+    acknowledgeRescuerHomePayments,
+    savedPetIds,
+  } = usePrototypeStore();
   const verified = verification === "verified";
   const showEmptyPending = emptyStates;
-  const pendingActions = showEmptyPending
-    ? []
-    : verified
-      ? [
-          {
-            id: "messages",
-            tone: "message" as const,
-            icon: "icon-chat-yellow.svg",
-            title: "Responde mensajes pendientes",
-            copy: "Tienes conversaciones que necesitan respuesta.",
-            detail: "3 mensajes pendientes",
-            cta: "Ir a mensajes",
-            badge: "3",
-            target: "/rescuer/messages",
-          },
-          {
-            id: "evidence-draft",
-            tone: "danger" as const,
-            icon: "icon-camera-red.svg",
-            title: "Termina una evidencia pendiente",
-            copy: "Ya empezaste este formulario. Complétalo para enviarlo.",
-            detail: "Caso: Rocky · Necesidad: Veterinario · Progreso: incompleto",
-            cta: "Continuar evidencia",
-            target: "/rescuer/evidence/rocky/rocky-vet",
-          },
-          {
-            id: "evidence-new",
-            tone: "purple" as const,
-            icon: "icon-receipt-purple.svg",
-            title: "Sube evidencia de una necesidad cubierta",
-            copy: "Completa el formulario para comprobar cómo se usó el dinero.",
-            detail: "Caso: Luna · Necesidad: Alimento · Monto cubierto: $450 MXN",
-            cta: "Llenar evidencia",
-            target: "/rescuer/evidence/luna/luna-food",
-          },
-        ]
-      : [
-          {
-            id: "messages",
-            tone: "message" as const,
-            icon: "icon-chat-yellow.svg",
-            title: "Responde mensajes pendientes",
-            copy: "Tienes conversaciones que necesitan respuesta.",
-            detail: "3 mensajes pendientes",
-            cta: "Ir a mensajes",
-            badge: "3",
-            target: "/rescuer/messages",
-          },
-        ];
+  const rescuerFirstName = rescuerProfile.name.trim().split(/\s+/)[0] || "María";
+  const [pendingTab, setPendingTab] = useState<"adoption" | "support">("adoption");
+  const [homeActivityView, setHomeActivityView] = useState<RescuerHomeActivityView>("none");
+  const homeCaseSummary = useMemo(
+    () => ({
+      adoption: buildRescuerHomeCaseSummary(cases, emptyStates, true),
+      support: buildRescuerHomeCaseSummary(cases, emptyStates, false),
+    }),
+    [cases, emptyStates],
+  );
+  const homeSupportPaymentActivity = useMemo(
+    () => buildSupportPaymentActivity(cases, rescuerSupportPaymentEvents, emptyStates),
+    [cases, rescuerSupportPaymentEvents, emptyStates],
+  );
+  const homeCaseSummaryActive = homeActivityView === "support" || homeActivityView === "adoption";
+  const homeQuickActionCounts = useMemo(
+    () =>
+      rescuerHomeQuickActionCounts(
+        cases,
+        emptyStates,
+        messages,
+        rescuerSupportPaymentEvents,
+        rescuerHomePaymentsAcknowledgedAt,
+      ),
+    [cases, emptyStates, messages, rescuerSupportPaymentEvents, rescuerHomePaymentsAcknowledgedAt],
+  );
+
+  const handleHomeQuickAction = (actionId: string, target: string) => {
+    if (actionId === "adoption") {
+      setHomeActivityView("adoption");
+      return;
+    }
+    if (actionId === "support") {
+      setHomeActivityView("support");
+      return;
+    }
+    if (actionId === "payments") {
+      setHomeActivityView("payments");
+      acknowledgeRescuerHomePayments();
+      return;
+    }
+    navigate(target);
+  };
+  const discoverProfileViews = useMemo(
+    () => computeRescuerDiscoverProfileViews(cases, rescuerProfile.name, emptyStates),
+    [cases, emptyStates, rescuerProfile.name],
+  );
+  const petsInMatches = useMemo(
+    () => computeRescuerPetsInMatches(cases, savedPetIds, rescuerProfile.name, emptyStates),
+    [cases, savedPetIds, emptyStates, rescuerProfile.name],
+  );
+  const adoptionUnreadMessages = useMemo(
+    () => rescuerAdoptionUnreadMessages(messages, emptyStates),
+    [messages, emptyStates],
+  );
+  const pendingActions = useMemo((): RescuerPendingTaskCard[] => {
+    if (showEmptyPending) return [];
+    const viewsCard: RescuerPendingTaskCard = {
+      id: "discover-views",
+      program: "adoption",
+      variant: "views",
+      kind: "Adoptar",
+      title:
+        discoverProfileViews === 1
+          ? "persona vio tus mascotas en Adoptar"
+          : "personas vieron tus mascotas en Adoptar",
+      viewCount: discoverProfileViews,
+      surface: "white",
+      target: "/rescuer/cases?program=adoption",
+    };
+    if (!verified) return [viewsCard];
+    return [
+      viewsCard,
+      {
+        id: "discover-matches",
+        program: "adoption",
+        variant: "matches",
+        kind: "Mis match",
+        title:
+          petsInMatches === 1
+            ? "mascota pasó a Mis match desde Adoptar"
+            : "mascotas pasaron a Mis match desde Adoptar",
+        viewCount: petsInMatches,
+        surface: "sky",
+        target: "/rescuer/cases?program=adoption",
+      },
+      {
+        id: "adoption-messages",
+        program: "adoption",
+        variant: "messages",
+        kind: "Mensajes",
+        title:
+          adoptionUnreadMessages === 1
+            ? "conversación sin responder"
+            : "conversaciones sin responder",
+        viewCount: adoptionUnreadMessages,
+        surface: "lavender",
+        target: "/rescuer/messages",
+      },
+      {
+        id: "evidence-rocky",
+        program: "support",
+        kind: "Evidencia",
+        title: "Rocky · Veterinario · Incompleta",
+        status: "Urgente",
+        progress: 30,
+        surface: "lavender",
+        target: "/rescuer/evidence/rocky/rocky-vet",
+      },
+      {
+        id: "evidence-milo",
+        program: "support",
+        kind: "Evidencia",
+        title: "Milo · Medicina · Evidencia pendiente",
+        status: "Pendiente",
+        progress: 55,
+        surface: "sky",
+        target: "/rescuer/evidence/milo/milo-med",
+      },
+    ];
+  }, [adoptionUnreadMessages, discoverProfileViews, petsInMatches, showEmptyPending, verified]);
+  const filteredPendingActions = pendingActions.filter((item) => item.program === pendingTab);
 
   return (
     <ScreenShell mode="rescuer">
-      <div className="content-pad rescuer-home">
-        <header className="rh-greeting">
-          <h1>Hola, María</h1>
-          <p>{showEmptyPending ? "Panel de Rescatista" : "Tu panel de rescate"}</p>
+      <div className="rescuer-home-network donor-chrome">
+        <DonorChromeTop
+          brand={
+            <img
+              className="discover-wordmark"
+              src={`${A}dopmi-wordmark.png`}
+              alt="DopMi"
+              width={108}
+              height={36}
+            />
+          }
+        />
+        <header className="match-top">
+          <h1>Hola, {rescuerFirstName}</h1>
         </header>
 
-        {verified ? (
-          <article className="dopmi-wallet">
-            <div className="dopmi-wallet-top">
-              <span className="dopmi-wallet-label">
-                <AssetIcon name="icon-wallet.svg" size={20} />
-                Cuenta Dopmi
-              </span>
-              <span className="dopmi-wallet-badge">
-                {showEmptyPending ? "0 Casos activos" : "3 Casos activos"}
-              </span>
-            </div>
-            <strong className="dopmi-wallet-balance">{showEmptyPending ? "$0" : "$68"}</strong>
-            <p>Disponible para tus mascotas</p>
-            <div className="dopmi-wallet-bar">
-              <i style={{ width: showEmptyPending ? "0%" : "40%" }} />
-            </div>
-            <div className="dopmi-wallet-stats">
-              <div>
-                <span>Total de donaciones</span>
-                <b>{showEmptyPending ? "$0" : "$172"}</b>
-              </div>
-              <div>
-                <span>Usado</span>
-                <b>{showEmptyPending ? "$0" : "$69"}</b>
-              </div>
-            </div>
-          </article>
-        ) : verification === "review" && !showEmptyPending ? (
+        <div className="rescuer-home">
+
+        {!verified && verification === "review" && !showEmptyPending ? (
           <article className="verify-card review">
             <div className="verify-head">
               <span className="verify-chip">
@@ -4456,7 +4724,7 @@ function RescuerHome() {
               Simular verificación
             </button>
           </article>
-        ) : showEmptyPending && !verified ? (
+        ) : !verified && showEmptyPending ? (
           <article className="verify-card verify-card-cta">
             <div className="verify-head">
               <span className="verify-chip">
@@ -4477,7 +4745,7 @@ function RescuerHome() {
               {verification === "rejected" ? "Corregir información" : "Verificarme"}
             </button>
           </article>
-        ) : !verified ? (
+        ) : !verified && !showEmptyPending ? (
           <button
             className={`verify-card link-card ${verification}`}
             onClick={() => navigate("/rescuer/verification")}
@@ -4500,24 +4768,36 @@ function RescuerHome() {
           </button>
         ) : null}
 
-        <section className="rh-section">
-          {showEmptyPending ? (
-            <h2>Acciones pendientes</h2>
-          ) : (
-            <div className="rh-section-head">
-              <AssetIcon name="icon-alert-circle.svg" size={20} />
-              <h2>Acciones pendientes</h2>
-              <span className="rh-count">{pendingActions.length}</span>
+        <section className="rh-section rh-section-pending">
+          {!showEmptyPending ? (
+            <div className="rh-pending-tabs" role="tablist" aria-label="Filtrar pendientes por programa">
+              {(
+                [
+                  { id: "adoption" as const, label: "En adopción" },
+                  { id: "support" as const, label: "Recibiendo apoyo" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={pendingTab === tab.id}
+                  className={`rh-pending-tab${pendingTab === tab.id ? " is-active" : ""}`}
+                  onClick={() => setPendingTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-          )}
+          ) : null}
           {showEmptyPending ? (
             <article className="rh-empty-card">
               <span className="rh-empty-icon">
                 <AssetIcon name="empty-pending-heart.svg" size={32} />
               </span>
-              <h3>No tienes acciones pendientes</h3>
+              <h3>No tienes pendientes</h3>
               <p>
-                Cuando publiques casos, recibas mensajes o tengas evidencias por subir, tus acciones pendientes aparecerán aquí.
+                Cuando publiques casos, recibas mensajes o tengas evidencias por subir, aparecerán aquí.
               </p>
               <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
                 <AssetIcon name="empty-publish-plus.svg" size={16} />
@@ -4525,51 +4805,169 @@ function RescuerHome() {
               </button>
             </article>
           ) : (
-            <div className="rh-action-list">
-              {pendingActions.map((item) => (
-                <button
+            <div className="rh-pending-track" role="list">
+              {filteredPendingActions.map((item) => (
+                <article
                   key={item.id}
-                  className={`rh-action ${item.tone}`}
-                  onClick={() => navigate(item.target)}
+                  role="listitem"
+                  className={`rh-pending-task-card is-surface-${item.surface}`}
                 >
-                  <AssetIcon name={item.icon} size={20} />
-                  <span className="rh-action-body">
-                    <strong>{item.title}</strong>
-                    <small>{item.copy}</small>
-                    {item.detail ? <small>{item.detail}</small> : null}
-                    <em>{item.cta}</em>
-                  </span>
-                  {"badge" in item && item.badge ? (
-                    <span className="rh-action-badge">{item.badge}</span>
+                  {item.status ? (
+                    <span
+                      className={`rh-pending-task-badge${item.status === "Urgente" ? " is-urgent" : ""}`}
+                    >
+                      {item.status}
+                    </span>
+                  ) : null}
+                  <span className="rh-pending-task-kind">{item.kind}</span>
+                  {item.variant === "views" || item.variant === "matches" || item.variant === "messages" ? (
+                    <>
+                      <p
+                        className="rh-pending-task-view-count"
+                        aria-label={
+                          item.variant === "matches"
+                            ? `${item.viewCount ?? 0} mascotas en Mis match`
+                            : item.variant === "messages"
+                              ? `${item.viewCount ?? 0} mensajes pendientes`
+                              : `${item.viewCount ?? 0} visualizaciones`
+                        }
+                      >
+                        {item.viewCount ?? 0}
+                      </p>
+                      <p className="rh-pending-task-view-copy">{item.title}</p>
+                    </>
                   ) : (
-                    <Chevron />
+                    <>
+                      <strong className="rh-pending-task-title">{item.title}</strong>
+                      <div className="rh-pending-task-progress">
+                        <div className="rh-pending-task-progress-head">
+                          <span>Avance</span>
+                          <span>{item.progress}%</span>
+                        </div>
+                        <div className="rh-pending-task-progress-bar" aria-hidden="true">
+                          <i style={{ width: `${item.progress}%` }} />
+                        </div>
+                      </div>
+                    </>
                   )}
-                </button>
+                </article>
               ))}
             </div>
           )}
         </section>
 
-        {verified && !showEmptyPending ? (
-          <section className="rh-section">
-            <h2>Actividad reciente</h2>
-            <div className="rh-activity-list">
-              {rescuerActivity.map((item) => (
-                <article className="rh-activity" key={`${item.amount}-${item.meta}`}>
-                  <span className="rh-activity-icon">
-                    <AssetIcon name="icon-donation-in.svg" size={20} />
+        <section className="profile-access rh-home-quick-access" aria-label="Mis pendientes">
+          <h2>Mis pendientes</h2>
+          <div className="profile-access-grid profile-access-grid--four">
+            {RESCUER_HOME_QUICK_ACTIONS.map((action) => {
+              const pendingCount = homeQuickActionCounts[action.id as keyof typeof homeQuickActionCounts] ?? 0;
+              const pendingLabel =
+                pendingCount > 9 ? "9+" : pendingCount > 0 ? String(pendingCount) : null;
+              return (
+                <button
+                  type="button"
+                  key={action.id}
+                  className={`profile-access-item${action.id === "adoption" && homeActivityView === "adoption" ? " is-selected" : ""}${action.id === "support" && homeActivityView === "support" ? " is-selected" : ""}${action.id === "payments" && homeActivityView === "payments" ? " is-selected" : ""}`}
+                  onClick={() => handleHomeQuickAction(action.id, action.target)}
+                  aria-label={`${action.label}${pendingCount > 0 ? `, ${pendingCount} pendientes` : ""}`}
+                >
+                  <span className="profile-access-icon" aria-hidden="true">
+                    {action.asset ? <AssetIcon name={action.icon} size={22} /> : <Icon name={action.icon} size={22} />}
+                    {pendingLabel ? <span className="notification-dot">{pendingLabel}</span> : null}
                   </span>
-                  <div>
-                    <strong>
-                      {item.amount} · {item.title}
-                    </strong>
-                    <small>{item.meta}</small>
-                  </div>
-                </article>
-              ))}
+                  <span>{action.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {verified && !showEmptyPending && homeActivityView !== "none" ? (
+          <section className="rh-section rh-section-activity">
+            <div className="rh-section-head">
+              <h2>
+                {homeActivityView === "adoption"
+                  ? "Resumen de adopción"
+                  : homeActivityView === "support"
+                    ? "Resumen de apoyo"
+                    : "Actividad reciente"}
+              </h2>
+              {!homeCaseSummaryActive ? (
+                <button type="button" className="rh-section-see-all" onClick={() => navigate("/settings/billing")}>
+                  Ver todo
+                </button>
+              ) : null}
+            </div>
+            <div className="rh-activity-sheet">
+              <div className="rh-activity-list">
+                {homeCaseSummaryActive
+                  ? (homeActivityView === "support"
+                      ? homeCaseSummary.support
+                      : homeCaseSummary.adoption
+                    ).map((item) => (
+                      <button
+                        type="button"
+                        className="rh-activity rh-activity-row-btn"
+                        key={item.id}
+                        onClick={() =>
+                          navigate(
+                            homeActivityView === "support"
+                              ? "/rescuer/cases?program=support"
+                              : "/rescuer/cases?program=adoption",
+                          )
+                        }
+                      >
+                        <span className={`rh-activity-icon is-status-${item.id}`}>
+                          <Icon name="rtab-cases.svg" size={20} />
+                        </span>
+                        <div className="rh-activity-copy">
+                          <strong>{item.title}</strong>
+                          <small>{item.meta}</small>
+                        </div>
+                        <span className="rh-activity-amount rh-activity-count">{item.count}</span>
+                      </button>
+                    ))
+                  : homeSupportPaymentActivity.map((item) => (
+                      <article className="rh-activity" key={`${item.amount}-${item.meta}`}>
+                        <span className="rh-activity-icon rh-activity-icon-photo">
+                          <img src={item.image} alt={item.petName} />
+                        </span>
+                        <div className="rh-activity-copy">
+                          <strong>{item.title}</strong>
+                          <small>{item.meta}</small>
+                        </div>
+                        <span className="rh-activity-amount">{item.amount}</span>
+                      </article>
+                    ))}
+              </div>
             </div>
           </section>
         ) : null}
+
+        <button type="button" className="profile-feature" onClick={() => navigate("/impact/support")}>
+          <span className="profile-feature-copy">
+            <strong>Tips para mejores fotos</strong>
+            <small>Te damos recomendaciones para que tus casos tengan más visualizaciones</small>
+          </span>
+          <span className="profile-feature-cta" aria-hidden="true">
+            <Icon name="icon-star.svg" size={22} />
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className="profile-feature profile-feature--cause"
+          onClick={() => navigate("/apoya-causa")}
+        >
+          <span className="profile-feature-copy">
+            <strong>Croquetas con causa</strong>
+            <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
+          </span>
+          <span className="profile-feature-cta" aria-hidden="true">
+            <Icon name="icon-chevron-right.svg" size={22} />
+          </span>
+        </button>
+        </div>
       </div>
     </ScreenShell>
   );
@@ -4707,6 +5105,192 @@ function needFrequency(need: Need) {
   return "Única vez";
 }
 
+function FinishSupportCaseArchiveDialog({ item, onClose }: { item: PetCase; onClose: () => void }) {
+  const { updateCaseStatus } = usePrototypeStore();
+  const dismissedRef = useRef(false);
+
+  const dismissAndArchive = () => {
+    if (dismissedRef.current) return;
+    dismissedRef.current = true;
+    updateCaseStatus(item.id, "closed");
+    onClose();
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(dismissAndArchive, 2800);
+    return () => window.clearTimeout(timer);
+  }, [item.id, onClose, updateCaseStatus]);
+
+  return (
+    <div className="modal-backdrop center" onClick={dismissAndArchive}>
+      <div
+        className="dialog-card rescuer-case-finish-archive-pop"
+        onClick={(event) => event.stopPropagation()}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="rescuer-case-finish-archive-pop-icon" aria-hidden="true">
+          <Icon name="icon-inbox-archive.svg" size={44} />
+        </div>
+        <h2>Caso finalizado</h2>
+        <p>Este caso se enviará al archivo</p>
+      </div>
+    </div>
+  );
+}
+
+function CloseSupportCaseDialog({
+  item,
+  onClose,
+  onArchived,
+}: {
+  item: PetCase;
+  onClose: () => void;
+  onArchived?: () => void;
+}) {
+  const { updateCaseStatus } = usePrototypeStore();
+  const [confirmed, setConfirmed] = useState(false);
+  const { goal, received } = rescuerCaseFundingTotals(item);
+  const remaining = Math.max(0, goal - received);
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose}>
+      <div className="dialog-card rescuer-cases-filter-dialog" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <h2>¿Deseas cerrar el caso?</h2>
+        <label className="check-row rescuer-close-support-confirm">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+          />
+          <span>
+            Confirmo que quiero cerrar el caso y acepto que ya no recibiré ni reclamaré el apoyo faltante de $
+            {remaining.toLocaleString("es-MX")}.
+          </span>
+        </label>
+        <button
+          type="button"
+          className="danger-button"
+          disabled={!confirmed}
+          onClick={() => {
+            updateCaseStatus(item.id, "closed");
+            onArchived?.();
+            onClose();
+          }}
+        >
+          Confirmar cierre
+        </button>
+        <button type="button" className="secondary-button" onClick={onClose}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CloseCaseDialog({
+  item,
+  onClose,
+  onArchived,
+}: {
+  item: PetCase;
+  onClose: () => void;
+  onArchived?: () => void;
+}) {
+  const navigate = useNavigate();
+  const { updateCaseStatus } = usePrototypeStore();
+  const [closeReason, setCloseReason] = useState<"adoptada" | "otro">("adoptada");
+  const [dopmiSupport, setDopmiSupport] = useState<"si" | "no">("si");
+  const [otherReasonDescription, setOtherReasonDescription] = useState("");
+
+  const confirmClose = () => {
+    updateCaseStatus(item.id, "closed", {
+      closeReason,
+      adoptedWithDopmiSupport: closeReason === "adoptada" ? dopmiSupport === "si" : undefined,
+      closeReasonDescription:
+        closeReason === "otro" ? otherReasonDescription.trim() || undefined : undefined,
+    });
+    onArchived?.();
+    onClose();
+    navigate("/rescuer/cases");
+  };
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose}>
+      <div className="dialog-card close-case-dialog" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <h2>Cerrar caso</h2>
+        <p>Esta acción archiva el caso.</p>
+        <label className="dialog-field">
+          Motivo
+          <select
+            value={closeReason}
+            onChange={(event) => {
+              const next = event.target.value as "adoptada" | "otro";
+              setCloseReason(next);
+              if (next === "adoptada") {
+                setOtherReasonDescription("");
+                setDopmiSupport("si");
+              }
+            }}
+          >
+            <option value="adoptada">Ya fue adoptad@</option>
+            <option value="otro">Otro motivo</option>
+          </select>
+        </label>
+        {closeReason === "adoptada" ? (
+          <div className="dialog-field">
+            ¿Se adoptó con apoyo de DopMi?
+            <div
+              className="filter-gender close-case-dopmi-filter"
+              role="group"
+              aria-label="¿Se adoptó con apoyo de DopMi?"
+            >
+              <button
+                type="button"
+                className={`filter-gender-btn${dopmiSupport === "si" ? " is-active" : ""}`}
+                aria-pressed={dopmiSupport === "si"}
+                onClick={() => setDopmiSupport("si")}
+              >
+                Sí
+              </button>
+              <button
+                type="button"
+                className={`filter-gender-btn${dopmiSupport === "no" ? " is-active" : ""}`}
+                aria-pressed={dopmiSupport === "no"}
+                onClick={() => setDopmiSupport("no")}
+              >
+                No
+              </button>
+            </div>
+          </div>
+        ) : (
+          <label className="dialog-field">
+            Describe el motivo
+            <textarea
+              rows={3}
+              value={otherReasonDescription}
+              onChange={(event) => setOtherReasonDescription(event.target.value)}
+              placeholder="Opcional"
+            />
+          </label>
+        )}
+        <button type="button" className="danger-button" onClick={confirmClose}>
+          Confirmar cierre
+        </button>
+        <button type="button" className="secondary-button" onClick={onClose}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function EditCaseModal({
   item,
   onClose,
@@ -4726,32 +5310,12 @@ function EditCaseModal({
 
   const save = () => {
     updateCase(item.id, { name, age, story, adoption, needs });
+    if (item.caseStatus === "active") updateCaseStatus(item.id, "review");
     onClose();
   };
 
   if (closing) {
-    return (
-      <div className="modal-backdrop center" onClick={() => setClosing(false)}>
-        <div className="dialog-card" onClick={(event) => event.stopPropagation()}>
-          <button className="dialog-close" onClick={() => setClosing(false)} aria-label="Cerrar">×</button>
-          <h2>Cerrar caso</h2>
-          <p>Esta acción archiva el caso. Puedes subir un video de despedida opcional.</p>
-          <label className="dialog-field">Motivo<select defaultValue="adoptada"><option value="adoptada">Ya fue adoptada</option><option value="otro">Otro motivo</option></select></label>
-          <label className="upload-field">Video de despedida (opcional)<input type="file" accept="video/*" /></label>
-          <button
-            className="danger-button"
-            onClick={() => {
-              updateCaseStatus(item.id, "closed");
-              onClose();
-              navigate("/rescuer/cases");
-            }}
-          >
-            Confirmar cierre
-          </button>
-          <button className="secondary-button" onClick={() => setClosing(false)}>Cancelar</button>
-        </div>
-      </div>
-    );
+    return <CloseCaseDialog item={item} onClose={() => setClosing(false)} />;
   }
 
   return (
@@ -4843,13 +5407,451 @@ function EditCaseModal({
   );
 }
 
+type RescuerCaseFilter = "adoption" | "support";
+
+const RESCUER_CASE_FILTERS: { id: RescuerCaseFilter; label: string }[] = [
+  { id: "adoption", label: "Adopción" },
+  { id: "support", label: "Apoyo" },
+];
+
+type RescuerCaseStatusTagTone =
+  | "active"
+  | "adopted"
+  | "finished"
+  | "review"
+  | "draft"
+  | "rejected"
+  | "closed";
+
+function rescuerCaseStatusTag(item: PetCase): { label: string; tone: RescuerCaseStatusTagTone } {
+  if (item.caseStatus === "closed" && item.adoption && item.closeReason === "adoptada") {
+    return { label: "Adoptado", tone: "adopted" };
+  }
+  if (item.caseStatus === "closed") return { label: "Cerrado", tone: "closed" };
+  return { label: caseStatusLabel[item.caseStatus], tone: item.caseStatus };
+}
+
+function rescuerCaseChatCount(caseId: string) {
+  return RESCUER_ADOPTION_CHAT_THREADS.filter((thread) => thread.petId === caseId).length;
+}
+
+function rescuerCaseFundingTotals(item: PetCase) {
+  const goal = item.needs.reduce((sum, need) => sum + need.requested, 0);
+  const received = item.needs.reduce((sum, need) => sum + need.funded, 0);
+  const pct = goal ? Math.min(100, Math.round((received / goal) * 100)) : 0;
+  return { goal, received, pct };
+}
+
+function rescuerCaseSupportGoalReached(item: PetCase) {
+  const { goal, received } = rescuerCaseFundingTotals(item);
+  return goal > 0 && received >= goal;
+}
+
+/** Tarjeta de apoyo con barra, emojis y subtítulo de recaudación (activo o archivado). */
+function rescuerCaseSupportRichCardUi(item: PetCase, programFilter: RescuerCaseFilter) {
+  if (programFilter !== "support" || item.adoption) return false;
+  return item.caseStatus === "active" || item.caseStatus === "closed";
+}
+
+function rescuerCaseNeedTypes(item: PetCase) {
+  const order: Need["type"][] = ["Veterinario", "Medicina", "Comida", "Otra"];
+  const types = new Set(item.needs.map((need) => need.type));
+  return order.filter((type) => types.has(type));
+}
+
+function needTypeSymbolClass(type: Need["type"]) {
+  if (type === "Comida") return "comida";
+  if (type === "Medicina") return "medicina";
+  if (type === "Veterinario") return "veterinario";
+  return "otra";
+}
+
+function rescuerCaseSubtitle(item: PetCase, programFilter: RescuerCaseFilter) {
+  if (rescuerCaseSupportRichCardUi(item, programFilter)) {
+    const { received, goal } = rescuerCaseFundingTotals(item);
+    return `Recolectado: $${received.toLocaleString("es-MX")} de $${goal.toLocaleString("es-MX")}`;
+  }
+  if (item.caseStatus === "active" || item.caseStatus === "closed") {
+    const days = item.daysSinceApproval ?? 0;
+    if (days === 1) return "1 día en DopMi";
+    if (days > 0) return `${days} días en DopMi`;
+    return "Recién publicado en DopMi";
+  }
+  if (item.caseStatus === "review") return "Pendiente de aprobación";
+  if (item.caseStatus === "draft") return "Continúa tu publicación";
+  if (item.caseStatus === "rejected") return "Requiere corrección";
+  return caseStatusLabel[item.caseStatus];
+}
+
+function rescuerCaseProfileViews(item: PetCase) {
+  return item.profileViews ?? 0;
+}
+
+function rescuerCaseShowSubtitle(item: PetCase) {
+  return item.caseStatus !== "draft";
+}
+
+function rescuerCaseShowStats(item: PetCase, programFilter: RescuerCaseFilter) {
+  if (rescuerCaseSupportRichCardUi(item, programFilter)) return false;
+  return item.caseStatus === "active" || item.caseStatus === "closed";
+}
+
+function rescuerCaseShowSupportNeedTypes(item: PetCase, programFilter: RescuerCaseFilter) {
+  return rescuerCaseSupportRichCardUi(item, programFilter) && rescuerCaseNeedTypes(item).length > 0;
+}
+
+function rescuerCaseShowSupportFundingBar(item: PetCase, programFilter: RescuerCaseFilter) {
+  return rescuerCaseSupportRichCardUi(item, programFilter);
+}
+
+const RESCUER_CASE_STATUS_SORT_ORDER: Record<PetCase["caseStatus"], number> = {
+  rejected: 0,
+  draft: 1,
+  review: 2,
+  active: 3,
+  closed: 4,
+};
+
+const RESCUER_CASE_LIST_STATUS_FILTERS: { id: PetCase["caseStatus"]; label: string }[] = [
+  { id: "rejected", label: "Rechazado" },
+  { id: "draft", label: "Borrador" },
+  { id: "review", label: "En revisión" },
+  { id: "active", label: "Activo" },
+];
+
+const RESCUER_CASE_LIST_STATUS_DEFAULT = RESCUER_CASE_LIST_STATUS_FILTERS.map((item) => item.id);
+
+const RESCUER_ADOPTION_IN_PROGRESS_STATUSES: PetCase["caseStatus"][] = ["rejected", "draft", "review"];
+
+function RescuerCaseCardItem({
+  item,
+  programFilter,
+  onCloseCase,
+  onDelete,
+  onEdit,
+  onArchiveCompleted,
+}: {
+  item: PetCase;
+  programFilter: RescuerCaseFilter;
+  onCloseCase: (id: string) => void;
+  onDelete: (id: string) => void;
+  onEdit: (item: PetCase) => void;
+  onArchiveCompleted: (id: string) => void;
+}) {
+  const openChats = rescuerCaseChatCount(item.id);
+  const views = rescuerCaseProfileViews(item);
+  const funding = rescuerCaseFundingTotals(item);
+  const supportRichCard = rescuerCaseSupportRichCardUi(item, programFilter);
+  const supportGoalReachedLook = supportRichCard && rescuerCaseSupportGoalReached(item);
+  const supportClosedArchived =
+    supportRichCard && item.caseStatus === "closed" && !rescuerCaseSupportGoalReached(item);
+  const statusTag = supportGoalReachedLook
+    ? { label: "Finalizado", tone: "finished" as const }
+    : rescuerCaseStatusTag(item);
+  const [needsBreakdownOpen, setNeedsBreakdownOpen] = useState(false);
+
+  return (
+    <article
+      className={`rescuer-case-card${item.caseStatus === "active" ? " is-case-active" : ""}${supportRichCard ? " is-support-active" : ""}${supportGoalReachedLook ? " is-support-goal-reached" : ""}${supportClosedArchived ? " is-support-closed" : ""}`}
+    >
+      <div className="rescuer-case-card-layout">
+        <div className="rescuer-case-card-content">
+          <img className="rescuer-case-card-photo" src={item.image} alt="" />
+          <span className="rescuer-case-card-body">
+            <span className="rescuer-case-card-title-row">
+              <strong>{item.name}</strong>
+              <span className={`rescuer-case-status-tag is-${statusTag.tone}`}>{statusTag.label}</span>
+            </span>
+            {rescuerCaseShowSubtitle(item) ? (
+              <span className="rescuer-case-card-subtitle">
+                {supportRichCard ? (
+                  <>
+                    Recolectado: <strong>${funding.received.toLocaleString("es-MX")}</strong> de $
+                    {funding.goal.toLocaleString("es-MX")}
+                  </>
+                ) : (
+                  rescuerCaseSubtitle(item, programFilter)
+                )}
+              </span>
+            ) : null}
+            {rescuerCaseShowSupportNeedTypes(item, programFilter) ? (
+              <span className="rescuer-case-card-need-types" aria-label="Tipos de apoyo solicitados">
+                {rescuerCaseNeedTypes(item).map((type) => (
+                  <span
+                    key={type}
+                    className={`need-symbol small ${needTypeSymbolClass(type)}`}
+                    title={needTypeLabel(type)}
+                    aria-hidden="true"
+                  >
+                    {needEmoji(type)}
+                  </span>
+                ))}
+              </span>
+            ) : null}
+            {rescuerCaseShowStats(item, programFilter) ? (
+              <span className="rescuer-case-card-stats" aria-label="Actividad del caso">
+                <span className="rescuer-case-card-stat">
+                  <Icon name="icon-messages.svg" size={18} />
+                  {openChats}
+                </span>
+                <span className="rescuer-case-card-stat">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+                    <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+                  </svg>
+                  {views}
+                </span>
+              </span>
+            ) : null}
+          </span>
+        </div>
+        <div className="rescuer-case-card-actions">
+          {item.caseStatus === "active" && supportGoalReachedLook ? (
+            <button
+              type="button"
+              className="rescuer-case-card-archive-finish"
+              aria-label={`Archivar caso completado de ${item.name}`}
+              onClick={() => onArchiveCompleted(item.id)}
+            >
+              <Icon name="check.svg" size={22} aria-hidden="true" />
+            </button>
+          ) : item.caseStatus === "active" ? (
+            <button
+              type="button"
+              className="rescuer-case-card-close"
+              aria-label={`Cerrar caso de ${item.name}`}
+              onClick={() => onCloseCase(item.id)}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
+            </button>
+          ) : item.caseStatus === "draft" || item.caseStatus === "rejected" ? (
+            <button
+              type="button"
+              className="rescuer-case-card-close"
+              aria-label={`Eliminar caso de ${item.name}`}
+              onClick={() => onDelete(item.id)}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
+            </button>
+          ) : (
+            <span className="rescuer-case-card-actions-spacer" aria-hidden="true" />
+          )}
+          {supportRichCard ? (
+            <button
+              type="button"
+              className={`rescuer-case-card-expand${needsBreakdownOpen ? " is-expanded" : ""}`}
+              aria-expanded={needsBreakdownOpen}
+              aria-label={
+                needsBreakdownOpen
+                  ? `Ocultar desglose de apoyos de ${item.name}`
+                  : `Ver desglose de apoyos de ${item.name}`
+              }
+              onClick={() => setNeedsBreakdownOpen((open) => !open)}
+            >
+              <svg
+                className="rescuer-case-card-chevron"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M6 9l6 6 6-6"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="rescuer-case-card-edit"
+              disabled={item.caseStatus === "review"}
+              aria-label={
+                item.caseStatus === "review"
+                  ? `Editar no disponible: ${item.name} está en revisión`
+                  : item.caseStatus === "closed"
+                    ? `Reactivar caso de ${item.name}`
+                    : `Editar caso de ${item.name}`
+              }
+              onClick={() => onEdit(item)}
+            >
+              <Icon name="icon-edit.svg" size={20} />
+            </button>
+          )}
+        </div>
+      </div>
+      {rescuerCaseShowSupportFundingBar(item, programFilter) ? (
+        <div
+          className="donate-case-funding-bar rescuer-case-card-funding-bar"
+          aria-hidden="true"
+          role="presentation"
+        >
+          <i style={{ width: `${funding.pct}%` }} />
+        </div>
+      ) : null}
+      {supportRichCard && needsBreakdownOpen && item.needs.length > 0 ? (
+        <section className="rescuer-case-card-needs-breakdown" aria-label="Desglose de apoyos solicitados">
+          <div className="donate-needs-stack">
+            {sortNeedsByType(item.needs).map((need) => (
+              <NeedCard
+                key={need.id}
+                need={need}
+                caseId={item.id}
+                defaultOpen={false}
+                showDonateAction={false}
+                onDonate={() => undefined}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </article>
+  );
+}
+
+function RescuerCasesFilterDialog({
+  open,
+  selected,
+  onChange,
+  onClose,
+}: {
+  open: boolean;
+  selected: PetCase["caseStatus"][];
+  onChange: (next: PetCase["caseStatus"][]) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  const toggle = (status: PetCase["caseStatus"]) => {
+    if (selected.includes(status)) {
+      const next = selected.filter((item) => item !== status);
+      onChange(next.length ? next : [...RESCUER_CASE_LIST_STATUS_DEFAULT]);
+      return;
+    }
+    onChange([...selected, status]);
+  };
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose}>
+      <div className="dialog-card rescuer-cases-filter-dialog" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <header className="adoption-filter-header">
+          <h2>Filtrar</h2>
+        </header>
+        <section className="rescuer-cases-filter-dialog-section">
+          <h3>Estatus</h3>
+          <div className="filter-options rescuer-cases-filter-options" role="group" aria-label="Estatus del caso">
+            {RESCUER_CASE_LIST_STATUS_FILTERS.map((option) => {
+              const on = selected.includes(option.id);
+              return (
+                <label key={option.id} className="filter-check">
+                  <input type="checkbox" checked={on} onChange={() => toggle(option.id)} />
+                  {option.label}
+                </label>
+              );
+            })}
+          </div>
+        </section>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => onChange([...RESCUER_CASE_LIST_STATUS_DEFAULT])}
+        >
+          Mostrar todos
+        </button>
+        <button type="button" className="purple-button" onClick={onClose}>
+          Listo
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RescuerCases() {
   const navigate = useNavigate();
-  const { cases, updateCaseStatus, toggleCaseAdoption, emptyStates } = usePrototypeStore();
+  const location = useLocation();
+  const { cases, updateCaseStatus, emptyStates } = usePrototypeStore();
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
-  const visible = emptyStates ? [] : cases.filter((item) => item.caseStatus !== "closed");
-  const editing = editId ? cases.find((item) => item.id === editId) : null;
+  const [reactivateCaseId, setReactivateCaseId] = useState<string | null>(null);
+  const [closeCaseId, setCloseCaseId] = useState<string | null>(null);
+  const [finishArchiveCaseId, setFinishArchiveCaseId] = useState<string | null>(null);
+  const [caseFilter, setCaseFilter] = useState<RescuerCaseFilter>(() => {
+    const program = new URLSearchParams(location.search).get("program");
+    return program === "support" ? "support" : "adoption";
+  });
+  const [showArchived, setShowArchived] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [statusFilters, setStatusFilters] = useState<PetCase["caseStatus"][]>([...RESCUER_CASE_LIST_STATUS_DEFAULT]);
+
+  useEffect(() => {
+    const program = new URLSearchParams(location.search).get("program");
+    if (program === "support" || program === "adoption") {
+      setCaseFilter(program);
+    }
+  }, [location.search]);
+
+  const closingCase = closeCaseId ? cases.find((item) => item.id === closeCaseId) : null;
+  const finishingArchiveCase = finishArchiveCaseId
+    ? cases.find((item) => item.id === finishArchiveCaseId)
+    : null;
+  const showCasesEmpty = emptyStates || cases.length === 0;
+  const statusFiltersActive =
+    statusFilters.length !== RESCUER_CASE_LIST_STATUS_DEFAULT.length ||
+    !RESCUER_CASE_LIST_STATUS_DEFAULT.every((status) => statusFilters.includes(status));
+  const archiveFilteredCases = useMemo(() => {
+    if (emptyStates) return [];
+    return cases.filter((item) => (showArchived ? item.caseStatus === "closed" : item.caseStatus !== "closed"));
+  }, [cases, emptyStates, showArchived]);
+  const filteredCases = useMemo(() => {
+    return archiveFilteredCases
+      .filter((item) => (showArchived ? true : statusFilters.includes(item.caseStatus)))
+      .filter((item) => (caseFilter === "adoption" ? item.adoption : !item.adoption))
+      .sort(
+        (a, b) =>
+          RESCUER_CASE_STATUS_SORT_ORDER[a.caseStatus] - RESCUER_CASE_STATUS_SORT_ORDER[b.caseStatus] ||
+          a.name.localeCompare(b.name, "es"),
+      );
+  }, [caseFilter, archiveFilteredCases, showArchived, statusFilters]);
+  const adoptionInProgressCases = useMemo(
+    () => filteredCases.filter((item) => RESCUER_ADOPTION_IN_PROGRESS_STATUSES.includes(item.caseStatus)),
+    [filteredCases],
+  );
+  const adoptionSeekingHomeCases = useMemo(() => {
+    const active = filteredCases.filter((item) => item.caseStatus === "active");
+    if (caseFilter !== "support") return active;
+    return [...active].sort((a, b) => {
+      const aReached = rescuerCaseSupportGoalReached(a);
+      const bReached = rescuerCaseSupportGoalReached(b);
+      if (aReached !== bReached) return aReached ? -1 : 1;
+      return a.name.localeCompare(b.name, "es");
+    });
+  }, [filteredCases, caseFilter]);
+  const showProgramCaseSections = !showArchived;
+  const openCaseEdit = (item: PetCase) => {
+    if (item.caseStatus === "review") return;
+    if (item.caseStatus === "closed") {
+      setReactivateCaseId(item.id);
+      return;
+    }
+    if (item.caseStatus === "draft") navigate(`/rescuer/publish?draft=${item.id}`);
+    else if (item.caseStatus === "rejected") navigate(`/rescuer/publish?correct=${item.id}`);
+    else navigate(`/rescuer/publish?edit=${item.id}`);
+  };
+
   return (
     <ScreenShell
       mode="rescuer"
@@ -4857,151 +5859,229 @@ function RescuerCases() {
       overlay={
         <>
           {deleteId ? (
-            <div className="modal-backdrop" onClick={() => setDeleteId(null)}>
-              <div className="bottom-sheet" onClick={(event) => event.stopPropagation()}>
-                <SimulatedBanner />
+            <div className="modal-backdrop center" onClick={() => setDeleteId(null)}>
+              <div className="dialog-card rescuer-cases-filter-dialog" onClick={(event) => event.stopPropagation()}>
+                <button type="button" className="dialog-close" onClick={() => setDeleteId(null)} aria-label="Cerrar">
+                  ×
+                </button>
                 <h2>¿Eliminar este caso?</h2>
-                <p>Esta acción quitará el borrador de Mis Casos.</p>
-                <button className="danger-button" onClick={() => { updateCaseStatus(deleteId, "closed"); setDeleteId(null); }}>Sí, eliminar</button>
-                <button className="secondary-button" onClick={() => setDeleteId(null)}>Cancelar</button>
+                <p>
+                  Esta acción borrará la información previamente capturada de esta mascota y eliminará el seguimiento en
+                  Mis Casos.
+                </p>
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => {
+                    updateCaseStatus(deleteId, "closed");
+                    setDeleteId(null);
+                  }}
+                >
+                  Sí, eliminar
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setDeleteId(null)}>
+                  Cancelar
+                </button>
               </div>
             </div>
           ) : null}
-          {editing ? <EditCaseModal item={editing} onClose={() => setEditId(null)} /> : null}
+          {reactivateCaseId ? (
+            <div className="modal-backdrop center" onClick={() => setReactivateCaseId(null)}>
+              <div className="dialog-card rescuer-cases-filter-dialog" onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="dialog-close"
+                  onClick={() => setReactivateCaseId(null)}
+                  aria-label="Cerrar"
+                >
+                  ×
+                </button>
+                <h2>¿Reactivar este caso?</h2>
+                <p>
+                  Esta acción regresará el caso con un estatus Borrador al seguimiento de Mis Casos.
+                </p>
+                <button
+                  type="button"
+                  className="purple-button"
+                  onClick={() => {
+                    updateCaseStatus(reactivateCaseId, "draft");
+                    setReactivateCaseId(null);
+                    setShowArchived(false);
+                  }}
+                >
+                  Sí, reactivar
+                </button>
+                <button type="button" className="secondary-button" onClick={() => setReactivateCaseId(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {finishingArchiveCase ? (
+            <FinishSupportCaseArchiveDialog
+              item={finishingArchiveCase}
+              onClose={() => setFinishArchiveCaseId(null)}
+            />
+          ) : null}
+          {closingCase ? (
+            caseFilter === "support" && closingCase.caseStatus === "active" ? (
+              <CloseSupportCaseDialog
+                item={closingCase}
+                onClose={() => setCloseCaseId(null)}
+                onArchived={() => setShowArchived(true)}
+              />
+            ) : (
+              <CloseCaseDialog
+                item={closingCase}
+                onClose={() => setCloseCaseId(null)}
+                onArchived={() => setShowArchived(true)}
+              />
+            )
+          ) : null}
+          <RescuerCasesFilterDialog
+            open={filterOpen}
+            selected={statusFilters}
+            onChange={setStatusFilters}
+            onClose={() => setFilterOpen(false)}
+          />
         </>
       }
     >
-      <div className="match-page rescuer-match-page donor-chrome rescuer-cases-page">
+      <div className="rescuer-cases-network donor-chrome">
         <DonorChromeTop />
         <header className="match-top">
           <h1>Mis Casos</h1>
         </header>
 
-        <div className="rescuer-cases-content">
-        <div className="section-heading rescuer-cases-heading">
-          <p>
-            {visible.length === 0 ? "Aún no tienes mascotas publicadas" : `${visible.length} mascotas a tu cuidado`}
-          </p>
-          {visible.length > 0 ? (
-            <button className="purple-button compact" onClick={() => navigate("/rescuer/publish")}>
-              <Icon name="icon-plus-circle.svg" size={16} />
-              Nuevo
-            </button>
-          ) : null}
+        <div className="rescuer-cases-program-row">
+          <div
+            className="filter-gender rescuer-cases-program-filter"
+            role="tablist"
+            aria-label="Filtrar casos por programa"
+          >
+            {RESCUER_CASE_FILTERS.map((filter) => {
+              const selected = caseFilter === filter.id;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`filter-gender-btn${selected ? " is-active" : ""}`}
+                  onClick={() => setCaseFilter(filter.id)}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        {visible.length === 0 ? (
+
+        <div className="rescuer-cases-status-filters">
+            <button
+              type="button"
+              className={`rescuer-cases-filter-btn${statusFiltersActive ? " is-active" : ""}`}
+              onClick={() => setFilterOpen(true)}
+              aria-label="Filtrar casos"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+                <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+              </svg>
+              <span>Filtrar</span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={showArchived}
+              aria-label={showArchived ? "Ver casos activos" : "Ver archivados"}
+              className={`rescuer-cases-status-archive${showArchived ? " is-selected" : ""}`}
+              onClick={() => setShowArchived((value) => !value)}
+            >
+              <Icon name="icon-inbox-archive.svg" size={22} />
+            </button>
+        </div>
+
+        {showCasesEmpty ? (
           <article className="rh-empty-card cases-empty-card">
             <span className="rh-empty-icon">
               <Icon name="rtab-cases.svg" size={32} />
             </span>
             <h3>No tienes casos todavía</h3>
             <p>
-              Cuando publiques una mascota para adopción o donaciones, tus casos aparecerán aquí para que puedas darles seguimiento.
+              Cuando publiques una mascota para adopción o apoyo, tus casos aparecerán aquí para que puedas darles
+              seguimiento.
             </p>
             <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
               <AssetIcon name="empty-publish-plus.svg" size={16} />
               Publicar caso
             </button>
           </article>
-        ) : (
-        <div className="list-stack">
-          {visible.map((item) => {
-            const requested = item.needs.reduce((total, need) => total + need.requested, 0);
-            const funded = item.needs.reduce((total, need) => total + need.funded, 0);
-            const percent = requested ? Math.round((funded / requested) * 100) : 0;
-            return (
-              <article className="manage-case" key={item.id}>
-                {item.caseStatus === "review" ? (
-                  <div className="manage-case-top">
-                    <img src={item.image} alt="" />
-                    <div className="manage-case-body">
-                      <div className="manage-case-head">
-                        <h3>{item.name}</h3>
-                        <span className="status-pill review">
-                          <AssetIcon name="icon-info-blue.svg" size={9} />
-                          {caseStatusLabel.review}
-                        </span>
-                      </div>
-                      <p className="manage-case-review-note">El equipo DopMi lo revisará a la brevedad.</p>
-                    </div>
-                  </div>
-                ) : (
-                <button
-                  type="button"
-                  className="manage-case-top linkish"
-                  onClick={() => {
-                    if (item.caseStatus === "draft") navigate(`/rescuer/publish?draft=${item.id}`);
-                    else if (item.caseStatus === "rejected") navigate(`/rescuer/publish?correct=${item.id}`);
-                    else navigate(`/rescuer/cases/${item.id}`);
-                  }}
-                >
-                  <img src={item.image} alt="" />
-                  <div className="manage-case-body">
-                    <div className="manage-case-head">
-                      <h3>{item.name}</h3>
-                      <span className={`status-pill ${item.caseStatus}`}>{caseStatusLabel[item.caseStatus]}</span>
-                    </div>
-                    <p>{[item.breed, item.age].filter(Boolean).join(" · ")}</p>
-                    {requested > 0 && item.caseStatus === "active" ? (
-                      <>
-                        <div className="funding-line">
-                          <span>Progreso de fondeo</span>
-                          <strong>{percent}%</strong>
-                        </div>
-                        <div className="progress-track"><i style={{ width: `${percent}%` }} /></div>
-                        <small className="funding-meta">
-                          <Icon name="icon-billing.svg" size={14} />
-                          ${funded} recaudados · ${Math.max(requested - funded, 0)} restantes
-                        </small>
-                      </>
-                    ) : null}
-                  </div>
-                </button>
-                )}
-                {item.caseStatus === "review" ? null : (
-                <div className="manage-case-actions">
-                  {item.caseStatus === "draft" ? (
-                    <>
-                      <button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => setDeleteId(item.id)}>
-                        <Icon name="icon-trash.svg" size={18} />
-                      </button>
-                      <button className="purple-button grow" onClick={() => navigate(`/rescuer/publish?draft=${item.id}`)}>Continuar publicación</button>
-                    </>
-                  ) : item.caseStatus === "rejected" ? (
-                    <>
-                      <button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => setDeleteId(item.id)}>
-                        <Icon name="icon-trash.svg" size={18} />
-                      </button>
-                      <button className="purple-button grow" onClick={() => navigate(`/rescuer/publish?correct=${item.id}`)}>Corregir publicación</button>
-                    </>
-                  ) : (
-                    <>
-                      <label className="adoption-toggle">
-                        <button
-                          className={`switch ${item.adoption ? "on" : ""}`}
-                          role="switch"
-                          aria-checked={item.adoption}
-                          aria-label={`Listo para adopción: ${item.name}`}
-                          onClick={() => toggleCaseAdoption(item.id)}
-                        >
-                          <i />
-                        </button>
-                        <span>Listo para adopción</span>
-                      </label>
-                      <button className="secondary-button compact" onClick={() => setEditId(item.id)}>
-                        <Icon name="icon-edit.svg" size={14} />
-                        Editar caso
-                      </button>
-                    </>
-                  )}
+        ) : filteredCases.length === 0 ? (
+          <p className="rescuer-cases-filter-empty">
+            {showArchived
+              ? "No tienes casos archivados."
+              : caseFilter === "adoption"
+                ? "No tienes casos en adopción en este momento."
+                : "No tienes casos recibiendo apoyo en este momento."}
+          </p>
+        ) : showProgramCaseSections ? (
+          <div className="rescuer-cases-sections">
+            {adoptionInProgressCases.length > 0 ? (
+              <section className="rescuer-cases-section" aria-labelledby="rescuer-cases-section-in-progress">
+                <h2 id="rescuer-cases-section-in-progress" className="rescuer-cases-section-title">En proceso</h2>
+                <div className="rescuer-cases-grid">
+                  {adoptionInProgressCases.map((item) => (
+                    <RescuerCaseCardItem
+                      key={item.id}
+                      item={item}
+                      programFilter={caseFilter}
+                      onCloseCase={setCloseCaseId}
+                      onDelete={setDeleteId}
+                      onEdit={openCaseEdit}
+                      onArchiveCompleted={setFinishArchiveCaseId}
+                    />
+                  ))}
                 </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
+              </section>
+            ) : null}
+            {adoptionSeekingHomeCases.length > 0 ? (
+              <section className="rescuer-cases-section" aria-labelledby="rescuer-cases-section-seeking-home">
+                <h2 id="rescuer-cases-section-seeking-home" className="rescuer-cases-section-title">
+                  {caseFilter === "support" ? "Recibiendo apoyo" : "Buscando hogar"}
+                </h2>
+                <div className="rescuer-cases-grid">
+                  {adoptionSeekingHomeCases.map((item) => (
+                    <RescuerCaseCardItem
+                      key={item.id}
+                      item={item}
+                      programFilter={caseFilter}
+                      onCloseCase={setCloseCaseId}
+                      onDelete={setDeleteId}
+                      onEdit={openCaseEdit}
+                      onArchiveCompleted={setFinishArchiveCaseId}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : (
+          <div className="rescuer-cases-grid">
+            {filteredCases.map((item) => (
+              <RescuerCaseCardItem
+                key={item.id}
+                item={item}
+                programFilter={caseFilter}
+                onCloseCase={setCloseCaseId}
+                onDelete={setDeleteId}
+                onEdit={openCaseEdit}
+                onArchiveCompleted={setFinishArchiveCaseId}
+              />
+            ))}
+          </div>
         )}
-        </div>
       </div>
     </ScreenShell>
   );
@@ -5093,28 +6173,7 @@ function RescuerCaseDetail() {
       overlay={
         <>
           {editOpen ? <EditCaseModal item={item} onClose={() => setEditOpen(false)} /> : null}
-          {closeOpen ? (
-            <div className="modal-backdrop center" onClick={() => setCloseOpen(false)}>
-              <div className="dialog-card" onClick={(event) => event.stopPropagation()}>
-                <button className="dialog-close" onClick={() => setCloseOpen(false)} aria-label="Cerrar">×</button>
-                <h2>Cerrar caso</h2>
-                <p>Sube un video de despedida opcional y confirma el cierre del caso.</p>
-                <label className="dialog-field">Motivo<select defaultValue="adoptada"><option value="adoptada">Ya fue adoptada</option><option value="otro">Otro motivo</option></select></label>
-                <label className="upload-field">Video de despedida (opcional)<input type="file" accept="video/*" /></label>
-                <button
-                  className="danger-button"
-                  onClick={() => {
-                    updateCaseStatus(item.id, "closed");
-                    setCloseOpen(false);
-                    navigate("/rescuer/cases");
-                  }}
-                >
-                  Confirmar cierre
-                </button>
-                <button className="secondary-button" onClick={() => setCloseOpen(false)}>Cancelar</button>
-              </div>
-            </div>
-          ) : null}
+          {closeOpen ? <CloseCaseDialog item={item} onClose={() => setCloseOpen(false)} /> : null}
         </>
       }
     >
@@ -5219,6 +6278,38 @@ type DraftNeedItem = {
   urgent?: boolean;
   badge?: string;
 };
+
+function needsToDraftItems(needs: Need[]): DraftNeedItem[] {
+  return needs.map((need) => ({
+    id: need.id,
+    type: need.type === "Otra" ? "Veterinario" : need.type,
+    title: need.title,
+    amount: need.requested,
+    urgent: need.urgent,
+  }));
+}
+
+function draftFromPetCase(item: PetCase) {
+  return {
+    petName: item.name,
+    species: item.species,
+    sex: item.sex,
+    petSize: "Mediano",
+    age: item.age,
+    story: item.story,
+    publishMode: item.adoption ? "adoption" : "donation",
+    mainPetPhoto: item.image,
+    photos: [] as string[],
+    location: item.location,
+    vaccinated: item.health.vaccinated,
+    sterilized: item.health.sterilized,
+    specialCare: item.health.specialCare !== "Ninguno" && Boolean(item.health.specialCare),
+    socialDogs: item.social.dogs,
+    socialCats: item.social.cats,
+    socialChildren: item.social.children,
+    needItemsJson: JSON.stringify(needsToDraftItems(item.needs)),
+  };
+}
 
 const NEED_EMOJI: Record<DraftNeedItem["type"], string> = {
   Comida: "🥣",
@@ -5415,7 +6506,7 @@ function PublishDonationDetailPreview({
             <section className="donate-case-needs">
               <h2>Ayúdame a recuperar:</h2>
               <div className="donate-needs-stack">
-                {needs.map((need) => (
+                {sortNeedsByType(needs).map((need) => (
                   <NeedCard
                     key={need.id}
                     need={need}
@@ -5539,12 +6630,17 @@ function PublishAdoptionDetailPreview({
 
 function PublishFlow() {
   const navigate = useNavigate();
-  const { verification, draft, updateDraft, publishDraft, donorProfile, rescuerProfile } = usePrototypeStore();
+  const { verification, draft, updateDraft, publishDraft, updateCase, updateCaseStatus, cases, donorProfile, rescuerProfile } =
+    usePrototypeStore();
   const location = useLocation();
+  const publishSearch = new URLSearchParams(location.search);
+  const editingCaseId = publishSearch.get("edit");
+  const resumeCaseId = editingCaseId || publishSearch.get("correct") || publishSearch.get("draft");
   const correcting = location.search.includes("correct");
-  const continuing = location.search.includes("draft");
+  const continuing =
+    location.search.includes("draft") || location.search.includes("edit") || location.search.includes("correct");
   const needsVerification = verification !== "verified";
-  const [step, setStep] = useState(correcting || continuing ? 1 : 0);
+  const [step, setStep] = useState(continuing ? 1 : 0);
   const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
   const photos = Array.isArray(draft.photos) ? (draft.photos as string[]) : [];
   const mainPetPhotoStored = String(draft.mainPetPhoto || "");
@@ -5555,6 +6651,15 @@ function PublishFlow() {
       return [];
     }
   });
+  useEffect(() => {
+    if (!resumeCaseId) return;
+    const item = cases.find((entry) => entry.id === resumeCaseId);
+    if (!item) return;
+    updateDraft(draftFromPetCase(item));
+    setMode(item.adoption ? "adoption" : "donation");
+    setNeedItems(needsToDraftItems(item.needs));
+    setStep(1);
+  }, [resumeCaseId, cases, updateDraft]);
   const [sheet, setSheet] = useState<"food" | "medicine" | "vet" | null>(null);
   const emptyFoodForm = {
     name: "",
@@ -5848,6 +6953,7 @@ function PublishFlow() {
 
   const finalizePublish = () => {
     const composedAge = adoptionPublishedAgeLabel(String(draft.age || ""));
+    const nextImage = String(mainPetPhotoStored || photos[0] || "");
     if (mode === "adoption") {
       const conv = convivenciaSelected;
       updateDraft({
@@ -5860,7 +6966,35 @@ function PublishFlow() {
     } else {
       updateDraft({ publishMode: mode, needItemsJson: JSON.stringify(needItems) });
     }
-    publishDraft("review");
+    if (editingCaseId) {
+      const existing = cases.find((entry) => entry.id === editingCaseId);
+      if (existing) {
+        const donationNeeds =
+          mode === "donation"
+            ? needItems.map((need) => ({
+                id: need.id,
+                title: need.title,
+                type: need.type,
+                requested: need.amount,
+                funded: existing.needs.find((entry) => entry.id === need.id)?.funded ?? 0,
+                urgent: need.urgent,
+                recurring: need.type === "Comida",
+                status: existing.needs.find((entry) => entry.id === need.id)?.status ?? "active",
+              }))
+            : existing.needs;
+        updateCase(editingCaseId, {
+          name: String(draft.petName || existing.name),
+          age: composedAge || String(draft.age || existing.age),
+          story: String(draft.story || existing.story),
+          adoption: mode === "adoption",
+          needs: donationNeeds,
+          ...(nextImage ? { image: nextImage } : {}),
+        });
+        updateCaseStatus(editingCaseId, "review");
+      }
+    } else {
+      publishDraft("review");
+    }
     setPublishSuccessOpen(false);
     navigate("/rescuer/cases");
   };
@@ -6220,7 +7354,13 @@ function PublishFlow() {
             ? "Un poco más..."
             : "Publicar caso";
   const adoptionAgeLabel = adoptionPublishedAgeLabel(String(draft.age || "")) || "—";
-  const goPrevStep = () => setStep(step <= 1 ? 0 : step - 1);
+  const goPrevStep = () => {
+    if (continuing && step <= 1) {
+      navigate("/rescuer/cases");
+      return;
+    }
+    setStep(step <= 1 ? 0 : step - 1);
+  };
 
   return (
     <ScreenShell
@@ -7672,7 +8812,8 @@ function RescuerMessages() {
   const navigate = useNavigate();
   const { messages, emptyStates, cases } = usePrototypeStore();
   const last = messages[messages.length - 1];
-  const [collapsedCaseIds, setCollapsedCaseIds] = useState<Set<string>>(() => new Set());
+  const [petFilter, setPetFilter] = useState<string>("all");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
   const chatThreads = useMemo(() => {
     if (emptyStates) return [];
@@ -7687,124 +8828,149 @@ function RescuerMessages() {
     });
   }, [emptyStates, last?.author, last?.text, last?.time]);
 
-  const adoptionSections = useMemo(() => {
-    const openCases = cases.filter((item) => item.adoption && item.caseStatus === "active");
-    return openCases
-      .map((caseItem) => ({
-        caseItem,
-        chats: sortRescuerChatsByUnread(chatThreads.filter((thread) => thread.petId === caseItem.id)),
-      }))
-      .sort((a, b) => {
-        const unreadA = rescuerThreadUnreadTotal(a.chats);
-        const unreadB = rescuerThreadUnreadTotal(b.chats);
-        if (unreadB !== unreadA) return unreadB - unreadA;
-        return a.caseItem.name.localeCompare(b.caseItem.name, "es");
-      });
-  }, [cases, chatThreads]);
+  const openAdoptionCases = useMemo(
+    () => cases.filter((item) => item.adoption && item.caseStatus === "active"),
+    [cases],
+  );
 
-  const hasOpenAdoption = adoptionSections.length > 0;
+  useEffect(() => {
+    if (petFilter !== "all" && !openAdoptionCases.some((item) => item.id === petFilter)) {
+      setPetFilter("all");
+    }
+  }, [openAdoptionCases, petFilter]);
 
-  const toggleSection = (caseId: string) => {
-    setCollapsedCaseIds((current) => {
-      const next = new Set(current);
-      if (next.has(caseId)) next.delete(caseId);
-      else next.add(caseId);
-      return next;
+  const filteredThreads = useMemo(() => {
+    let pool = chatThreads.filter((thread) => !thread.archived);
+    if (unreadOnly) pool = pool.filter((thread) => thread.unread > 0);
+    if (petFilter !== "all") pool = pool.filter((thread) => thread.petId === petFilter);
+    return sortRescuerChatsByUnread(pool);
+  }, [chatThreads, unreadOnly, petFilter]);
+
+  const petNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    openAdoptionCases.forEach((item) => map.set(item.id, item.name));
+    cases.forEach((item) => {
+      if (!map.has(item.id)) map.set(item.id, item.name);
     });
-  };
+    return map;
+  }, [cases, openAdoptionCases]);
+
+  const petImageById = useMemo(() => {
+    const map = new Map<string, string>();
+    cases.forEach((item) => map.set(item.id, item.image));
+    return map;
+  }, [cases]);
+
+  const unreadByPetId = useMemo(() => {
+    const totals = new Map<string, number>();
+    chatThreads.forEach((thread) => {
+      if (thread.archived) return;
+      totals.set(thread.petId, (totals.get(thread.petId) ?? 0) + thread.unread);
+    });
+    return totals;
+  }, [chatThreads]);
 
   return (
     <ScreenShell mode="rescuer" className="match-shell">
-      <div className="match-page rescuer-match-page donor-chrome">
+      <div className="match-page rescuer-match-page rescuer-messages-page donor-chrome">
         <DonorChromeTop />
         <header className="match-top">
           <h1>Mensajes</h1>
         </header>
 
-        <section className="match-chats rescuer-adoption-chats" aria-label="Chats por caso en adopción">
-          {!hasOpenAdoption ? (
-            <div className="match-chats-empty-block">
-              <p className="match-chats-empty">
-                No tienes casos en adopción abiertos. Activa la adopción en un caso activo para recibir
-                mensajes de interesados.
-              </p>
-              <button type="button" className="purple-button" onClick={() => navigate("/rescuer/cases")}>
-                Ver mis casos
+        <div className="rescuer-chat-pet-filters" role="tablist" aria-label="Filtrar por mascota">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={petFilter === "all"}
+                className={`rescuer-chat-pet-card${petFilter === "all" ? " is-active" : ""}`}
+                onClick={() => setPetFilter("all")}
+              >
+                <span className="rescuer-chat-pet-card-avatar rescuer-chat-pet-card-avatar--all" aria-hidden="true">
+                  <Icon name="icon-messages.svg" size={22} />
+                </span>
+                <span className="rescuer-chat-pet-card-name">Todos</span>
               </button>
-            </div>
-          ) : (
-            <div className="rescuer-adoption-chats-stack">
-              {adoptionSections.map(({ caseItem, chats }) => {
-                const expanded = !collapsedCaseIds.has(caseItem.id);
-                const openCount = chats.length;
-                const sectionUnread = rescuerThreadUnreadTotal(chats);
+              {openAdoptionCases.map((caseItem) => {
+                const unread = unreadByPetId.get(caseItem.id) ?? 0;
                 return (
-                  <article
+                  <button
+                    type="button"
                     key={caseItem.id}
-                    className={`rescuer-adoption-chats-section${expanded ? "" : " is-collapsed"}`}
+                    role="tab"
+                    aria-selected={petFilter === caseItem.id}
+                    className={`rescuer-chat-pet-card${petFilter === caseItem.id ? " is-active" : ""}`}
+                    onClick={() => setPetFilter(caseItem.id)}
                   >
-                    <button
-                      type="button"
-                      className="rescuer-adoption-chats-head"
-                      aria-expanded={expanded}
-                      onClick={() => toggleSection(caseItem.id)}
-                    >
-                      <span className="rescuer-adoption-pet-thumb-wrap">
-                        <img className="rescuer-adoption-pet-thumb" src={caseItem.image} alt="" />
-                        {sectionUnread > 0 ? (
-                          <span className="rescuer-adoption-section-badge" aria-label={`${sectionUnread} sin leer`}>
-                            {sectionUnread > 9 ? "9+" : sectionUnread}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="rescuer-adoption-chats-meta">
-                        <strong>{caseItem.name}</strong>
-                        <span className="rescuer-adoption-chats-count">
-                          {rescuerOpenChatCountLabel(openCount)}
-                        </span>
-                      </span>
-                      <span className="rescuer-adoption-chats-chevron" aria-hidden="true">
-                        <Chevron />
-                      </span>
-                    </button>
-                    {expanded ? (
-                      <div className="rescuer-adoption-chats-body">
-                        {chats.length === 0 ? (
-                          <p className="rescuer-adoption-chats-empty">Aún no hay mensajes para este caso.</p>
-                        ) : (
-                          <div className="thread-list donor-thread-list match-thread-list rescuer-thread-list">
-                            {chats.map((thread) => (
-                              <button
-                                type="button"
-                                className="thread-row chats-thread-row"
-                                key={`${caseItem.id}-${thread.adopter}`}
-                                onClick={() =>
-                                  navigate(`/rescuer/messages/${thread.petId}`, { state: { adopter: thread.adopter } })
-                                }
-                              >
-                                <span className="thread-avatar adopter-thread-avatar" aria-hidden="true">
-                                  {thread.adopterInitial}
-                                </span>
-                                <span className="thread-main">
-                                  <span className="thread-head">
-                                    <strong>{thread.adopter}</strong>
-                                    <time>{thread.time}</time>
-                                  </span>
-                                  <p>{thread.preview}</p>
-                                </span>
-                                {thread.unread > 0 ? <span className="thread-badge">{thread.unread}</span> : null}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-                  </article>
+                    <span className="rescuer-chat-pet-card-avatar-wrap">
+                      <img className="rescuer-chat-pet-card-avatar" src={caseItem.image} alt="" />
+                      {unread > 0 ? (
+                        <span className="rescuer-chat-pet-card-badge">{unread > 9 ? "9+" : unread}</span>
+                      ) : null}
+                    </span>
+                    <span className="rescuer-chat-pet-card-name">{caseItem.name}</span>
+                  </button>
                 );
               })}
-            </div>
-          )}
-        </section>
+        </div>
+
+        <div className="rescuer-chats-block">
+              <div className="rescuer-chats-panel-head">
+                <h2>Chats</h2>
+                <button
+                  type="button"
+                  className={`rescuer-chats-unread-filter${unreadOnly ? " is-active" : ""}`}
+                  aria-pressed={unreadOnly}
+                  onClick={() => setUnreadOnly((on) => !on)}
+                >
+                  {unreadOnly ? "Mostrar todos" : "Sin leer"}
+                </button>
+              </div>
+              <section className="rescuer-chats-panel" aria-label="Lista de chats">
+                {filteredThreads.length === 0 ? (
+                  <p className="rescuer-chats-panel-empty">
+                    {unreadOnly ? "No tienes mensajes sin leer." : "Aún no tienes mensajes"}
+                  </p>
+                ) : (
+                  <div className="thread-list rescuer-chats-thread-list">
+                    {filteredThreads.map((thread) => {
+                      const petName = petNameById.get(thread.petId) ?? "Mascota";
+                      const petImage = petImageById.get(thread.petId);
+                      return (
+                        <button
+                          type="button"
+                          className="thread-row rescuer-chat-thread-row"
+                          key={`${thread.petId}-${thread.adopter}`}
+                          onClick={() =>
+                            navigate(`/rescuer/messages/${thread.petId}`, { state: { adopter: thread.adopter } })
+                          }
+                        >
+                          {petImage ? (
+                            <img className="rescuer-chat-thread-photo" src={petImage} alt="" />
+                          ) : (
+                            <span className="thread-avatar adopter-thread-avatar" aria-hidden="true">
+                              {thread.adopterInitial}
+                            </span>
+                          )}
+                          <span className="thread-main">
+                            <span className="thread-head rescuer-chat-thread-head">
+                              <span className="rescuer-chat-thread-title">
+                                <strong>{petName}</strong>
+                                <span className="rescuer-chat-thread-sep" aria-hidden="true">·</span>
+                                <span className="rescuer-chat-thread-adopter">{thread.adopter}</span>
+                              </span>
+                              <time>{thread.time}</time>
+                            </span>
+                            <p className="rescuer-chat-thread-preview">{thread.preview}</p>
+                          </span>
+                          {thread.unread > 0 ? <span className="thread-badge">{thread.unread}</span> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+        </div>
       </div>
     </ScreenShell>
   );

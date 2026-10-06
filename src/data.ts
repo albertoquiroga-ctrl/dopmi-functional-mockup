@@ -23,9 +23,27 @@ export type PetCase = {
   distance: string;
   adoption: boolean;
   caseStatus: "draft" | "review" | "active" | "rejected" | "closed";
+  /** Motivo de cierre (casos de adopción archivados). */
+  closeReason?: "adoptada" | "otro";
+  /** Solo si closeReason es adoptada. */
+  adoptedWithDopmiSupport?: boolean;
+  /** Solo si closeReason es otro. */
+  closeReasonDescription?: string;
+  /** Días desde que el admin aprobó la publicación (solo casos activos/archivados). */
+  daysSinceApproval?: number;
+  /** Visualizaciones del perfil público del caso. */
+  profileViews?: number;
+  /** Veces que adoptantes guardaron la mascota en Mis match (desde Adoptar). */
+  matchSaves?: number;
   health: { vaccinated: boolean; sterilized: boolean; specialCare: string };
   social: { dogs: boolean; cats: boolean; children: boolean };
   needs: Need[];
+};
+
+export type PetCaseCloseMeta = {
+  closeReason: PetCase["closeReason"];
+  adoptedWithDopmiSupport?: boolean;
+  closeReasonDescription?: string;
 };
 
 export const initialCases: PetCase[] = [
@@ -37,12 +55,15 @@ export const initialCases: PetCase[] = [
     sex: "Hembra",
     species: "Perro",
     image: "/assets/luna-card.png",
-    story: "La encontraron abandonada en un parque. Es dulce, juguetona y busca una familia para siempre.",
+    story: "Ejemplo mockup: adopción activa en seguimiento (estatus Activo).",
     location: "Monterrey, MX",
     rescuer: "María R.",
     distance: "1.2 km",
     adoption: true,
     caseStatus: "active",
+    daysSinceApproval: 23,
+    profileViews: 100,
+    matchSaves: 1,
     health: { vaccinated: true, sterilized: false, specialCare: "Seguimiento de crecimiento" },
     social: { dogs: true, cats: true, children: true },
     needs: [
@@ -59,12 +80,14 @@ export const initialCases: PetCase[] = [
     sex: "Macho",
     species: "Gato",
     image: "/assets/milo-card.png",
-    story: "Atropellado; se recupera bien gracias al apoyo de la comunidad.",
+    story: "Ejemplo mockup: apoyo activo con meta en curso (estatus Activo, tarjeta crema).",
     location: "San Pedro, MX",
     rescuer: "Carlos Ruiz",
     distance: "2.1 km",
     adoption: false,
     caseStatus: "active",
+    daysSinceApproval: 41,
+    profileViews: 68,
     health: { vaccinated: true, sterilized: true, specialCare: "Curación diaria" },
     social: { dogs: false, cats: true, children: true },
     needs: [
@@ -81,17 +104,73 @@ export const initialCases: PetCase[] = [
     sex: "Hembra",
     species: "Perro",
     image: "/assets/nina-card.png",
-    story: "Nina necesita una revisión veterinaria antes de encontrar un hogar tranquilo.",
+    story: "Ejemplo mockup: apoyo activo con meta cumplida (estatus Finalizado, tarjeta verde).",
     location: "Guadalupe, MX",
     rescuer: "Refugio Patitas",
     distance: "4.8 km",
     adoption: false,
     caseStatus: "active",
+    daysSinceApproval: 9,
+    profileViews: 34,
     health: { vaccinated: false, sterilized: true, specialCare: "Revisión de cadera" },
     social: { dogs: true, cats: false, children: true },
     needs: [
-      { id: "nina-vet", title: "Estudios de cadera", type: "Veterinario", requested: 95, funded: 45, urgent: true, status: "active" },
+      { id: "nina-vet", title: "Estudios de cadera", type: "Veterinario", requested: 95, funded: 95, urgent: true, status: "funded" },
     ],
+  },
+  {
+    id: "mia-draft",
+    name: "Mía",
+    breed: "Mestiza",
+    age: "2 años",
+    sex: "Hembra",
+    species: "Perro",
+    image: "/assets/nina-card.png",
+    story: "Borrador de adopción para el mockup de estatus.",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "1.0 km",
+    adoption: true,
+    caseStatus: "draft",
+    health: { vaccinated: false, sterilized: false, specialCare: "Por definir" },
+    social: { dogs: true, cats: true, children: true },
+    needs: [],
+  },
+  {
+    id: "sol-review",
+    name: "Sol",
+    breed: "Mestizo",
+    age: "1 año",
+    sex: "Macho",
+    species: "Perro",
+    image: "/assets/publish-sample-pet.jpg",
+    story: "Caso de adopción en revisión (ejemplo de estatus).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "1.5 km",
+    adoption: true,
+    caseStatus: "review",
+    health: { vaccinated: true, sterilized: false, specialCare: "Ninguno" },
+    social: { dogs: true, cats: false, children: true },
+    needs: [],
+  },
+  {
+    id: "max-rejected",
+    name: "Max",
+    breed: "Mestizo",
+    age: "3 años",
+    sex: "Macho",
+    species: "Perro",
+    image: "/assets/rocky.png",
+    story: "Caso de adopción rechazado que requiere corrección (ejemplo de estatus).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "2.2 km",
+    adoption: true,
+    caseStatus: "rejected",
+    health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
+    social: { dogs: true, cats: true, children: false },
+    needs: [],
   },
   {
     id: "rocky",
@@ -108,6 +187,8 @@ export const initialCases: PetCase[] = [
     distance: "3.4 km",
     adoption: true,
     caseStatus: "active",
+    daysSinceApproval: 12,
+    profileViews: 56,
     health: { vaccinated: true, sterilized: true, specialCare: "Recuperación post-cirugía" },
     social: { dogs: true, cats: false, children: true },
     needs: [
@@ -173,6 +254,95 @@ export const initialCases: PetCase[] = [
     social: { dogs: true, cats: true, children: true },
     needs: [
       { id: "toby-vet", title: "Cirugía de emergencia", type: "Veterinario", requested: 240, funded: 0, urgent: true, status: "active" },
+    ],
+  },
+  {
+    id: "cielo",
+    name: "Cielo",
+    breed: "Mestiza",
+    age: "5 años",
+    sex: "Hembra",
+    species: "Perro",
+    image: "/assets/nina-card.png",
+    story: "Ejemplo mockup: adopción archivada tras adopción (estatus Adoptado, verde).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "2.0 km",
+    adoption: true,
+    caseStatus: "closed",
+    closeReason: "adoptada",
+    daysSinceApproval: 120,
+    profileViews: 210,
+    health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
+    social: { dogs: true, cats: false, children: true },
+    needs: [],
+  },
+  {
+    id: "bruno-adopt-cerrado",
+    name: "Bruno",
+    breed: "Mestizo",
+    age: "6 años",
+    sex: "Macho",
+    species: "Perro",
+    image: "/assets/toby.png",
+    story: "Ejemplo mockup: adopción archivada con motivo distinto a adopción (estatus Cerrado).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "2.8 km",
+    adoption: true,
+    caseStatus: "closed",
+    closeReason: "otro",
+    closeReasonDescription: "La familia canceló el proceso de adopción.",
+    daysSinceApproval: 45,
+    profileViews: 88,
+    health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
+    social: { dogs: true, cats: false, children: true },
+    needs: [],
+  },
+  {
+    id: "copo-apoyo-arch-final",
+    name: "Copo",
+    breed: "Mestizo",
+    age: "3 años",
+    sex: "Macho",
+    species: "Perro",
+    image: "/assets/milo-card.png",
+    story: "Ejemplo mockup: apoyo archivado al completar la meta (estatus Finalizado, tarjeta verde).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "1.6 km",
+    adoption: false,
+    caseStatus: "closed",
+    daysSinceApproval: 62,
+    profileViews: 142,
+    health: { vaccinated: true, sterilized: true, specialCare: "Ninguno" },
+    social: { dogs: true, cats: true, children: true },
+    needs: [
+      { id: "copo-vet", title: "Esterilización", type: "Veterinario", requested: 60, funded: 60, status: "funded" },
+      { id: "copo-food", title: "Alimento recuperación", type: "Comida", requested: 35, funded: 35, status: "funded" },
+    ],
+  },
+  {
+    id: "flecha-apoyo-arch-cerrado",
+    name: "Flecha",
+    breed: "Mestiza",
+    age: "2 años",
+    sex: "Hembra",
+    species: "Perro",
+    image: "/assets/luna-card.png",
+    story: "Ejemplo mockup: apoyo archivado antes de la meta (estatus Cerrado, tarjeta gris).",
+    location: "Monterrey, MX",
+    rescuer: "María R.",
+    distance: "3.1 km",
+    adoption: false,
+    caseStatus: "closed",
+    daysSinceApproval: 28,
+    profileViews: 51,
+    health: { vaccinated: false, sterilized: false, specialCare: "Control veterinario" },
+    social: { dogs: true, cats: false, children: true },
+    needs: [
+      { id: "flecha-vet", title: "Consulta y estudios", type: "Veterinario", requested: 70, funded: 30, status: "active" },
+      { id: "flecha-med", title: "Antibiótico", type: "Medicina", requested: 25, funded: 10, status: "active" },
     ],
   },
 ];
