@@ -3392,14 +3392,11 @@ textarea { min-height: 112px; resize: vertical; }
   justify-content: flex-start;
   align-content: start;
   align-items: stretch;
-  gap: 28px;
+  gap: 12px;
   /* padding viene de .donor-chrome */
 }
 .donate-home.donor-chrome {
   padding-bottom: 0;
-}
-.donate-home > .discover-top + .donate-discover {
-  margin-top: -8px;
 }
 .donate-discover {
   display: grid;
@@ -4056,16 +4053,69 @@ textarea { min-height: 112px; resize: vertical; }
 .profile-page { display: grid; gap: 18px; padding-bottom: 88px; }
 .profile-page.donor-chrome {
   align-content: start;
+  gap: 12px;
+}
+.donate-home.donor-chrome > .match-top,
+.match-page.donor-chrome > .match-top,
+.profile-page.donor-chrome > .match-top,
+.rescuer-cases-network.donor-chrome > .match-top,
+.match-page.rescuer-match-page.donor-chrome > .match-top {
+  margin-top: 8px;
+  margin-bottom: 0;
+  justify-content: flex-start;
+  min-height: 46px;
+  padding: 2px 2px 4px;
 }
 .profile-page.donor-chrome > .match-top {
   margin-bottom: 0;
 }
+.rescuer-profile-page.donor-chrome {
+  width: 100%;
+  box-sizing: border-box;
+}
+.rescuer-profile-page.donor-chrome > .discover-top {
+  width: 100%;
+}
 .rescuer-home-network.donor-chrome > .match-top {
   margin-bottom: 0;
+}
+.rh-home-greeting {
+  display: grid;
+  gap: 2px;
+}
+.rh-home-greeting .match-top {
+  margin-top: 8px;
+  min-height: 0;
+  padding-bottom: 0;
+}
+.rh-home-greeting .rh-home-verification-status {
+  margin: 0 2px;
+}
+.rh-home-greeting .rh-home-verification-status.is-verified,
+.rh-home-greeting .rh-home-verification-status--action {
+  color: var(--purple);
+  font-weight: 600;
+}
+.rh-home-verification-status--action {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.rh-home-verification-status--action:focus-visible {
+  outline: 3px solid rgba(120, 65, 242, 0.28);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 .profile-page--soft {
   gap: 20px;
   background: #fff;
+}
+.profile-page.profile-page--soft.donor-chrome {
+  gap: 12px;
 }
 
 .profile-intro {
@@ -4337,6 +4387,104 @@ textarea { min-height: 112px; resize: vertical; }
   background-color: var(--ink);
 }
 
+.profile-feature.profile-feature--cause-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(100px, 36%);
+  align-items: stretch;
+  gap: 0;
+  min-height: 132px;
+  padding: 0;
+  overflow: hidden;
+  background: #efe8ff;
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(120, 65, 242, 0.12);
+}
+.profile-feature.profile-feature--cause-banner:hover {
+  box-shadow: 0 10px 28px rgba(120, 65, 242, 0.18);
+}
+.profile-feature-banner-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px 12px 16px 16px;
+  z-index: 1;
+}
+.profile-feature--cause-banner .profile-feature-copy {
+  gap: 6px;
+}
+.profile-feature--cause-banner .profile-feature-copy strong {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #3b1a8c;
+  line-height: 1.15;
+}
+.profile-feature--cause-banner .profile-feature-copy small {
+  font-size: 12px;
+  font-weight: 500;
+  color: #5c4f7a;
+  line-height: 1.35;
+}
+.profile-feature-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 6px 16px rgba(120, 65, 242, 0.28);
+}
+.profile-feature-banner-cta .icon-mask {
+  background-color: #fff;
+}
+.profile-feature-banner-media {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: visible;
+  background: transparent;
+}
+.profile-feature-banner-media img {
+  width: auto;
+  max-width: 112px;
+  height: auto;
+  max-height: 132px;
+  object-fit: contain;
+  object-position: bottom center;
+  margin-bottom: -4px;
+  transform: translateX(4px);
+}
+
+/* Perfil donante: banner Croquetas con causa en amarillo de marca */
+.profile-page .profile-feature.profile-feature--cause-banner {
+  background: var(--yellow);
+  box-shadow: 0 12px 32px rgba(247, 203, 45, 0.4);
+}
+.profile-page .profile-feature.profile-feature--cause-banner:hover {
+  box-shadow: 0 14px 36px rgba(247, 203, 45, 0.48);
+}
+.profile-page .profile-feature--cause-banner .profile-feature-copy strong {
+  color: var(--ink);
+}
+.profile-page .profile-feature--cause-banner .profile-feature-copy small {
+  color: #5c4a12;
+}
+.profile-page .profile-feature-banner-cta {
+  background: #15110d;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(21, 17, 13, 0.22);
+}
+.profile-page .profile-feature-banner-cta .icon-mask {
+  background-color: #fff;
+}
+
 .profile-feature--mode {
   background: #fff8e0;
   color: var(--ink);
@@ -4346,11 +4494,21 @@ textarea { min-height: 112px; resize: vertical; }
   background: #fff3cc;
   box-shadow: 0 14px 36px rgba(21, 17, 13, 0.12);
 }
+.profile-feature--mode .profile-feature-copy {
+  gap: 4px;
+}
 .profile-feature--mode .profile-feature-copy strong {
   color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
 }
 .profile-feature--mode .profile-feature-copy small {
   color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
 }
 .profile-feature--mode .profile-feature-cta {
   background: #15110d;
@@ -4358,6 +4516,38 @@ textarea { min-height: 112px; resize: vertical; }
   box-shadow: 0 6px 16px rgba(21, 17, 13, 0.22);
 }
 .profile-feature--mode .profile-feature-cta .icon-mask {
+  background-color: #fff;
+}
+.rescuer-profile-page .profile-feature.profile-feature--mode {
+  background: #efe8ff;
+  box-shadow: 0 8px 24px rgba(120, 65, 242, 0.12);
+}
+.rescuer-profile-page .profile-feature.profile-feature--mode:hover {
+  background: #e8deff;
+  box-shadow: 0 10px 28px rgba(120, 65, 242, 0.18);
+}
+.rescuer-profile-page .profile-feature--mode .profile-feature-copy {
+  gap: 4px;
+}
+.rescuer-profile-page .profile-feature--mode .profile-feature-copy strong {
+  color: #3b1a8c;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: normal;
+}
+.rescuer-profile-page .profile-feature--mode .profile-feature-copy small {
+  color: #5c4f7a;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.rescuer-profile-page .profile-feature--mode .profile-feature-cta {
+  background: #15110d;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(21, 17, 13, 0.22);
+}
+.rescuer-profile-page .profile-feature--mode .profile-feature-cta .icon-mask {
   background-color: #fff;
 }
 .profile-saved-lead {
@@ -4686,6 +4876,7 @@ textarea { min-height: 112px; resize: vertical; }
 
 /* Perfil rescatista: hero púrpura + tipografía AA sobre marca */
 .profile-hero.rescuer {
+  align-items: center;
   background: linear-gradient(155deg, #7841f2 0%, #9b6cff 55%, #c4a8ff 100%);
   box-shadow: 0 6px 18px rgba(120, 65, 242, 0.28);
 }
@@ -7505,13 +7696,13 @@ div.profile-activity-row {
   border-color: var(--purple);
   color: var(--purple);
 }
-.rescuer-home { display: grid; gap: 20px; padding: 0 2px 28px; width: 100%; box-sizing: border-box; }
+.rescuer-home { display: grid; gap: 20px; padding: 0 2px 4px; width: 100%; box-sizing: border-box; }
 .rescuer-home h2 { margin: 0; font-size: 16px; font-weight: 600; color: #151423; }
 
 .rescuer-home-network.donor-chrome {
   display: grid;
   gap: 12px;
-  padding-bottom: 96px;
+  padding-bottom: 0;
   width: 100%;
   box-sizing: border-box;
   justify-items: stretch;
@@ -7707,22 +7898,8 @@ div.profile-activity-row {
   background: #efe8ff;
   box-shadow: none;
 }
-.rescuer-home .profile-feature.profile-feature--cause {
-  background: #efe8ff;
-  color: var(--ink);
-  box-shadow: 0 8px 24px rgba(21, 17, 13, 0.06);
-}
-.rescuer-home .profile-feature.profile-feature--cause:hover {
-  box-shadow: 0 10px 28px rgba(120, 65, 242, 0.14);
-}
-.rescuer-home .profile-feature.profile-feature--cause .profile-feature-copy strong {
-  color: #151423;
-}
-.rescuer-home .profile-feature.profile-feature--cause .profile-feature-copy small {
-  color: var(--muted);
-}
-.rescuer-home .profile-feature.profile-feature--cause .profile-feature-cta .icon-mask {
-  background-color: var(--ink);
+.rescuer-home .profile-feature.profile-feature--cause-banner {
+  box-shadow: 0 8px 24px rgba(120, 65, 242, 0.1);
 }
 
 .rh-section-head {
@@ -7786,6 +7963,15 @@ div.profile-activity-row {
   height: 24px;
 }
 
+.rh-empty-card--compact {
+  padding: 20px 24px;
+}
+.rh-empty-card--compact > p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted);
+}
 .rh-empty-card {
   display: grid;
   justify-items: center;
@@ -7848,6 +8034,19 @@ div.profile-activity-row {
   letter-spacing: -0.03em;
   color: #151423;
 }
+.rh-pending-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding-top: 10px;
+}
+.rh-pending-tabs-row .rh-pending-tabs {
+  flex: 1;
+  min-width: 0;
+}
 .rh-pending-tabs {
   display: flex;
   align-items: center;
@@ -7856,6 +8055,17 @@ div.profile-activity-row {
   margin: -4px 0 2px;
   padding: 2px 0 4px;
   scrollbar-width: none;
+}
+.rescuer-cases-filter-btn--icon-only {
+  flex-shrink: 0;
+  padding: 2px;
+}
+.rh-pending-filter-empty {
+  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: left;
 }
 .rh-pending-tabs::-webkit-scrollbar {
   display: none;
@@ -7898,6 +8108,101 @@ div.profile-activity-row {
   width: 0;
   height: 0;
 }
+
+.rh-adoption-funnel {
+  width: 100%;
+  height: 192px;
+  min-height: 192px;
+  max-height: 192px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+}
+.rh-adoption-funnel-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px 10px 8px;
+  border-radius: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: start;
+  gap: 4px 6px;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgba(21, 17, 13, 0.05);
+}
+.rh-adoption-funnel-card--views {
+  background: #f5f0ff;
+}
+.rh-adoption-funnel-card--matches {
+  background: #fff4eb;
+}
+.rh-adoption-funnel-card--messages {
+  background: #eef5ff;
+}
+.rh-adoption-funnel-card--adoptions {
+  background: #ecfdf3;
+}
+.rh-adoption-funnel-card--donors {
+  background: #f5f0ff;
+}
+.rh-adoption-funnel-card--active {
+  background: #fff4eb;
+}
+.rh-adoption-funnel-card--completed {
+  background: #eef5ff;
+}
+.rh-adoption-funnel-card--raised {
+  background: #ecfdf3;
+}
+.rh-adoption-funnel-value {
+  margin: 0;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #151423;
+}
+.rh-adoption-funnel-card-spark {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+  width: 48px;
+  height: 32px;
+  display: block;
+}
+.rh-adoption-funnel-card-copy {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+.rh-adoption-funnel-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #5c5650;
+}
+.rh-adoption-funnel-hint {
+  margin: 2px 0 0;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .rh-pending-task-card {
   position: relative;
   /* ~2 tarjetas completas + asomo de la 3.ª (carrusel horizontal) */
@@ -7955,6 +8260,14 @@ div.profile-activity-row {
   font-weight: 800;
   line-height: 1;
   letter-spacing: -0.04em;
+  color: #151423;
+}
+.rh-pending-task-raised-amount {
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+.rh-pending-task-card.is-surface-lavender .rh-pending-task-raised-amount,
+.rh-pending-task-card.is-surface-sky .rh-pending-task-raised-amount {
   color: #151423;
 }
 .rh-pending-task-view-copy {
@@ -8063,6 +8376,13 @@ div.profile-activity-row {
 .rh-activity-count {
   min-width: 1.5em;
   text-align: right;
+}
+.rh-activity-meta-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
 }
 .rh-activity-row-btn {
   width: 100%;
@@ -9339,11 +9659,6 @@ div.profile-activity-row {
   min-width: 0;
   box-sizing: border-box;
 }
-.rescuer-cases-network .match-top {
-  margin-top: 0;
-  padding: 2px 2px 0;
-  min-height: 0;
-}
 .rescuer-cases-network .rescuer-cases-program-row {
   margin-top: 0;
   padding: 6px 2px 2px;
@@ -9424,6 +9739,43 @@ div.profile-activity-row {
 .rescuer-close-support-confirm span {
   flex: 1;
   min-width: 0;
+}
+.rescuer-photo-tips-dialog {
+  max-width: min(340px, calc(100vw - 40px));
+  text-align: left;
+}
+.rescuer-photo-tips-intro {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.rescuer-photo-tips-list {
+  margin: 16px 0 20px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+}
+.rescuer-photo-tips-list li {
+  padding-left: 14px;
+  border-left: 3px solid #c4b5fd;
+}
+.rescuer-photo-tips-list strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.rescuer-photo-tips-list p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.rescuer-photo-tips-dialog .primary-button {
+  width: 100%;
 }
 .rescuer-case-finish-archive-pop {
   text-align: center;

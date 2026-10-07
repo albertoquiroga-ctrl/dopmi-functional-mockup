@@ -1749,8 +1749,7 @@ function AdoptionHome() {
               </div>
               <article className="discover-end-card">
                 <h2>Nuestra manada llegó hasta aquí por ahora</h2>
-                <p className="discover-end-lead">¡No te desanimes! nuestro feed se actualiza constantemente.</p>
-                <p className="discover-end-tip">Tip: Ajusta los filtros para descubrir más historias.</p>
+                <p className="discover-end-lead">Todos los días hay historias nuevas esperando a alguien como tú.</p>
                 <button type="button" className="discover-end-primary" onClick={() => navigate("/messages")}>
                   Ir a mis <strong>favoritos</strong>
                 </button>
@@ -2216,12 +2215,11 @@ function DonationHome() {
     >
       <div className="donate-home donor-chrome">
         <DonorChromeTop />
+        <header className="match-top">
+          <h1>Ayudar se siente bien</h1>
+        </header>
 
         <section className="donate-discover">
-          <div className="donate-discover-head">
-            <h1>Ayudar se siente bien</h1>
-          </div>
-
           {!caseItems.length ? null : (
             <div className="donate-cases-rail" role="list">
               {caseItems.map(({ item, need, pct }) => (
@@ -3730,6 +3728,26 @@ function SupportCause() {
   );
 }
 
+function CroquetasConCausaCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="profile-feature profile-feature--cause profile-feature--cause-banner" onClick={onClick}>
+      <span className="profile-feature-banner-body">
+        <span className="profile-feature-copy">
+          <strong>Croquetas con causa</strong>
+          <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
+        </span>
+        <span className="profile-feature-banner-cta">
+          Ver más
+          <Icon name="icon-chevron-right.svg" size={16} />
+        </span>
+      </span>
+      <span className="profile-feature-banner-media" aria-hidden="true">
+        <img src={`${A}croquetas-banner-pet.svg`} alt="" width={120} height={138} />
+      </span>
+    </button>
+  );
+}
+
 function DonorProfile() {
   const navigate = useNavigate();
   const {
@@ -3810,19 +3828,7 @@ function DonorProfile() {
           </button>
         )}
 
-        <button
-          type="button"
-          className="profile-feature profile-feature--cause"
-          onClick={() => navigate("/apoya-causa")}
-        >
-          <span className="profile-feature-copy">
-            <strong>Croquetas con causa</strong>
-            <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
-          </span>
-          <span className="profile-feature-cta" aria-hidden="true">
-            <Icon name="icon-chevron-right.svg" size={22} />
-          </span>
-        </button>
+        <CroquetasConCausaCard onClick={() => navigate("/apoya-causa")} />
 
         <section className="profile-access" aria-label="Pagos y suscripciones">
           <h2>Pagos y suscripciones</h2>
@@ -4365,6 +4371,44 @@ const rescuerActivity = [
   { amount: "+$42", title: "Donaciones de 5 personas", meta: "Para Rocky · El mes pasado" },
 ];
 
+type RescuerHomeMessageActivityItem = {
+  id: string;
+  petId: string;
+  adopter: string;
+  petName: string;
+  image?: string;
+  preview: string;
+  time: string;
+  unread: number;
+};
+
+function buildRescuerHomeMessageActivity(
+  cases: PetCase[],
+  messages: { author?: string; text?: string; time?: string }[],
+  emptyStates: boolean,
+): RescuerHomeMessageActivityItem[] {
+  if (emptyStates) return [];
+  const last = messages[messages.length - 1];
+  const petNameById = new Map(cases.map((item) => [item.id, item.name]));
+  const petImageById = new Map(cases.map((item) => [item.id, item.image]));
+  return sortRescuerChatsByUnread(
+    RESCUER_ADOPTION_CHAT_THREADS.filter((thread) => !thread.archived).map((thread) => {
+      const isLunaAna = thread.petId === "luna" && thread.adopter === "Ana P.";
+      const unread = isLunaAna && last?.author === "donor" ? 1 : thread.unread;
+      return {
+        id: `${thread.petId}-${thread.adopter}`,
+        petId: thread.petId,
+        adopter: thread.adopter,
+        petName: petNameById.get(thread.petId) ?? "Mascota",
+        image: petImageById.get(thread.petId),
+        preview: isLunaAna ? (last?.text ?? thread.preview) : thread.preview,
+        time: isLunaAna ? (last?.time ?? thread.time) : thread.time,
+        unread,
+      };
+    }),
+  );
+}
+
 function buildSupportPaymentActivity(
   cases: PetCase[],
   events: RescuerSupportPaymentEvent[],
@@ -4412,13 +4456,13 @@ const RESCUER_HOME_QUICK_ACTIONS: {
   target: string;
   asset?: boolean;
 }[] = [
-  { id: "adoption", label: "Adopción", icon: "rtab-cases.svg", target: "/rescuer/cases?program=adoption" },
-  { id: "support", label: "Apoyo", icon: "rtab-cases.svg", target: "/rescuer/cases?program=support" },
+  { id: "adoption", label: "Adopción", icon: "rtab-home.svg", target: "/rescuer/cases?program=adoption" },
+  { id: "support", label: "Apoyo", icon: "tab-donate.svg", target: "/rescuer/cases?program=support" },
   { id: "messages", label: "Mensajes", icon: "icon-messages.svg", target: "/rescuer/messages" },
   { id: "payments", label: "Pagos", icon: "icon-billing.svg", target: "/settings/billing" },
 ];
 
-type RescuerHomeActivityView = "none" | "payments" | "adoption" | "support";
+type RescuerHomeActivityView = "none" | "payments" | "adoption" | "support" | "messages";
 
 function buildRescuerHomeCaseSummary(cases: PetCase[], emptyStates: boolean, adoption: boolean) {
   const pool = emptyStates ? [] : cases.filter((item) => item.adoption === adoption);
@@ -4454,66 +4498,296 @@ function buildRescuerHomeCaseSummary(cases: PetCase[], emptyStates: boolean, ado
 
 const RESCUER_HOME_PENDING_STATUSES: PetCase["caseStatus"][] = ["draft", "review", "rejected"];
 
-type RescuerPendingTaskCard = {
-  id: string;
-  program: "adoption" | "support";
-  kind: string;
-  title: string;
-  status?: string;
-  progress?: number;
-  surface: "white" | "lavender" | "sky";
-  target: string;
-  variant?: "views" | "matches" | "messages";
-  viewCount?: number;
-};
-
 function rescuerCaseBelongsToProfile(caseRescuer: string, profileName: string) {
   const profileFirst = profileName.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   const caseFirst = caseRescuer.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
   return profileFirst.length > 0 && caseFirst === profileFirst;
 }
 
-/** Visualizaciones en Adoptar: casos activos del rescatista que aparecen en el mazo discover. */
-function computeRescuerDiscoverProfileViews(
-  cases: PetCase[],
-  rescuerProfileName: string,
-  emptyStates: boolean,
-) {
-  if (emptyStates) return 0;
-  const discoverPetIds = new Set(adoptionPets.filter((pet) => pet.listed !== false).map((pet) => pet.id));
-  const fromDiscoverListed = cases.reduce((sum, item) => {
-    if (!item.adoption || item.caseStatus !== "active") return sum;
-    if (!discoverPetIds.has(item.id)) return sum;
-    if (!rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName)) return sum;
-    return sum + (item.profileViews ?? 0);
-  }, 0);
-  if (fromDiscoverListed > 0) return fromDiscoverListed;
-  return cases
-    .filter(
-      (item) =>
-        item.adoption &&
-        item.caseStatus === "active" &&
-        rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName),
-    )
-    .reduce((sum, item) => sum + (item.profileViews ?? 0), 0);
-}
+type RescuerAdoptionFunnelMetrics = {
+  views: number;
+  matches: number;
+  messages: number;
+  adoptions: number;
+};
 
-/** Mascotas del rescatista vistas en Adoptar y guardadas en Mis match. */
-function computeRescuerPetsInMatches(
-  cases: PetCase[],
-  savedPetIds: string[],
-  rescuerProfileName: string,
-  emptyStates: boolean,
-) {
-  if (emptyStates) return 0;
+function rescuerActiveAdoptionCases(cases: PetCase[], rescuerProfileName: string) {
   return cases.filter(
     (item) =>
       item.adoption &&
       item.caseStatus === "active" &&
-      rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName) &&
-      (item.profileViews ?? 0) > 0 &&
-      ((item.matchSaves ?? 0) > 0 || savedPetIds.includes(item.id)),
+      rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName),
+  );
+}
+
+function computeRescuerAdoptionFunnelMetrics(
+  cases: PetCase[],
+  rescuerProfileName: string,
+  emptyStates: boolean,
+): RescuerAdoptionFunnelMetrics {
+  if (emptyStates) {
+    return { views: 0, matches: 0, messages: 0, adoptions: 0 };
+  }
+  const active = rescuerActiveAdoptionCases(cases, rescuerProfileName);
+  const activeIds = new Set(active.map((item) => item.id));
+  const views = active.reduce((sum, item) => sum + (item.profileViews ?? 0), 0);
+  const matches = active.reduce((sum, item) => sum + (item.matchSaves ?? 0), 0);
+  const messagesFromCases = active.reduce((sum, item) => sum + (item.adoptionInquiries ?? 0), 0);
+  const messagesFromThreads = new Set(
+    RESCUER_ADOPTION_CHAT_THREADS.filter((thread) => activeIds.has(thread.petId)).map(
+      (thread) => `${thread.petId}:${thread.adopter}`,
+    ),
+  ).size;
+  const messages = messagesFromCases > 0 ? messagesFromCases : messagesFromThreads;
+  const adoptions = cases.filter(
+    (item) =>
+      item.adoption &&
+      item.caseStatus === "closed" &&
+      rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName),
   ).length;
+  return { views, matches, messages, adoptions };
+}
+
+const ADOPTION_FUNNEL_CARD_SPARK: Record<
+  "views" | "matches" | "messages" | "adoptions",
+  { area: string; line: string; fill: string; stroke: string }
+> = {
+  views: {
+    area: "M0 26 L0 16 Q9 8 18 14 T36 10 L36 26 Z",
+    line: "M0 18 Q9 10 18 14 T36 10",
+    fill: "#c4b5fd",
+    stroke: "#6d28d9",
+  },
+  matches: {
+    area: "M0 26 L0 20 Q8 10 16 16 T32 12 L32 26 Z",
+    line: "M0 20 Q8 12 16 16 T32 12",
+    fill: "#fdba74",
+    stroke: "#ea580c",
+  },
+  messages: {
+    area: "M0 26 L0 14 Q10 6 20 12 T40 8 L40 26 Z",
+    line: "M0 14 Q10 6 20 12 T40 8",
+    fill: "#93c5fd",
+    stroke: "#2563eb",
+  },
+  adoptions: {
+    area: "M0 26 L0 18 Q7 10 14 14 T28 11 L28 26 Z",
+    line: "M0 18 Q7 10 14 14 T28 11",
+    fill: "#86efac",
+    stroke: "#16a34a",
+  },
+};
+
+type RescuerSupportFunnelMetrics = {
+  donors: number;
+  activeCases: number;
+  completedCases: number;
+  totalRaised: number;
+};
+
+function countSupportDonorsForCases(
+  supportCaseIds: Set<string>,
+  events: RescuerSupportPaymentEvent[],
+): number {
+  let total = 0;
+  events.forEach((event) => {
+    if (!supportCaseIds.has(event.caseId)) return;
+    const batch = event.title.match(/Donaciones de (\d+) personas/);
+    if (batch) {
+      total += Number(batch[1]) || 0;
+      return;
+    }
+    if (event.title.includes(" — ")) total += 1;
+  });
+  return total;
+}
+
+function computeRescuerSupportFunnelMetrics(
+  cases: PetCase[],
+  rescuerProfileName: string,
+  emptyStates: boolean,
+  paymentEvents: RescuerSupportPaymentEvent[],
+): RescuerSupportFunnelMetrics {
+  if (emptyStates) {
+    return { donors: 0, activeCases: 0, completedCases: 0, totalRaised: 0 };
+  }
+  const supportCases = cases.filter(
+    (item) =>
+      !item.adoption &&
+      item.caseStatus !== "draft" &&
+      rescuerCaseBelongsToProfile(item.rescuer, rescuerProfileName),
+  );
+  const supportCaseIds = new Set(supportCases.map((item) => item.id));
+  const activeCases = supportCases.filter((item) => item.caseStatus === "active").length;
+  const completedCases = supportCases.filter((item) => {
+    const goal = item.needs.reduce((sum, need) => sum + need.requested, 0);
+    const received = item.needs.reduce((sum, need) => sum + need.funded, 0);
+    return goal > 0 && received >= goal;
+  }).length;
+  const totalRaised = supportCases.reduce(
+    (sum, item) => sum + item.needs.reduce((inner, need) => inner + need.funded, 0),
+    0,
+  );
+  const donors = countSupportDonorsForCases(supportCaseIds, paymentEvents);
+  return { donors, activeCases, completedCases, totalRaised };
+}
+
+const SUPPORT_FUNNEL_CARD_SPARK: Record<
+  "donors" | "active" | "completed" | "raised",
+  { area: string; line: string; fill: string; stroke: string }
+> = {
+  donors: {
+    area: "M0 26 L0 16 Q9 8 18 14 T36 10 L36 26 Z",
+    line: "M0 18 Q9 10 18 14 T36 10",
+    fill: "#c4b5fd",
+    stroke: "#6d28d9",
+  },
+  active: {
+    area: "M0 26 L0 20 Q8 10 16 16 T32 12 L32 26 Z",
+    line: "M0 20 Q8 12 16 16 T32 12",
+    fill: "#fdba74",
+    stroke: "#ea580c",
+  },
+  completed: {
+    area: "M0 26 L0 14 Q10 6 20 12 T40 8 L40 26 Z",
+    line: "M0 14 Q10 6 20 12 T40 8",
+    fill: "#93c5fd",
+    stroke: "#2563eb",
+  },
+  raised: {
+    area: "M0 26 L0 18 Q7 10 14 14 T28 11 L28 26 Z",
+    line: "M0 18 Q7 10 14 14 T28 11",
+    fill: "#86efac",
+    stroke: "#16a34a",
+  },
+};
+
+function RescuerSupportFunnel({ metrics }: { metrics: RescuerSupportFunnelMetrics }) {
+  const steps = [
+    {
+      id: "donors" as const,
+      value: metrics.donors,
+      label: "Donantes",
+      hint: "Personas donaron a tus mascotas",
+      format: "number" as const,
+    },
+    {
+      id: "active" as const,
+      value: metrics.activeCases,
+      label: "Activos",
+      hint: "Casos recibiendo apoyo",
+      format: "number" as const,
+    },
+    {
+      id: "completed" as const,
+      value: metrics.completedCases,
+      label: "Completados",
+      hint: "Casos que lograron la meta",
+      format: "number" as const,
+    },
+    {
+      id: "raised" as const,
+      value: metrics.totalRaised,
+      label: "Recaudado",
+      hint: "Total en tus casos de apoyo",
+      format: "currency" as const,
+    },
+  ];
+
+  return (
+    <div className="rh-adoption-funnel rh-support-funnel" aria-label="Resumen de apoyo">
+      {steps.map((step) => {
+        const spark = SUPPORT_FUNNEL_CARD_SPARK[step.id];
+        const displayValue =
+          step.format === "currency"
+            ? `$${step.value.toLocaleString("es-MX")}`
+            : step.value.toLocaleString("es-MX");
+        return (
+          <article
+            key={step.id}
+            className={`rh-adoption-funnel-card rh-adoption-funnel-card--${step.id}`}
+            aria-label={`${step.label}: ${displayValue}. ${step.hint}`}
+          >
+            <p className="rh-adoption-funnel-value">{displayValue}</p>
+            <svg className="rh-adoption-funnel-card-spark" viewBox="0 0 40 28" aria-hidden="true">
+              <path d={spark.area} fill={spark.fill} opacity={0.55} />
+              <path
+                d={spark.line}
+                fill="none"
+                stroke={spark.stroke}
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="rh-adoption-funnel-card-copy">
+              <p className="rh-adoption-funnel-label">{step.label}</p>
+              <p className="rh-adoption-funnel-hint">{step.hint}</p>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function RescuerAdoptionFunnel({ metrics }: { metrics: RescuerAdoptionFunnelMetrics }) {
+  const steps = [
+    {
+      id: "views" as const,
+      value: metrics.views,
+      label: "Vistas",
+      hint: "Personas vieron tus mascotas",
+    },
+    {
+      id: "matches" as const,
+      value: metrics.matches,
+      label: "Favoritos",
+      hint: "Guardaron tus mascotas",
+    },
+    {
+      id: "messages" as const,
+      value: metrics.messages,
+      label: "Mensajes",
+      hint: "Escribieron por adopción",
+    },
+    {
+      id: "adoptions" as const,
+      value: metrics.adoptions,
+      label: "Adopciones",
+      hint: "Mascotas adoptadas",
+    },
+  ];
+
+  return (
+    <div className="rh-adoption-funnel" aria-label="Embudo de adopción">
+      {steps.map((step) => {
+        const spark = ADOPTION_FUNNEL_CARD_SPARK[step.id];
+        return (
+          <article
+            key={step.id}
+            className={`rh-adoption-funnel-card rh-adoption-funnel-card--${step.id}`}
+            aria-label={`${step.label}: ${step.value.toLocaleString("es-MX")}. ${step.hint}`}
+          >
+            <p className="rh-adoption-funnel-value">{step.value.toLocaleString("es-MX")}</p>
+            <svg className="rh-adoption-funnel-card-spark" viewBox="0 0 40 28" aria-hidden="true">
+              <path d={spark.area} fill={spark.fill} opacity={0.55} />
+              <path
+                d={spark.line}
+                fill="none"
+                stroke={spark.stroke}
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="rh-adoption-funnel-card-copy">
+              <p className="rh-adoption-funnel-label">{step.label}</p>
+              <p className="rh-adoption-funnel-hint">{step.hint}</p>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
 }
 
 function rescuerAdoptionUnreadMessages(messages: { author?: string }[], emptyStates: boolean) {
@@ -4552,11 +4826,184 @@ function rescuerHomeQuickActionCounts(
   return { adoption, support, messages: messagesCount, payments };
 }
 
+function rescuerVerificationStatusMeta(verification: Verification) {
+  if (verification === "verified") {
+    return { icon: "icon-verified-purple.svg", label: "Rescatista verificado" };
+  }
+  return { icon: "verify-shield-purple.svg", label: "Completar mi perfil" };
+}
+
+const RESCUER_PHOTO_TIPS = [
+  {
+    title: "Luz natural",
+    body: "Fotografía cerca de una ventana o al aire libre. Evita contraluz y flash directo que tapen los ojos.",
+  },
+  {
+    title: "Rostro y cuerpo visibles",
+    body: "Incluye al menos una foto donde se vea bien la cara y otra con el cuerpo completo.",
+  },
+  {
+    title: "Fondo simple",
+    body: "Busca un lugar ordenado. Un fondo limpio ayuda a que la mascota sea el foco.",
+  },
+  {
+    title: "Varios ángulos",
+    body: "Sube 2 o 3 fotos distintas: de frente, de perfil y una mostrando su personalidad.",
+  },
+  {
+    title: "Sin filtros fuertes",
+    body: "Usa colores reales y buena nitidez. Así los adoptantes saben qué esperar al conocerla.",
+  },
+] as const;
+
+type PendingPeriodFilter = "yesterday" | "week" | "month";
+
+const PENDING_PERIOD_SCALE: Record<PendingPeriodFilter, number> = {
+  yesterday: 0.14,
+  week: 0.62,
+  month: 1,
+};
+
+function scalePendingMetricValue(value: number, period: PendingPeriodFilter) {
+  const scale = PENDING_PERIOD_SCALE[period];
+  if (value <= 0) return 0;
+  return Math.max(1, Math.round(value * scale));
+}
+
+function scaleAdoptionFunnelByPeriod(
+  metrics: RescuerAdoptionFunnelMetrics,
+  period: PendingPeriodFilter,
+): RescuerAdoptionFunnelMetrics {
+  return {
+    views: scalePendingMetricValue(metrics.views, period),
+    matches: scalePendingMetricValue(metrics.matches, period),
+    messages: scalePendingMetricValue(metrics.messages, period),
+    adoptions: scalePendingMetricValue(metrics.adoptions, period),
+  };
+}
+
+function scaleSupportFunnelByPeriod(
+  metrics: RescuerSupportFunnelMetrics,
+  period: PendingPeriodFilter,
+): RescuerSupportFunnelMetrics {
+  return {
+    donors: scalePendingMetricValue(metrics.donors, period),
+    activeCases: metrics.activeCases,
+    completedCases: metrics.completedCases,
+    totalRaised: scalePendingMetricValue(metrics.totalRaised, period),
+  };
+}
+
+function RescuerPendingFilterIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+      <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RhPendingFilterDialog({
+  open,
+  period,
+  onPeriodChange,
+  onClose,
+}: {
+  open: boolean;
+  period: PendingPeriodFilter;
+  onPeriodChange: (value: PendingPeriodFilter) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  const periodOptions: { id: PendingPeriodFilter; label: string }[] = [
+    { id: "yesterday", label: "Ayer" },
+    { id: "week", label: "Esta semana" },
+    { id: "month", label: "Este mes" },
+  ];
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose} role="presentation">
+      <div
+        className="dialog-card rescuer-cases-filter-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rh-pending-filter-title"
+      >
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <header className="adoption-filter-header">
+          <h2 id="rh-pending-filter-title">Filtrar</h2>
+        </header>
+        <section className="rescuer-cases-filter-dialog-section">
+          <h3>Período</h3>
+          <div
+            className="filter-options rescuer-cases-filter-options"
+            role="radiogroup"
+            aria-label="Período de pendientes"
+          >
+            {periodOptions.map((option) => (
+              <label key={option.id} className="filter-check">
+                <input
+                  type="radio"
+                  name="pending-period-filter"
+                  checked={period === option.id}
+                  onChange={() => onPeriodChange(option.id)}
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </section>
+        <button type="button" className="purple-button" onClick={onClose}>
+          Listo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RescuerPhotoTipsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop center" onClick={onClose} role="presentation">
+      <div
+        className="dialog-card rescuer-photo-tips-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rescuer-photo-tips-title"
+      >
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <h2 id="rescuer-photo-tips-title">Tips para mejores fotos</h2>
+        <p className="rescuer-photo-tips-intro">
+          Sigue estas recomendaciones para que tus casos destaquen en Adoptar y reciban más vistas.
+        </p>
+        <ul className="rescuer-photo-tips-list">
+          {RESCUER_PHOTO_TIPS.map((tip) => (
+            <li key={tip.title}>
+              <strong>{tip.title}</strong>
+              <p>{tip.body}</p>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="primary-button" onClick={onClose}>
+          Entendido
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RescuerHome() {
   const navigate = useNavigate();
   const {
     verification,
-    setVerification,
     emptyStates,
     rescuerProfile,
     cases,
@@ -4564,13 +5011,44 @@ function RescuerHome() {
     rescuerSupportPaymentEvents,
     rescuerHomePaymentsAcknowledgedAt,
     acknowledgeRescuerHomePayments,
-    savedPetIds,
   } = usePrototypeStore();
   const verified = verification === "verified";
-  const showEmptyPending = emptyStates;
+  const verificationStatus = rescuerVerificationStatusMeta(verification);
+  const showEmptyPending = useMemo(() => {
+    const pool = emptyStates ? [] : cases;
+    const published = pool.filter(
+      (item) =>
+        rescuerCaseBelongsToProfile(item.rescuer, rescuerProfile.name) &&
+        item.caseStatus !== "draft",
+    );
+    const hasAdoptionPublished = published.some((item) => item.adoption);
+    const hasSupportPublished = published.some((item) => !item.adoption);
+    return !hasAdoptionPublished && !hasSupportPublished;
+  }, [cases, emptyStates, rescuerProfile.name]);
+  const hasActiveSupportCases = useMemo(() => {
+    const pool = emptyStates ? [] : cases;
+    return pool.some(
+      (item) =>
+        !item.adoption &&
+        item.caseStatus === "active" &&
+        rescuerCaseBelongsToProfile(item.rescuer, rescuerProfile.name),
+    );
+  }, [cases, emptyStates, rescuerProfile.name]);
+  const hasActiveAdoptionCases = useMemo(() => {
+    const pool = emptyStates ? [] : cases;
+    return pool.some(
+      (item) =>
+        item.adoption &&
+        item.caseStatus === "active" &&
+        rescuerCaseBelongsToProfile(item.rescuer, rescuerProfile.name),
+    );
+  }, [cases, emptyStates, rescuerProfile.name]);
   const rescuerFirstName = rescuerProfile.name.trim().split(/\s+/)[0] || "María";
-  const [pendingTab, setPendingTab] = useState<"adoption" | "support">("adoption");
+  const [pendingTab, setPendingTab] = useState<"adoption" | "support">("support");
   const [homeActivityView, setHomeActivityView] = useState<RescuerHomeActivityView>("none");
+  const [photoTipsOpen, setPhotoTipsOpen] = useState(false);
+  const [pendingFilterOpen, setPendingFilterOpen] = useState(false);
+  const [pendingPeriodFilter, setPendingPeriodFilter] = useState<PendingPeriodFilter>("month");
   const homeCaseSummary = useMemo(
     () => ({
       adoption: buildRescuerHomeCaseSummary(cases, emptyStates, true),
@@ -4581,6 +5059,10 @@ function RescuerHome() {
   const homeSupportPaymentActivity = useMemo(
     () => buildSupportPaymentActivity(cases, rescuerSupportPaymentEvents, emptyStates),
     [cases, rescuerSupportPaymentEvents, emptyStates],
+  );
+  const homeMessageActivity = useMemo(
+    () => buildRescuerHomeMessageActivity(cases, messages, emptyStates),
+    [cases, messages, emptyStates],
   );
   const homeCaseSummaryActive = homeActivityView === "support" || homeActivityView === "adoption";
   const homeQuickActionCounts = useMemo(
@@ -4609,87 +5091,35 @@ function RescuerHome() {
       acknowledgeRescuerHomePayments();
       return;
     }
+    if (actionId === "messages") {
+      setHomeActivityView("messages");
+      return;
+    }
     navigate(target);
   };
-  const discoverProfileViews = useMemo(
-    () => computeRescuerDiscoverProfileViews(cases, rescuerProfile.name, emptyStates),
+  const adoptionFunnelMetricsBase = useMemo(
+    () => computeRescuerAdoptionFunnelMetrics(cases, rescuerProfile.name, emptyStates),
     [cases, emptyStates, rescuerProfile.name],
   );
-  const petsInMatches = useMemo(
-    () => computeRescuerPetsInMatches(cases, savedPetIds, rescuerProfile.name, emptyStates),
-    [cases, savedPetIds, emptyStates, rescuerProfile.name],
+  const adoptionFunnelMetrics = useMemo(
+    () => scaleAdoptionFunnelByPeriod(adoptionFunnelMetricsBase, pendingPeriodFilter),
+    [adoptionFunnelMetricsBase, pendingPeriodFilter],
   );
-  const adoptionUnreadMessages = useMemo(
-    () => rescuerAdoptionUnreadMessages(messages, emptyStates),
-    [messages, emptyStates],
+  const supportFunnelMetricsBase = useMemo(
+    () =>
+      computeRescuerSupportFunnelMetrics(
+        cases,
+        rescuerProfile.name,
+        emptyStates,
+        rescuerSupportPaymentEvents,
+      ),
+    [cases, emptyStates, rescuerProfile.name, rescuerSupportPaymentEvents],
   );
-  const pendingActions = useMemo((): RescuerPendingTaskCard[] => {
-    if (showEmptyPending) return [];
-    const viewsCard: RescuerPendingTaskCard = {
-      id: "discover-views",
-      program: "adoption",
-      variant: "views",
-      kind: "Adoptar",
-      title:
-        discoverProfileViews === 1
-          ? "persona vio tus mascotas en Adoptar"
-          : "personas vieron tus mascotas en Adoptar",
-      viewCount: discoverProfileViews,
-      surface: "white",
-      target: "/rescuer/cases?program=adoption",
-    };
-    if (!verified) return [viewsCard];
-    return [
-      viewsCard,
-      {
-        id: "discover-matches",
-        program: "adoption",
-        variant: "matches",
-        kind: "Mis match",
-        title:
-          petsInMatches === 1
-            ? "mascota pasó a Mis match desde Adoptar"
-            : "mascotas pasaron a Mis match desde Adoptar",
-        viewCount: petsInMatches,
-        surface: "sky",
-        target: "/rescuer/cases?program=adoption",
-      },
-      {
-        id: "adoption-messages",
-        program: "adoption",
-        variant: "messages",
-        kind: "Mensajes",
-        title:
-          adoptionUnreadMessages === 1
-            ? "conversación sin responder"
-            : "conversaciones sin responder",
-        viewCount: adoptionUnreadMessages,
-        surface: "lavender",
-        target: "/rescuer/messages",
-      },
-      {
-        id: "evidence-rocky",
-        program: "support",
-        kind: "Evidencia",
-        title: "Rocky · Veterinario · Incompleta",
-        status: "Urgente",
-        progress: 30,
-        surface: "lavender",
-        target: "/rescuer/evidence/rocky/rocky-vet",
-      },
-      {
-        id: "evidence-milo",
-        program: "support",
-        kind: "Evidencia",
-        title: "Milo · Medicina · Evidencia pendiente",
-        status: "Pendiente",
-        progress: 55,
-        surface: "sky",
-        target: "/rescuer/evidence/milo/milo-med",
-      },
-    ];
-  }, [adoptionUnreadMessages, discoverProfileViews, petsInMatches, showEmptyPending, verified]);
-  const filteredPendingActions = pendingActions.filter((item) => item.program === pendingTab);
+  const supportFunnelMetrics = useMemo(
+    () => scaleSupportFunnelByPeriod(supportFunnelMetricsBase, pendingPeriodFilter),
+    [supportFunnelMetricsBase, pendingPeriodFilter],
+  );
+  const pendingFiltersActive = pendingPeriodFilter !== "month";
 
   return (
     <ScreenShell mode="rescuer">
@@ -4705,89 +5135,59 @@ function RescuerHome() {
             />
           }
         />
-        <header className="match-top">
-          <h1>Hola, {rescuerFirstName}</h1>
-        </header>
+        <div className="rh-home-greeting">
+          <header className="match-top">
+            <h1>Hola, {rescuerFirstName}</h1>
+          </header>
+          {verification === "verified" ? (
+            <p className="pet-detail-verified rh-home-verification-status is-verified" role="status">
+              <AssetIcon name={verificationStatus.icon} size={16} alt="" />
+              {verificationStatus.label}
+            </p>
+          ) : (
+            <button
+              type="button"
+              className="pet-detail-verified rh-home-verification-status rh-home-verification-status--action"
+              onClick={() => navigate("/rescuer/profile")}
+            >
+              <AssetIcon name={verificationStatus.icon} size={16} alt="" />
+              {verificationStatus.label}
+            </button>
+          )}
+        </div>
 
         <div className="rescuer-home">
 
-        {!verified && verification === "review" && !showEmptyPending ? (
-          <article className="verify-card review">
-            <div className="verify-head">
-              <span className="verify-chip">
-                <AssetIcon name="icon-alert-circle.svg" size={24} />
-              </span>
-              <strong>Verificación en proceso</strong>
-            </div>
-            <p>Estamos revisando tu información. Te avisaremos cuando tu cuenta esté lista para recibir donaciones.</p>
-            <button className="purple-button" onClick={() => setVerification("verified")}>
-              Simular verificación
-            </button>
-          </article>
-        ) : !verified && showEmptyPending ? (
-          <article className="verify-card verify-card-cta">
-            <div className="verify-head">
-              <span className="verify-chip">
-                <AssetIcon name="verify-shield-purple.svg" size={24} />
-              </span>
-              <strong>
-                {verification === "rejected"
-                  ? "Corrige tu información"
-                  : "Verifica tu cuenta para recibir donaciones"}
-              </strong>
-            </div>
-            <p>
-              {verification === "rejected"
-                ? "El comprobante no es legible y falta vincular una red social."
-                : "Completa el proceso de verificación para desbloquear todas las funciones y comenzar a recibir donaciones."}
-            </p>
-            <button type="button" className="purple-button" onClick={() => navigate("/rescuer/verification")}>
-              {verification === "rejected" ? "Corregir información" : "Verificarme"}
-            </button>
-          </article>
-        ) : !verified && !showEmptyPending ? (
-          <button
-            className={`verify-card link-card ${verification}`}
-            onClick={() => navigate("/rescuer/verification")}
-          >
-            <div className="verify-head">
-              <span className="verify-chip">
-                <Icon name="icon-shield.svg" size={24} />
-              </span>
-              <strong>
-                {verification === "rejected" ? "Corrige tu información" : "Verificar para recibir donaciones"}
-              </strong>
-              <Chevron />
-            </div>
-            <p>
-              {verification === "rejected"
-                ? "El comprobante no es legible y falta vincular una red social."
-                : "Completa tu verificación para desbloquear donaciones y reembolsos."}
-            </p>
-            {verification === "unverified" ? <span className="bonus-badge">Bono de $350 MXN al aprobar</span> : null}
-          </button>
-        ) : null}
-
         <section className="rh-section rh-section-pending">
           {!showEmptyPending ? (
-            <div className="rh-pending-tabs" role="tablist" aria-label="Filtrar pendientes por programa">
-              {(
-                [
-                  { id: "adoption" as const, label: "En adopción" },
-                  { id: "support" as const, label: "Recibiendo apoyo" },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={pendingTab === tab.id}
-                  className={`rh-pending-tab${pendingTab === tab.id ? " is-active" : ""}`}
-                  onClick={() => setPendingTab(tab.id)}
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div className="rh-pending-tabs-row">
+              <div className="rh-pending-tabs" role="tablist" aria-label="Filtrar pendientes por programa">
+                {(
+                  [
+                    { id: "adoption" as const, label: "En adopción" },
+                    { id: "support" as const, label: "Recibiendo apoyo" },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={pendingTab === tab.id}
+                    className={`rh-pending-tab${pendingTab === tab.id ? " is-active" : ""}`}
+                    onClick={() => setPendingTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className={`rescuer-cases-filter-btn rescuer-cases-filter-btn--icon-only${pendingFiltersActive ? " is-active" : ""}`}
+                onClick={() => setPendingFilterOpen(true)}
+                aria-label="Filtrar pendientes"
+              >
+                <RescuerPendingFilterIcon />
+              </button>
             </div>
           ) : null}
           {showEmptyPending ? (
@@ -4795,64 +5195,43 @@ function RescuerHome() {
               <span className="rh-empty-icon">
                 <AssetIcon name="empty-pending-heart.svg" size={32} />
               </span>
-              <h3>No tienes pendientes</h3>
-              <p>
-                Cuando publiques casos, recibas mensajes o tengas evidencias por subir, aparecerán aquí.
-              </p>
+              <h3>¿Empezamos?</h3>
+              <p>Aún no tienes casos de adopción o de apoyo publicados.</p>
+              <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
+                <AssetIcon name="empty-publish-plus.svg" size={16} />
+                Publicar caso
+              </button>
+            </article>
+          ) : pendingTab === "adoption" ? (
+            !hasActiveAdoptionCases ? (
+              <article className="rh-empty-card">
+                <span className="rh-empty-icon">
+                  <AssetIcon name="empty-pending-heart.svg" size={32} />
+                </span>
+                <h3>¿Empezamos?</h3>
+                <p>Aún no tienes casos publicados.</p>
+                <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
+                  <AssetIcon name="empty-publish-plus.svg" size={16} />
+                  Publicar caso
+                </button>
+              </article>
+            ) : (
+              <RescuerAdoptionFunnel metrics={adoptionFunnelMetrics} />
+            )
+          ) : !hasActiveSupportCases ? (
+            <article className="rh-empty-card">
+              <span className="rh-empty-icon">
+                <AssetIcon name="empty-pending-heart.svg" size={32} />
+              </span>
+              <h3>¿Empezamos?</h3>
+              <p>Aún no tienes casos publicados.</p>
               <button type="button" className="purple-button" onClick={() => navigate("/rescuer/publish")}>
                 <AssetIcon name="empty-publish-plus.svg" size={16} />
                 Publicar caso
               </button>
             </article>
           ) : (
-            <div className="rh-pending-track" role="list">
-              {filteredPendingActions.map((item) => (
-                <article
-                  key={item.id}
-                  role="listitem"
-                  className={`rh-pending-task-card is-surface-${item.surface}`}
-                >
-                  {item.status ? (
-                    <span
-                      className={`rh-pending-task-badge${item.status === "Urgente" ? " is-urgent" : ""}`}
-                    >
-                      {item.status}
-                    </span>
-                  ) : null}
-                  <span className="rh-pending-task-kind">{item.kind}</span>
-                  {item.variant === "views" || item.variant === "matches" || item.variant === "messages" ? (
-                    <>
-                      <p
-                        className="rh-pending-task-view-count"
-                        aria-label={
-                          item.variant === "matches"
-                            ? `${item.viewCount ?? 0} mascotas en Mis match`
-                            : item.variant === "messages"
-                              ? `${item.viewCount ?? 0} mensajes pendientes`
-                              : `${item.viewCount ?? 0} visualizaciones`
-                        }
-                      >
-                        {item.viewCount ?? 0}
-                      </p>
-                      <p className="rh-pending-task-view-copy">{item.title}</p>
-                    </>
-                  ) : (
-                    <>
-                      <strong className="rh-pending-task-title">{item.title}</strong>
-                      <div className="rh-pending-task-progress">
-                        <div className="rh-pending-task-progress-head">
-                          <span>Avance</span>
-                          <span>{item.progress}%</span>
-                        </div>
-                        <div className="rh-pending-task-progress-bar" aria-hidden="true">
-                          <i style={{ width: `${item.progress}%` }} />
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </article>
-              ))}
-            </div>
+            <RescuerSupportFunnel metrics={supportFunnelMetrics} />
           )}
         </section>
 
@@ -4867,7 +5246,7 @@ function RescuerHome() {
                 <button
                   type="button"
                   key={action.id}
-                  className={`profile-access-item${action.id === "adoption" && homeActivityView === "adoption" ? " is-selected" : ""}${action.id === "support" && homeActivityView === "support" ? " is-selected" : ""}${action.id === "payments" && homeActivityView === "payments" ? " is-selected" : ""}`}
+                  className={`profile-access-item${action.id === "adoption" && homeActivityView === "adoption" ? " is-selected" : ""}${action.id === "support" && homeActivityView === "support" ? " is-selected" : ""}${action.id === "messages" && homeActivityView === "messages" ? " is-selected" : ""}${action.id === "payments" && homeActivityView === "payments" ? " is-selected" : ""}`}
                   onClick={() => handleHomeQuickAction(action.id, action.target)}
                   aria-label={`${action.label}${pendingCount > 0 ? `, ${pendingCount} pendientes` : ""}`}
                 >
@@ -4882,7 +5261,7 @@ function RescuerHome() {
           </div>
         </section>
 
-        {verified && !showEmptyPending && homeActivityView !== "none" ? (
+        {homeActivityView !== "none" ? (
           <section className="rh-section rh-section-activity">
             <div className="rh-section-head">
               <h2>
@@ -4890,17 +5269,45 @@ function RescuerHome() {
                   ? "Resumen de adopción"
                   : homeActivityView === "support"
                     ? "Resumen de apoyo"
-                    : "Actividad reciente"}
+                    : homeActivityView === "messages"
+                      ? "Mensajes recientes"
+                      : "Actividad reciente"}
               </h2>
-              {!homeCaseSummaryActive ? (
-                <button type="button" className="rh-section-see-all" onClick={() => navigate("/settings/billing")}>
-                  Ver todo
-                </button>
-              ) : null}
+              <button type="button" className="rh-section-see-all" onClick={() => navigate("/rescuer/profile")}>
+                Ver todo
+              </button>
             </div>
             <div className="rh-activity-sheet">
               <div className="rh-activity-list">
-                {homeCaseSummaryActive
+                {homeActivityView === "messages"
+                  ? homeMessageActivity.map((item) => (
+                      <button
+                        type="button"
+                        className="rh-activity rh-activity-row-btn"
+                        key={item.id}
+                        onClick={() =>
+                          navigate(`/rescuer/messages/${item.petId}`, { state: { adopter: item.adopter } })
+                        }
+                      >
+                        <span className="rh-activity-icon rh-activity-icon-photo">
+                          {item.image ? (
+                            <img src={item.image} alt="" />
+                          ) : (
+                            <Icon name="icon-messages.svg" size={20} />
+                          )}
+                        </span>
+                        <div className="rh-activity-copy">
+                          <strong>{item.petName} · {item.adopter}</strong>
+                          <small>{item.preview}</small>
+                        </div>
+                        {item.unread > 0 ? (
+                          <span className="rh-activity-amount rh-activity-count">{item.unread}</span>
+                        ) : (
+                          <span className="rh-activity-meta-time">{item.time}</span>
+                        )}
+                      </button>
+                    ))
+                  : homeCaseSummaryActive
                   ? (homeActivityView === "support"
                       ? homeCaseSummary.support
                       : homeCaseSummary.adoption
@@ -4944,7 +5351,7 @@ function RescuerHome() {
           </section>
         ) : null}
 
-        <button type="button" className="profile-feature" onClick={() => navigate("/impact/support")}>
+        <button type="button" className="profile-feature" onClick={() => setPhotoTipsOpen(true)}>
           <span className="profile-feature-copy">
             <strong>Tips para mejores fotos</strong>
             <small>Te damos recomendaciones para que tus casos tengan más visualizaciones</small>
@@ -4954,21 +5361,18 @@ function RescuerHome() {
           </span>
         </button>
 
-        <button
-          type="button"
-          className="profile-feature profile-feature--cause"
-          onClick={() => navigate("/apoya-causa")}
-        >
-          <span className="profile-feature-copy">
-            <strong>Croquetas con causa</strong>
-            <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
-          </span>
-          <span className="profile-feature-cta" aria-hidden="true">
-            <Icon name="icon-chevron-right.svg" size={22} />
-          </span>
-        </button>
+        <CroquetasConCausaCard onClick={() => navigate("/apoya-causa")} />
         </div>
       </div>
+      {photoTipsOpen ? <RescuerPhotoTipsDialog onClose={() => setPhotoTipsOpen(false)} /> : null}
+      {pendingFilterOpen ? (
+        <RhPendingFilterDialog
+          open={pendingFilterOpen}
+          period={pendingPeriodFilter}
+          onPeriodChange={setPendingPeriodFilter}
+          onClose={() => setPendingFilterOpen(false)}
+        />
+      ) : null}
     </ScreenShell>
   );
 }
@@ -8976,24 +9380,120 @@ function RescuerMessages() {
   );
 }
 
+function RescuerSocialProfilesSection() {
+  const { rescuerProfile, updateRescuerProfile } = usePrototypeStore();
+  const [editField, setEditField] = useState<"instagram" | "facebook" | null>(null);
+  const [draft, setDraft] = useState("");
+  const [toast, setToast] = useState("");
+
+  const openEdit = (field: "instagram" | "facebook") => {
+    setEditField(field);
+    setDraft(rescuerProfile[field]);
+  };
+
+  const saveEdit = () => {
+    if (!editField) return;
+    const value = draft.trim();
+    if (!value) return;
+    updateRescuerProfile({ [editField]: value });
+    setEditField(null);
+    setToast(editField === "instagram" ? "Instagram actualizado" : "Facebook actualizado");
+  };
+
+  const editMeta = editField
+    ? {
+        instagram: {
+          title: "Editar Instagram",
+          label: "Usuario de Instagram",
+          placeholder: "@tuusuario",
+          hint: "Usa el @ de tu cuenta pública.",
+          inputMode: "text" as const,
+          maxLength: 40,
+          canSave: Boolean(draft.trim()),
+        },
+        facebook: {
+          title: "Editar Facebook",
+          label: "Perfil de Facebook",
+          placeholder: "Nombre del perfil",
+          hint: "El nombre como aparece en tu página o perfil.",
+          inputMode: "text" as const,
+          maxLength: 60,
+          canSave: Boolean(draft.trim()),
+        },
+      }[editField]
+    : null;
+
+  return (
+    <section className="rescuer-profile-social list-stack" aria-label="Redes sociales">
+      <h2 className="settings-heading">Redes sociales</h2>
+      <article className="card-row">
+        <span className="row-tile gray">
+          <Icon name="icon-instagram.svg" size={18} />
+        </span>
+        <span className="nav-row-text">
+          <small>Instagram</small>
+          <strong>{rescuerProfile.instagram}</strong>
+        </span>
+        <button type="button" className="icon-button" onClick={() => openEdit("instagram")} aria-label="Editar Instagram">
+          <Icon name="icon-edit.svg" size={16} />
+        </button>
+      </article>
+      <article className="card-row">
+        <span className="row-tile gray">
+          <Icon name="icon-facebook.svg" size={18} />
+        </span>
+        <span className="nav-row-text">
+          <small>Facebook</small>
+          <strong>{rescuerProfile.facebook}</strong>
+        </span>
+        <button type="button" className="icon-button" onClick={() => openEdit("facebook")} aria-label="Editar Facebook">
+          <Icon name="icon-edit.svg" size={16} />
+        </button>
+      </article>
+      <p className="field-hint">Vincula tus cuentas para comprobar que eres el dueño. Es ideal agregar ambas.</p>
+      {editField && editMeta ? (
+        <div className="modal-backdrop center" onClick={() => setEditField(null)}>
+          <div className="dialog-card settings-edit-dialog" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">
+              ×
+            </button>
+            <h2>{editMeta.title}</h2>
+            <label className="dialog-field">
+              <span>{editMeta.label}</span>
+              <input
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder={editMeta.placeholder}
+                inputMode={editMeta.inputMode}
+                maxLength={editMeta.maxLength}
+                autoComplete="off"
+              />
+            </label>
+            <p className="field-hint">{editMeta.hint}</p>
+            <button type="button" className="purple-button" disabled={!editMeta.canSave} onClick={saveEdit}>
+              Guardar
+            </button>
+            <button type="button" className="secondary-button" onClick={() => setEditField(null)}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
+    </section>
+  );
+}
+
 function RescuerProfile() {
   const navigate = useNavigate();
   const {
     verification,
     rescuerProfile: profile,
-    cases,
     emptyStates,
     setAccountMode,
   } = usePrototypeStore();
   const verified = verification === "verified";
-  const activeCases = emptyStates ? 0 : cases.filter((item) => item.caseStatus === "active").length;
-  const openCases = emptyStates ? 0 : cases.filter((item) => item.caseStatus !== "closed").length;
-  const receivedTotal = emptyStates
-    ? 0
-    : rescuerActivity.reduce((sum, item) => {
-        const n = Number(String(item.amount).replace(/[^0-9.]/g, ""));
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0);
   const recent = emptyStates || !verified ? [] : rescuerActivity.slice(0, 3);
   const statusLabel = {
     unverified: "Sin verificar",
@@ -9011,8 +9511,9 @@ function RescuerProfile() {
 
   return (
     <ScreenShell mode="rescuer">
-      <div className="content-pad profile-page rescuer-profile-page">
-        <header className="page-head">
+      <div className="profile-page profile-page--soft donor-chrome rescuer-profile-page">
+        <DonorChromeTop />
+        <header className="match-top">
           <h1>Mi perfil</h1>
         </header>
 
@@ -9023,10 +9524,12 @@ function RescuerProfile() {
             </span>
             <div className="profile-hero-copy">
               <strong>{profile.name}</strong>
-              <span className={`profile-hero-badge${verified ? " ok" : ""}`}>
-                <Icon name="icon-shield.svg" size={14} />
-                {statusLabel}
-              </span>
+              {!verified ? (
+                <span className="profile-hero-badge">
+                  <Icon name="icon-shield.svg" size={14} />
+                  {statusLabel}
+                </span>
+              ) : null}
               <small>{cityHint}</small>
             </div>
           </div>
@@ -9041,21 +9544,6 @@ function RescuerProfile() {
             </button>
           ) : null}
         </article>
-
-        <section className="profile-metrics" aria-label="Tu refugio">
-          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer/cases")}>
-            <strong>{openCases}</strong>
-            <span>Casos</span>
-          </button>
-          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer/cases")}>
-            <strong>{activeCases}</strong>
-            <span>Activos</span>
-          </button>
-          <button type="button" className="profile-metric" onClick={() => navigate("/rescuer")}>
-            <strong>${receivedTotal}</strong>
-            <span>Recibido</span>
-          </button>
-        </section>
 
         {verified ? (
           <button
@@ -9075,29 +9563,29 @@ function RescuerProfile() {
         ) : (
           <button
             type="button"
-            className="profile-guardian-card rescuer"
+            className={`verify-card link-card rescuer-profile-verify ${verification}`}
             onClick={() => navigate("/rescuer/verification")}
           >
-            <span className="profile-guardian-icon" aria-hidden="true">
-              <Icon name="icon-shield.svg" size={20} />
-            </span>
-            <span className="profile-guardian-copy">
+            <div className="verify-head">
+              <span className="verify-chip">
+                <Icon name="icon-shield.svg" size={24} />
+              </span>
               <strong>
                 {verification === "rejected"
-                  ? "Corrige tu verificación"
+                  ? "Corrige tu información"
                   : verification === "review"
                     ? "Verificación en proceso"
-                    : "Verifícate para recibir donaciones"}
+                    : "Verificar para recibir donaciones"}
               </strong>
-              <small>
-                {verification === "rejected"
-                  ? "Hay datos que debes corregir para continuar"
-                  : verification === "review"
-                    ? "Te avisaremos cuando termine la revisión"
-                    : "Desbloquea donaciones y reembolsos"}
-              </small>
-            </span>
-            <Chevron />
+              <Chevron />
+            </div>
+            <p>
+              {verification === "rejected"
+                ? "El comprobante no es legible y falta vincular una red social."
+                : verification === "review"
+                  ? "Estamos revisando tu información. Te avisaremos cuando tu cuenta esté lista para recibir donaciones."
+                  : "Completa tu verificación para desbloquear donaciones y reembolsos."}
+            </p>
           </button>
         )}
 
@@ -9117,6 +9605,8 @@ function RescuerProfile() {
             </div>
           </section>
         ) : null}
+
+        {verified ? <RescuerSocialProfilesSection /> : null}
 
         <section className="profile-activity">
           <div className="profile-section-head">
@@ -9168,50 +9658,54 @@ function RescuerProfile() {
           )}
         </section>
 
-        <section className="profile-links" aria-label="Accesos">
-          <h2 className="profile-links-title">Accesos</h2>
-          <div className="list-stack">
-            <SettingsRow
-              icon="icon-settings.svg"
-              title="Configuración"
-              subtitle="Verificación, redes y datos bancarios"
-              onClick={() => navigate("/rescuer/settings")}
-            />
-            <SettingsRow
-              icon="rtab-cases.svg"
-              title="Mis casos"
-              subtitle="Gestiona adopción y donación"
-              onClick={() => navigate("/rescuer/cases")}
-            />
-            <SettingsRow
-              icon="icon-messages.svg"
-              title="Mensajes"
-              subtitle="Habla con adoptantes"
-              onClick={() => navigate("/rescuer/messages")}
-            />
-            <SettingsRow
-              icon="icon-help.svg"
-              title="Centro de ayuda"
-              onClick={() => navigate("/help")}
-            />
-          </div>
+        <button type="button" className="profile-feature profile-feature--mode" onClick={switchToDonor}>
+          <span className="profile-feature-copy">
+            <strong>Consulta los casos en adopción</strong>
+            <small>
+              Cambia tu perfil a modo Adoptante. Siempre podrás regresar a la navegación como Rescatista.
+            </small>
+          </span>
+          <span className="profile-feature-cta" aria-hidden="true">
+            <Icon name="rtab-home.svg" size={22} />
+          </span>
+        </button>
+
+        <section className="profile-support">
+          <button
+            type="button"
+            className="profile-support-row"
+            onClick={() => navigate("/about")}
+          >
+            <span className="profile-support-icon" aria-hidden="true">
+              <Icon name="icon-doc.svg" size={20} />
+            </span>
+            <strong>Sobre Nosotros</strong>
+            <Chevron />
+          </button>
+          <button
+            type="button"
+            className="profile-support-row"
+            onClick={() => navigate("/help")}
+          >
+            <span className="profile-support-icon" aria-hidden="true">
+              <Icon name="icon-help.svg" size={20} />
+            </span>
+            <strong>Centro de ayuda</strong>
+            <Chevron />
+          </button>
         </section>
 
-        <article className="switch-card profile-switch">
-          <div>
-            <strong>Modo donante</strong>
-            <small>Adopta, apoya y sigue impacto</small>
-          </div>
-          <button
-            className="switch"
-            role="switch"
-            aria-checked="false"
-            aria-label="Cambiar a modo donante"
-            onClick={switchToDonor}
-          >
-            <i />
-          </button>
-        </article>
+        <button
+          type="button"
+          className="nav-row danger-row profile-logout"
+          onClick={() => navigate("/")}
+        >
+          <span className="nav-row-main">
+            <Icon name="icon-logout.svg" size={20} />
+            <strong>Cerrar sesión</strong>
+          </span>
+          <Chevron />
+        </button>
       </div>
     </ScreenShell>
   );
@@ -9345,9 +9839,9 @@ function RescuerEditPublicProfile() {
 
 function RescuerSettings() {
   const navigate = useNavigate();
-  const { verification, setAccountMode, rescuerProfile, updateRescuerProfile } = usePrototypeStore();
+  const { verification, rescuerProfile, updateRescuerProfile } = usePrototypeStore();
   const verified = verification === "verified";
-  const [editField, setEditField] = useState<"instagram" | "facebook" | "clabe" | null>(null);
+  const [editField, setEditField] = useState<"clabe" | null>(null);
   const [draft, setDraft] = useState("");
   const [toast, setToast] = useState("");
   const statusCard = {
@@ -9357,57 +9851,31 @@ function RescuerSettings() {
     verified: { title: "Cuenta verificada", copy: "Tu cuenta está activa y puede recibir donaciones.", cta: "" },
   }[verification];
 
-  const openEdit = (field: "instagram" | "facebook" | "clabe") => {
-    setEditField(field);
-    setDraft(rescuerProfile[field]);
+  const openEdit = () => {
+    setEditField("clabe");
+    setDraft(rescuerProfile.clabe);
   };
 
   const saveEdit = () => {
     if (!editField) return;
     const value = draft.trim();
     if (!value) return;
-    if (editField === "clabe" && !/^\d{18}$/.test(value)) return;
-    updateRescuerProfile({ [editField]: value });
+    if (!/^\d{18}$/.test(value)) return;
+    updateRescuerProfile({ clabe: value });
     setEditField(null);
-    setToast(
-      editField === "instagram"
-        ? "Instagram actualizado"
-        : editField === "facebook"
-          ? "Facebook actualizado"
-          : "CLABE actualizada",
-    );
+    setToast("CLABE actualizada");
   };
 
   const editMeta = editField
     ? {
-        instagram: {
-          title: "Editar Instagram",
-          label: "Usuario de Instagram",
-          placeholder: "@tuusuario",
-          hint: "Usa el @ de tu cuenta pública.",
-          inputMode: "text" as const,
-          maxLength: 40,
-          canSave: Boolean(draft.trim()),
-        },
-        facebook: {
-          title: "Editar Facebook",
-          label: "Perfil de Facebook",
-          placeholder: "Nombre del perfil",
-          hint: "El nombre como aparece en tu página o perfil.",
-          inputMode: "text" as const,
-          maxLength: 60,
-          canSave: Boolean(draft.trim()),
-        },
-        clabe: {
-          title: "Editar CLABE",
-          label: "CLABE interbancaria",
-          placeholder: "18 dígitos",
-          hint: "Debe tener exactamente 18 números.",
-          inputMode: "numeric" as const,
-          maxLength: 18,
-          canSave: /^\d{18}$/.test(draft.trim()),
-        },
-      }[editField]
+        title: "Editar CLABE",
+        label: "CLABE interbancaria",
+        placeholder: "18 dígitos",
+        hint: "Debe tener exactamente 18 números.",
+        inputMode: "numeric" as const,
+        maxLength: 18,
+        canSave: /^\d{18}$/.test(draft.trim()),
+      }
     : null;
 
   return (
@@ -9430,73 +9898,30 @@ function RescuerSettings() {
         </article>
         {verified ? (
           <>
-            <h2 className="settings-heading">Redes sociales</h2>
-            <article className="card-row">
-              <span className="row-tile gray"><Icon name="icon-instagram.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Instagram</small><strong>{rescuerProfile.instagram}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("instagram")} aria-label="Editar Instagram">
-                <Icon name="icon-edit.svg" size={16} />
-              </button>
-            </article>
-            <article className="card-row">
-              <span className="row-tile gray"><Icon name="icon-facebook.svg" size={18} /></span>
-              <span className="nav-row-text"><small>Facebook</small><strong>{rescuerProfile.facebook}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("facebook")} aria-label="Editar Facebook">
-                <Icon name="icon-edit.svg" size={16} />
-              </button>
-            </article>
-            <p className="field-hint">Vincula tus cuentas para comprobar que eres el dueño. Es ideal agregar ambas.</p>
             <h2 className="settings-heading">Datos bancarios</h2>
             <article className="card-row">
               <span className="nav-row-text"><small>CLABE</small><strong>{rescuerProfile.clabe}</strong></span>
-              <button className="icon-button" onClick={() => openEdit("clabe")} aria-label="Editar CLABE">
+              <button type="button" className="icon-button" onClick={openEdit} aria-label="Editar CLABE">
                 <Icon name="icon-edit.svg" size={16} />
               </button>
             </article>
             <p className="field-hint">La CLABE solo es visible para ti y nunca se muestra a los donantes.</p>
           </>
         ) : null}
-        <article className="switch-card">
-          <div>
-            <strong>Cambiar a usuario donante</strong>
-            <small>Cambia tu experiencia en la app</small>
-          </div>
-          <button
-            className="switch on"
-            role="switch"
-            aria-checked="true"
-            aria-label="Cambiar a usuario donante"
-            onClick={() => {
-              setAccountMode("donor");
-              navigate("/adoption");
-            }}
-          >
-            <i />
-          </button>
-        </article>
-        <SettingsRow icon="icon-help.svg" title="Centro de ayuda" onClick={() => navigate("/help")} />
-        <button className="nav-row danger-row" onClick={() => navigate("/")}>
-          <span className="nav-row-main">
-            <Icon name="icon-logout.svg" size={20} />
-            <strong>Cerrar sesión</strong>
-          </span>
-          <Chevron />
-        </button>
       </div>
       {editField && editMeta ? (
         <div className="modal-backdrop center" onClick={() => setEditField(null)}>
           <div className="dialog-card settings-edit-dialog" onClick={(event) => event.stopPropagation()}>
-            <button className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">×</button>
+            <button type="button" className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">
+              ×
+            </button>
             <h2>{editMeta.title}</h2>
             <label className="dialog-field">
               <span>{editMeta.label}</span>
               <input
                 autoFocus
                 value={draft}
-                onChange={(event) => {
-                  const next = editField === "clabe" ? event.target.value.replace(/\D/g, "").slice(0, 18) : event.target.value;
-                  setDraft(next);
-                }}
+                onChange={(event) => setDraft(event.target.value.replace(/\D/g, "").slice(0, 18))}
                 placeholder={editMeta.placeholder}
                 inputMode={editMeta.inputMode}
                 maxLength={editMeta.maxLength}

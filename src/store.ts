@@ -157,6 +157,22 @@ function buildInitialRescuerSupportPaymentEvents(now = Date.now()): RescuerSuppo
       title: "Luis G. — Medicina",
       metaSuffix: "Hace 3 días",
     },
+    {
+      id: "pay-nube-week",
+      caseId: "nube-review",
+      receivedAt: now - 4 * MS_PER_DAY,
+      amount: "+$120",
+      title: "Donaciones de 6 personas",
+      metaSuffix: "Esta semana",
+    },
+    {
+      id: "pay-nube-solo",
+      caseId: "nube-review",
+      receivedAt: now - 2 * MS_PER_DAY,
+      amount: "+$35",
+      title: "Ana P. — Medicina",
+      metaSuffix: "Hace 2 días",
+    },
   ];
 }
 
@@ -516,7 +532,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 23,
+      version: 25,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
         if (version < 19) {
@@ -556,6 +572,35 @@ export const usePrototypeStore = create<PrototypeState>()(
           return {
             ...state,
             cases: initialCases,
+          };
+        }
+        if (version < 24) {
+          const seedById = new Map(initialCases.map((item) => [item.id, item]));
+          return {
+            ...state,
+            cases: state.cases.map((item) => {
+              const seed = seedById.get(item.id);
+              if (!seed) return item;
+              return {
+                ...item,
+                matchSaves: item.matchSaves ?? seed.matchSaves,
+                adoptionInquiries: item.adoptionInquiries ?? seed.adoptionInquiries,
+                profileViews: item.profileViews ?? seed.profileViews,
+              };
+            }),
+          };
+        }
+        if (version < 25) {
+          const seedById = new Map(initialCases.map((item) => [item.id, item]));
+          const now = Date.now();
+          return {
+            ...state,
+            cases: state.cases.map((item) => {
+              const seed = seedById.get(item.id);
+              if (!seed || item.id !== "nube-review") return item;
+              return seed;
+            }),
+            rescuerSupportPaymentEvents: buildInitialRescuerSupportPaymentEvents(now),
           };
         }
         return state;

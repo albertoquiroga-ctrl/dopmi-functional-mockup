@@ -35,6 +35,8 @@ export type PetCase = {
   profileViews?: number;
   /** Veces que adoptantes guardaron la mascota en Mis match (desde Adoptar). */
   matchSaves?: number;
+  /** Personas distintas que escribieron por adopción (métrica de embudo). */
+  adoptionInquiries?: number;
   health: { vaccinated: boolean; sterilized: boolean; specialCare: string };
   social: { dogs: boolean; cats: boolean; children: boolean };
   needs: Need[];
@@ -63,7 +65,8 @@ export const initialCases: PetCase[] = [
     caseStatus: "active",
     daysSinceApproval: 23,
     profileViews: 100,
-    matchSaves: 1,
+    matchSaves: 28,
+    adoptionInquiries: 12,
     health: { vaccinated: true, sterilized: false, specialCare: "Seguimiento de crecimiento" },
     social: { dogs: true, cats: true, children: true },
     needs: [
@@ -224,16 +227,19 @@ export const initialCases: PetCase[] = [
     sex: "Hembra",
     species: "Perro",
     image: "/assets/publish-sample-pet.jpg",
-    story: "Rescatada hace poco. El caso está en revisión por el equipo DopMi.",
+    story: "Rescatada hace poco. Caso de apoyo activo para el mockup del inicio rescatista.",
     location: "Monterrey, MX",
     rescuer: "María R.",
     distance: "1.2 km",
     adoption: false,
-    caseStatus: "review",
+    caseStatus: "active",
+    daysSinceApproval: 14,
+    profileViews: 41,
     health: { vaccinated: false, sterilized: false, specialCare: "En evaluación" },
     social: { dogs: true, cats: true, children: true },
     needs: [
-      { id: "nube-med", title: "Medicina", type: "Medicina", requested: 320, funded: 0, urgent: false, status: "active" },
+      { id: "nube-med", title: "Medicina", type: "Medicina", requested: 320, funded: 185, urgent: true, status: "active" },
+      { id: "nube-vet", title: "Consulta veterinaria", type: "Veterinario", requested: 120, funded: 120, status: "funded" },
     ],
   },
   {
