@@ -40,6 +40,14 @@ export type PetCase = {
   health: { vaccinated: boolean; sterilized: boolean; specialCare: string };
   social: { dogs: boolean; cats: boolean; children: boolean };
   needs: Need[];
+  /** Medios para historias en Apoyar (protótipo). */
+  donateStoryMedia?: DonateCaseStoryMedia;
+};
+
+export type DonateCaseStoryMedia = {
+  urgentVideoPoster: string;
+  thankYouVideoPoster: string;
+  evidenceByType: Partial<Record<Need["type"], string>>;
 };
 
 export type PetCaseCloseMeta = {
@@ -227,7 +235,7 @@ export const initialCases: PetCase[] = [
     sex: "Hembra",
     species: "Perro",
     image: "/assets/publish-sample-pet.jpg",
-    story: "Rescatada hace poco. Caso de apoyo activo para el mockup del inicio rescatista.",
+    story: "Caso en revisión de apoyo (protótipo).",
     location: "Monterrey, MX",
     rescuer: "María R.",
     distance: "1.2 km",
@@ -241,6 +249,14 @@ export const initialCases: PetCase[] = [
       { id: "nube-med", title: "Medicina", type: "Medicina", requested: 320, funded: 185, urgent: true, status: "active" },
       { id: "nube-vet", title: "Consulta veterinaria", type: "Veterinario", requested: 120, funded: 120, status: "funded" },
     ],
+    donateStoryMedia: {
+      urgentVideoPoster: "/assets/guardian-urgent.jpg",
+      thankYouVideoPoster: "/assets/rocky.png",
+      evidenceByType: {
+        Medicina: "/assets/guardian-reports.jpg",
+        Veterinario: "/assets/publish-sample-pet.jpg",
+      },
+    },
   },
   {
     id: "toby-case",
@@ -644,6 +660,9 @@ export const rescuerAccount = {
 
 export type NotificationKind = "message" | "donation" | "case" | "pet";
 
+/** Semántica de pago/apoyo para color del icono (donación y Guardián). */
+export type NotificationTone = "positive" | "pending" | "negative";
+
 export type Notification = {
   id: string;
   kind: NotificationKind;
@@ -652,35 +671,166 @@ export type Notification = {
   time: string;
   target: string;
   read: boolean;
+  /** Foto de mascota/caso en la bandeja (opcional). */
+  thumb?: string;
+  /** Logo de marca DopMi en lugar del chip por categoría. */
+  thumbStyle?: "photo" | "brand";
+  tone?: NotificationTone;
 };
 
+/** Bandeja demo adoptante/donante: un ejemplo por tipo acordado en producto. */
 export const initialNotifications: Notification[] = [
   {
-    id: "n1",
+    id: "n-a1",
     kind: "message",
-    title: "Nuevo mensaje de Rescatista",
-    body: "María te respondió sobre el caso de Luna.",
+    title: "Nuevo mensaje sobre Rocky",
+    body: "¿Cuándo podrías visitarnos para conocerlo?",
     time: "Hace 5 min",
-    target: "/messages/luna",
+    target: "/messages/rocky",
     read: false,
   },
   {
-    id: "n2",
-    kind: "case",
-    title: "Actualización del caso",
-    body: "El rescatista subió nueva evidencia del apoyo recibido.",
-    time: "Ayer",
+    id: "n-d2",
+    kind: "donation",
+    title: "No pudimos procesar tu apoyo",
+    body: "Tu donación a Milo no se completó. Intenta de nuevo o cambia tu método de pago.",
+    time: "Hace 20 min",
+    target: "/payment-error/milo/milo-med",
+    read: false,
+    tone: "negative",
+  },
+  {
+    id: "n-g4",
+    kind: "pet",
+    title: "Problema con tu aportación mensual",
+    body: "No pudimos cobrar Guardián. Actualiza tu tarjeta para seguir apoyando.",
+    time: "Hace 1 h",
+    target: "/settings/payment-methods",
+    read: false,
+    tone: "negative",
+  },
+  {
+    id: "n-d1",
+    kind: "donation",
+    title: "Donación enviada exitosamente",
+    body: "Tu aportación de $120 MXN a Luna ya aparece en el caso.",
+    time: "Hace 3 h",
     target: "/case/luna",
     read: false,
+    tone: "positive",
   },
   {
-    id: "n3",
+    id: "n-g3",
     kind: "pet",
-    title: "Nueva mascota en adopción",
-    body: "Hay una nueva mascota cerca de tu zona.",
+    title: "Aportación Guardián recibida",
+    body: "Cobramos $200 MXN. Gracias por sostener el fondo comunitario.",
+    time: "Ayer",
+    target: "/history",
+    read: false,
+    tone: "positive",
+  },
+  {
+    id: "n-g9",
+    kind: "pet",
+    title: "Próximo cargo Guardián",
+    body: "El 3 de julio cobraremos $200 MXN a Visa *4242.",
+    time: "Ayer",
+    target: "/settings/billing",
+    read: true,
+    tone: "pending",
+  },
+  {
+    id: "n-a4",
+    kind: "pet",
+    title: "Rocky sigue buscando hogar",
+    body: "Guardaste a Rocky en Mis match. Sigue disponible para adopción.",
     time: "Hace 2 días",
+    target: "/adoption/rocky",
+    read: true,
+    thumb: "/assets/rocky.png",
+    thumbStyle: "photo",
+  },
+  {
+    id: "n-g5",
+    kind: "pet",
+    title: "Tu reporte de impacto está listo",
+    body: "Mira qué casos atendió el fondo Guardián este mes.",
+    time: "Hace 3 días",
+    target: "/impact",
+    read: true,
+    tone: "pending",
+  },
+  {
+    id: "n-a5",
+    kind: "pet",
+    title: "¡Buenas noticias!",
+    body: "Toby encontró un hogar. Sigue explorando, muchos más buscan casa.",
+    time: "Hace 4 días",
     target: "/adoption",
     read: true,
+    thumb: "/assets/toby.png",
+    thumbStyle: "photo",
+  },
+  {
+    id: "n-d10",
+    kind: "case",
+    title: "Caso cerrado",
+    body: "El caso de Copo se cerró. Gracias por haber apoyado a la manada.",
+    time: "Hace 5 días",
+    target: "/case/copo-apoyo-arch-final",
+    read: true,
+    thumb: "/assets/milo-card.png",
+    thumbStyle: "photo",
+  },
+  {
+    id: "n-g7",
+    kind: "pet",
+    title: "Cantidad Guardián actualizada",
+    body: "Tu nueva aportación de $50 MXN aplicará a partir del próximo ciclo.",
+    time: "Hace 1 semana",
+    target: "/settings/billing",
+    read: true,
+    tone: "pending",
+  },
+  {
+    id: "n-g1",
+    kind: "pet",
+    title: "Ya eres Guardián",
+    body: "Tu aportación mensual es de $200 MXN.",
+    time: "Hace 2 semanas",
+    target: "/impact",
+    read: true,
+    tone: "positive",
+  },
+  {
+    id: "n-g2",
+    kind: "pet",
+    title: "No pudimos activar Guardián",
+    body: "Tu suscripción no se completó. Revisa tu método de pago e inténtalo de nuevo.",
+    time: "Hace 2 semanas",
+    target: "/impact/support",
+    read: true,
+    tone: "negative",
+  },
+  {
+    id: "n-g8",
+    kind: "pet",
+    title: "Suscripción Guardián cancelada",
+    body: "Seguirás viendo tu historial; puedes volver a unirte cuando quieras.",
+    time: "Hace 3 semanas",
+    target: "/settings/billing",
+    read: true,
+    tone: "negative",
+  },
+  {
+    id: "n-c4",
+    kind: "message",
+    title: "Actualizamos nuestros términos",
+    body: "Revisa los cambios en privacidad y condiciones de uso de DopMi.",
+    time: "Hace 3 semanas",
+    target: "/privacy/donor",
+    read: true,
+    thumbStyle: "brand",
   },
 ];
 
@@ -713,33 +863,44 @@ export const subscriptionPlans: SubscriptionPlan[] = [
   { id: "pro", name: "Community Member Pro", amount: 500 },
 ];
 
-export const paymentHistory = [
+/** Cobro mensual Guardián con la mascota a la que se asignó ese ciclo (mock). */
+export type GuardianPaymentHistoryRow = {
+  id: string;
+  date: string;
+  method: string;
+  amount: string;
+  status: PaymentStatus;
+  assignedPetName: string;
+  assignedCaseId: string | null;
+};
+
+export const guardianPaymentHistory: GuardianPaymentHistoryRow[] = [
   {
     id: "p1",
     date: "3 jun",
     method: "Visa *4242",
     amount: "$50.00",
-    status: "pagado" as const,
-    petName: "Luna",
-    rescuerName: "María Rescatista",
+    status: "pagado",
+    assignedPetName: "Luna",
+    assignedCaseId: "luna",
   },
   {
     id: "p2",
     date: "3 may",
     method: "Apple Pay",
     amount: "$50.00",
-    status: "pagado" as const,
-    petName: "Milo",
-    rescuerName: "María Rescatista",
+    status: "pagado",
+    assignedPetName: "Milo",
+    assignedCaseId: "milo",
   },
   {
     id: "p3",
     date: "3 abr",
     method: "Visa *4242",
     amount: "$50.00",
-    status: "cancelado" as const,
-    petName: "Max",
-    rescuerName: "Alberto Quiroga",
+    status: "cancelado",
+    assignedPetName: "Max",
+    assignedCaseId: "max-rejected",
   },
 ];
 
@@ -920,7 +1081,7 @@ export const helpTopics: HelpTopic[] = [
       {
         type: "faq",
         q: "¿Puedo apoyar a la misma mascota cada mes?",
-        a: "Sí. En el caso, elige apadrinar, selecciona las necesidades y define el monto y la frecuencia. Puedes editarlo o cancelarlo cuando quieras.",
+        a: "Puedes hacer donaciones puntuales cuando quieras desde el caso. Si prefieres un aporte mensual sin elegir mascota, Guardián asigna tu aporte según urgencia y las reglas del fondo.",
       },
       {
         type: "faq",

@@ -4,6 +4,7 @@ import {
   type PointerEvent,
   type ReactNode,
   type SetStateAction,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,7 +15,7 @@ import {
   adoptionPets,
   donationLog,
   helpTopics,
-  paymentHistory,
+  guardianPaymentHistory,
   rescuerReceivedPaymentHistory,
   rescuers,
   savedCards,
@@ -22,6 +23,7 @@ import {
   type HelpTopic,
   type Need,
   type NotificationKind,
+  type NotificationTone,
   type PetCase,
   defaultRescuerVerificationRejection,
   type RescuerVerificationFixField,
@@ -36,6 +38,9 @@ import {
 } from "./store";
 
 const A = "/assets/";
+function guardianSubscriptionHeadline(petName: string) {
+  return `Suscripción - ${petName}`;
+}
 
 const caseStatusLabel: Record<PetCase["caseStatus"], string> = {
   draft: "Borrador",
@@ -2185,6 +2190,370 @@ function AdoptionDetail() {
   );
 }
 
+const DONATE_STORY_IMAGE_MS = 5200;
+const DONATE_STORY_VIDEO_MS = 9000;
+
+type DonateStorySlideKind = "hero" | "urgent-video" | "thank-you-video" | "evidence";
+
+type DonateStorySlide = {
+  caseId: string;
+  kind: DonateStorySlideKind;
+  mediaType: "image" | "video";
+  src: string;
+  needType?: Need["type"];
+  needId?: string;
+};
+
+function isDonateNeedCompleted(need: Need) {
+  const remaining = Math.max(0, need.requested - need.funded);
+  return (
+    remaining === 0 ||
+    need.status === "funded" ||
+    need.status === "completed" ||
+    need.status === "evidence"
+  );
+}
+
+function donateCaseNeedTypesOrdered(item: PetCase, openOnly = false) {
+  const order: Need["type"][] = ["Veterinario", "Medicina", "Comida", "Otra"];
+  const pool = openOnly ? item.needs.filter((need) => !isDonateNeedCompleted(need)) : item.needs;
+  const types = new Set(pool.map((need) => need.type));
+  return order.filter((type) => types.has(type));
+}
+
+function donateStoryNeedForType(item: PetCase, type: Need["type"]) {
+  return sortNeedsByType(item.needs.filter((need) => need.type === type && !isDonateNeedCompleted(need)))[0];
+}
+
+function resolveDonateCaseStoryMedia(item: PetCase) {
+  return (
+    item.donateStoryMedia ?? {
+      urgentVideoPoster: "/assets/guardian-urgent.jpg",
+      thankYouVideoPoster: "/assets/guardian-luna.jpg",
+      evidenceByType: {
+        Veterinario: "/assets/guardian-reports.jpg",
+        Medicina: "/assets/guardian-reports.jpg",
+        Comida: "/assets/publish-sample-pet.jpg",
+      },
+    }
+  );
+}
+
+function buildDonateCaseStorySlides(item: PetCase): DonateStorySlide[] {
+  const media = resolveDonateCaseStoryMedia(item);
+  const slides: DonateStorySlide[] = [
+    { caseId: item.id, kind: "hero", mediaType: "image", src: item.image },
+  ];
+  const hasUrgentNeed = item.needs.some((need) => need.urgent && !isDonateNeedCompleted(need));
+  if (hasUrgentNeed && media.urgentVideoPoster) {
+    slides.push({
+      caseId: item.id,
+      kind: "urgent-video",
+      mediaType: "video",
+      src: media.urgentVideoPoster,
+    });
+  }
+  if (media.thankYouVideoPoster) {
+    slides.push({
+      caseId: item.id,
+      kind: "thank-you-video",
+      mediaType: "video",
+      src: media.thankYouVideoPoster,
+    });
+  }
+  donateCaseNeedTypesOrdered(item, true).forEach((type) => {
+    const evidenceSrc = media.evidenceByType[type];
+    if (!evidenceSrc) return;
+    const needForType = donateStoryNeedForType(item, type);
+    if (!needForType) return;
+    slides.push({
+      caseId: item.id,
+      kind: "evidence",
+      mediaType: "image",
+      src: evidenceSrc,
+      needType: type,
+      needId: needForType.id,
+    });
+  });
+  return slides;
+}
+
+function DonateCaseStoriesViewer({
+  caseIds,
+  initialCaseId,
+  onClose,
+  onOpenDetail,
+}: {
+  caseIds: string[];
+  initialCaseId: string;
+  onClose: () => void;
+  onOpenDetail: (caseId: string) => void;
+}) {
+  const { cases } = usePrototypeStore();
+  const queue = useMemo(() => {
+    const start = Math.max(0, caseIds.indexOf(initialCaseId));
+    const ordered = start >= 0 ? caseIds.slice(start) : caseIds;
+    return ordered
+      .map((id) => cases.find((entry) => entry.id === id))
+      .filter((entry): entry is PetCase => Boolean(entry));
+  }, [caseIds, cases, initialCaseId]);
+
+  const slidesByCase = useMemo(
+    () => new Map(queue.map((item) => [item.id, buildDonateCaseStorySlides(item)])),
+    [queue],
+  );
+
+  const [petIndex, setPetIndex] = useState(0);
+  const [slideIndex, setSlideIndex] = useState(0);
+  const [segmentProgress, setSegmentProgress] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  const touchStartY = useRef(0);
+  const touchStartX = useRef(0);
+  const touchActive = useRef(false);
+  const detailOpenedRef = useRef(false);
+
+  const currentPet = queue[petIndex];
+  const currentSlides = currentPet ? slidesByCase.get(currentPet.id) ?? [] : [];
+  const currentSlide = currentSlides[slideIndex];
+  const isLastSlide = slideIndex >= currentSlides.length - 1;
+  const isLastPet = petIndex >= queue.length - 1;
+
+  const goNext = useCallback(() => {
+    if (!currentPet) return;
+    if (!isLastSlide) {
+      setSlideIndex((value) => value + 1);
+      setSegmentProgress(0);
+      return;
+    }
+    if (!isLastPet) {
+      setPetIndex((value) => value + 1);
+      setSlideIndex(0);
+      setSegmentProgress(0);
+      return;
+    }
+    onClose();
+  }, [currentPet, isLastPet, isLastSlide, onClose]);
+
+  const goPrev = useCallback(() => {
+    if (slideIndex > 0) {
+      setSlideIndex((value) => value - 1);
+      setSegmentProgress(0);
+      return;
+    }
+    if (petIndex > 0) {
+      const prevPet = queue[petIndex - 1];
+      const prevSlides = prevPet ? slidesByCase.get(prevPet.id) ?? [] : [];
+      setPetIndex((value) => value - 1);
+      setSlideIndex(Math.max(0, prevSlides.length - 1));
+      setSegmentProgress(0);
+    }
+  }, [petIndex, queue, slideIndex, slidesByCase]);
+
+  const openDetail = useCallback(() => {
+    if (!currentPet || detailOpenedRef.current) return;
+    detailOpenedRef.current = true;
+    onOpenDetail(currentPet.id);
+  }, [currentPet, onOpenDetail]);
+
+  useEffect(() => {
+    detailOpenedRef.current = false;
+  }, [petIndex, slideIndex]);
+
+  useEffect(() => {
+    if (!currentSlide || paused) return;
+    const duration = currentSlide.mediaType === "video" ? DONATE_STORY_VIDEO_MS : DONATE_STORY_IMAGE_MS;
+    const started = performance.now();
+    setSegmentProgress(0);
+    let finished = false;
+    const tick = window.setInterval(() => {
+      if (finished) return;
+      const elapsed = performance.now() - started;
+      const pct = Math.min(100, (elapsed / duration) * 100);
+      setSegmentProgress(pct);
+      if (pct >= 100) {
+        finished = true;
+        goNext();
+      }
+    }, 40);
+    return () => window.clearInterval(tick);
+  }, [currentSlide, goNext, paused, petIndex, slideIndex]);
+
+  if (!currentPet || !currentSlide) return null;
+
+  const total = currentPet.needs.reduce((sum, need) => sum + need.requested, 0);
+  const funded = currentPet.needs.reduce((sum, need) => sum + need.funded, 0);
+  const missionPct = Math.min(100, Math.round((funded / Math.max(total, 1)) * 100));
+  const supportTypes = donateCaseNeedTypesOrdered(currentPet, true);
+  const isUrgentStorySlide = currentSlide.kind === "urgent-video";
+  const isThankYouStorySlide = currentSlide.kind === "thank-you-video";
+  const isEvidenceStorySlide = currentSlide.kind === "evidence";
+  const evidenceNeed =
+    isEvidenceStorySlide && currentSlide.needId
+      ? currentPet.needs.find((need) => need.id === currentSlide.needId)
+      : undefined;
+  const evidencePct = evidenceNeed?.requested
+    ? Math.min(100, Math.round((evidenceNeed.funded / evidenceNeed.requested) * 100))
+    : 0;
+
+  const handleVerticalSwipe = (deltaY: number) => {
+    if (deltaY > 72) openDetail();
+    if (deltaY < -72) onClose();
+  };
+
+  return (
+    <div
+      className="donate-story-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Historias de ${currentPet.name}`}
+    >
+      <div
+        className="donate-story-shell"
+        onTouchStart={(event) => {
+          touchActive.current = true;
+          touchStartY.current = event.touches[0]?.clientY ?? 0;
+          touchStartX.current = event.touches[0]?.clientX ?? 0;
+          setPaused(true);
+        }}
+        onTouchEnd={(event) => {
+          if (!touchActive.current) return;
+          const endY = event.changedTouches[0]?.clientY ?? touchStartY.current;
+          const endX = event.changedTouches[0]?.clientX ?? touchStartX.current;
+          const deltaY = touchStartY.current - endY;
+          const deltaX = endX - touchStartX.current;
+          if (Math.abs(deltaY) > Math.abs(deltaX)) handleVerticalSwipe(deltaY);
+          touchActive.current = false;
+          setPaused(false);
+        }}
+        onPointerDown={(event) => {
+          if (event.pointerType === "mouse") {
+            touchStartY.current = event.clientY;
+            touchActive.current = true;
+            setPaused(true);
+          }
+        }}
+        onPointerUp={(event) => {
+          if (!touchActive.current || event.pointerType !== "mouse") return;
+          handleVerticalSwipe(touchStartY.current - event.clientY);
+          touchActive.current = false;
+          setPaused(false);
+        }}
+      >
+        <div className={`donate-story-frame${isUrgentStorySlide ? " donate-story-frame--urgent" : ""}`}>
+          <div className="donate-story-segments" aria-hidden="true">
+            {currentSlides.map((slide, index) => (
+              <span key={`${slide.kind}-${slide.needType ?? index}`} className="donate-story-segment">
+                <i
+                  style={{
+                    width:
+                      index < slideIndex ? "100%" : index === slideIndex ? `${segmentProgress}%` : "0%",
+                  }}
+                />
+              </span>
+            ))}
+          </div>
+          <button type="button" className="donate-story-close" onClick={onClose} aria-label="Cerrar">
+            ×
+          </button>
+          <div className="donate-story-tap-zones" aria-hidden="true">
+            <button type="button" className="donate-story-tap-prev" onClick={goPrev} aria-label="Anterior" />
+            <button type="button" className="donate-story-tap-next" onClick={goNext} aria-label="Siguiente" />
+          </div>
+          <div className="donate-story-media">
+            {currentSlide.mediaType === "video" ? (
+              <div className="donate-story-video">
+                <img src={currentSlide.src} alt="" />
+              </div>
+            ) : (
+              <img src={currentSlide.src} alt={currentPet.name} />
+            )}
+            <div className="donate-story-shade" aria-hidden="true" />
+            <div
+              className={`donate-story-meta${isUrgentStorySlide ? " donate-story-meta--urgent" : ""}${isThankYouStorySlide ? " donate-story-meta--thank-you" : ""}${isEvidenceStorySlide ? " donate-story-meta--evidence" : ""}`}
+            >
+              {isThankYouStorySlide ? (
+                <div className="donate-story-thankyou-copy">
+                  <p>Da un pequeño gesto,</p>
+                  <p>
+                    haz una <strong>GRAN</strong> diferencia.
+                  </p>
+                </div>
+              ) : isEvidenceStorySlide && evidenceNeed ? (
+                <>
+                  <p className="donate-story-evidence-title">
+                    {evidenceNeed.title} para {currentPet.name}
+                  </p>
+                  <div
+                    className="donate-story-progress"
+                    role="progressbar"
+                    aria-valuenow={evidencePct}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`Avance de ${evidenceNeed.title}`}
+                  >
+                    <i style={{ width: `${evidencePct}%` }} />
+                  </div>
+                  <p className="donate-story-amounts">
+                    ${evidenceNeed.funded.toLocaleString("es-MX")} de $
+                    {evidenceNeed.requested.toLocaleString("es-MX")}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h2>{currentPet.name}</h2>
+                  {isUrgentStorySlide ? (
+                    <p className="donate-story-urgent-row">
+                      <Icon name="icon-alert-circle.svg" size={20} />
+                      <span>Apoyo urgente</span>
+                    </p>
+                  ) : null}
+                  {currentSlide.kind === "hero" ? (
+                    <>
+                      <button type="button" className="donate-story-story-link" onClick={openDetail}>
+                        <span className="donate-story-need-icons" aria-label="Tipos de apoyo">
+                          {supportTypes.map((type) => (
+                            <span
+                              key={type}
+                              className={`need-symbol small ${needTypeSymbolClass(type)}`}
+                              title={needTypeLabel(type)}
+                              aria-hidden="true"
+                            >
+                              {needEmoji(type)}
+                            </span>
+                          ))}
+                        </span>
+                        <span>Conoce su historia</span>
+                      </button>
+                      <div
+                        className="donate-story-progress"
+                        role="progressbar"
+                        aria-valuenow={missionPct}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label="Avance del apoyo"
+                      >
+                        <i style={{ width: `${missionPct}%` }} />
+                      </div>
+                      <p className="donate-story-amounts">
+                        ${funded.toLocaleString("es-MX")} de ${total.toLocaleString("es-MX")}
+                      </p>
+                    </>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <button type="button" className="donate-story-swipe-hint" onClick={openDetail}>
+          <Icon name="icon-chevron-right.svg" size={18} className="donate-story-swipe-icon" />
+          Desliza hacia arriba
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DonateCaseRing({
   image,
   name,
@@ -2241,9 +2610,57 @@ function DonateCaseRing({
   );
 }
 
+const guardianHeroPerks = [
+  { icon: "icon-shield.svg", label: "Rescatistas y casos verificados" },
+  { icon: "tab-impact.svg", label: "Sigue tu huella" },
+  { icon: "check-circle.svg", label: "Cancela cuando quieras" },
+] as const;
+
+const guardianPromoTitle = "Sé un Guardián";
+
+const guardianPromoSlides = [
+  { id: "guardian-hero", image: "guardian-urgent.jpg" },
+  { id: "guardian-impact", image: "guardian-luna.jpg" },
+  { id: "guardian-community", image: "guardian-milo.jpg" },
+] as const;
+
 function DonationHome() {
   const navigate = useNavigate();
   const { cases, emptyStates } = usePrototypeStore();
+  const [storyCaseId, setStoryCaseId] = useState<string | null>(null);
+  const guardianCarouselRef = useRef<HTMLDivElement>(null);
+  const [guardianSlideIndex, setGuardianSlideIndex] = useState(0);
+
+  const scrollGuardianCarouselTo = (index: number) => {
+    const carousel = guardianCarouselRef.current;
+    if (!carousel) return;
+    const slide = carousel.querySelector<HTMLElement>(`[data-guardian-slide="${index}"]`);
+    slide?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+    setGuardianSlideIndex(index);
+  };
+
+  const advanceGuardianCarouselMock = () => {
+    const next = (guardianSlideIndex + 1) % guardianPromoSlides.length;
+    scrollGuardianCarouselTo(next);
+  };
+
+  const syncGuardianCarouselIndex = () => {
+    const carousel = guardianCarouselRef.current;
+    if (!carousel) return;
+    const slides = carousel.querySelectorAll<HTMLElement>("[data-guardian-slide]");
+    if (!slides.length) return;
+    const left = carousel.scrollLeft;
+    let closest = 0;
+    let minDist = Number.POSITIVE_INFINITY;
+    slides.forEach((slide, index) => {
+      const dist = Math.abs(slide.offsetLeft - left);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = index;
+      }
+    });
+    setGuardianSlideIndex(closest);
+  };
 
   const openCases = emptyStates
     ? []
@@ -2261,14 +2678,30 @@ function DonationHome() {
     <ScreenShell
       className="donate-shell"
       overlay={
-        <button
-          type="button"
-          className="donate-guardian-foot donate-guardian-foot--dock"
-          onClick={() => navigate("/impact/support")}
-        >
-          <small>Desde $50 / mes</small>
-          <span className="donate-guardian-cta">Suscríbete ahora</span>
-        </button>
+        <>
+          {storyCaseId ? (
+            <DonateCaseStoriesViewer
+              key={storyCaseId}
+              caseIds={caseItems.map(({ item }) => item.id)}
+              initialCaseId={storyCaseId}
+              onClose={() => setStoryCaseId(null)}
+              onOpenDetail={(caseId) => {
+                setStoryCaseId(null);
+                navigate(`/case/${caseId}`);
+              }}
+            />
+          ) : null}
+          {!storyCaseId ? (
+            <button
+              type="button"
+              className="donate-guardian-foot donate-guardian-foot--dock"
+              onClick={() => navigate("/impact/support")}
+            >
+              <small>Desde $50 / mes</small>
+              <span className="donate-guardian-cta">Suscríbete ahora</span>
+            </button>
+          ) : null}
+        </>
       }
     >
       <div className="donate-home donor-chrome">
@@ -2288,7 +2721,7 @@ function DonationHome() {
                   funded={need.funded}
                   requested={need.requested}
                   pct={pct}
-                  onClick={() => navigate(`/case/${item.id}`)}
+                  onClick={() => setStoryCaseId(item.id)}
                 />
               ))}
             </div>
@@ -2297,39 +2730,49 @@ function DonationHome() {
 
         <section className="donate-guardian">
           <h2>Apoya a casos urgentes</h2>
-          <p>Con cada aporte mensual ayudarás a cubrir necesidades reales de mascotas que buscan un hogar.</p>
-          <button
-            type="button"
-            className="donate-guardian-card"
-            onClick={() => navigate("/impact/support")}
-          >
-            <div className="donate-guardian-media" aria-hidden="true">
-              <img src={`${A}guardian-urgent.jpg`} alt="" />
-              <div className="donate-guardian-shade" />
+          <p>Con cada aporte mensual ayudarás a cubrir necesidades de mascotas que buscan un hogar.</p>
+          <div className="donate-guardian-carousel-wrap">
+            <button
+              type="button"
+              className="donate-guardian-mock-step"
+              aria-label={`Cambiar imagen del carrusel Guardián, slide ${guardianSlideIndex + 1} de ${guardianPromoSlides.length}`}
+              onClick={advanceGuardianCarouselMock}
+            >
+              Cambiar imagen ({guardianSlideIndex + 1}/{guardianPromoSlides.length}) · prototipo
+            </button>
+            <div
+              ref={guardianCarouselRef}
+              className="donate-guardian-carousel"
+              aria-label="Conoce Guardián"
+              onScroll={syncGuardianCarouselIndex}
+            >
+            <div className="donate-guardian-track">
+              {guardianPromoSlides.map((slide, index) => (
+                <button
+                  key={slide.id}
+                  type="button"
+                  className="donate-guardian-slide"
+                  data-guardian-slide={index}
+                  onClick={() => navigate("/impact/support")}
+                >
+                  <img className="donate-guardian-slide-photo" src={`${A}${slide.image}`} alt="" />
+                  <div className="donate-guardian-slide-shade" aria-hidden="true" />
+                  <div className="donate-guardian-slide-copy">
+                    <strong>{guardianPromoTitle}</strong>
+                    <ul>
+                      {guardianHeroPerks.map((perk) => (
+                        <li key={perk.label}>
+                          <Icon name={perk.icon} size={14} />
+                          {perk.label}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </button>
+              ))}
             </div>
-            <div className="donate-guardian-body">
-              <div className="donate-guardian-copy">
-                <strong>Sé un Guardián</strong>
-                <ul>
-                  <li>
-                    <Icon name="icon-shield.svg" size={14} />
-                    Rescatistas y casos verificados
-                  </li>
-                  <li>
-                    <Icon name="tab-impact.svg" size={14} />
-                    Sigue tu huella
-                  </li>
-                  <li>
-                    <Icon name="check-circle.svg" size={14} />
-                    Cancela cuando quieras
-                  </li>
-                </ul>
-              </div>
-              <div className="donate-guardian-grow" aria-hidden="true" />
-              <div className="donate-guardian-foot-slot" aria-hidden="true" />
-              <div className="donate-guardian-trail" aria-hidden="true" />
             </div>
-          </button>
+          </div>
         </section>
       </div>
     </ScreenShell>
@@ -2457,7 +2900,6 @@ function CaseDetail() {
           : [item.image, item.image, item.image];
   const gallery = [...photos, item.image, photos[1] ?? item.image, photos[2] ?? item.image].slice(0, 6);
   const tags = Array.from(new Set(item.needs.map((need) => need.type))).map(needTypeLabel);
-  const firstActive = item.needs.find((need) => need.status === "active" && need.funded < need.requested)?.id;
   const primaryNeed =
     item.needs.find((entry) => entry.status === "active" && entry.funded < entry.requested) ?? item.needs[0];
   const donateNeed =
@@ -2597,7 +3039,7 @@ function CaseDetail() {
                     key={need.id}
                     need={need}
                     caseId={item.id}
-                    defaultOpen={need.id === firstActive}
+                    defaultOpen={false}
                     onDonate={openDonate}
                   />
                 ))}
@@ -2933,10 +3375,42 @@ function Impact() {
   if (guardianActive) {
     const showEmpty = emptyStates || !guardianImpactReady;
     const stories = [
-      { name: "Luna", image: "impact-luna.png", type: "Suscripción mensual", amount: 200, author: "Ana García", time: "Hace 2 días", copy: "Luna recibió su comida mensual gracias a tu suscripción. ¡Ya está mucho más fuerte!" },
-      { name: "Milo", image: "impact-milo.png", type: "Donación directa", amount: 500, author: "Carlos Ruiz", time: "Hace 5 días", copy: "Milo completó su tratamiento de vacunas. Tu donación directa ayudó a proteger su salud." },
-      { name: "Max", image: "impact-max.png", type: "Suscripción mensual", amount: 150, author: "María López", time: "Hace 1 semana", copy: "Max recibió atención veterinaria de emergencia. Tu contribución mensual hizo la diferencia." },
-      { name: "Bella", image: "impact-bella.png", type: "Suscripción mensual", amount: 100, author: "Ana García", time: "Hace 2 semanas", copy: "Bella está lista para adopción gracias a las donaciones de la comunidad. ¡Tu ayuda fue clave!" },
+      {
+        name: "Luna",
+        image: "impact-luna.png",
+        type: "Fondo Guardián",
+        amount: 200,
+        author: "Ana García",
+        time: "Hace 2 días",
+        copy: "Luna recibió alimento gracias al fondo Guardián. ¡Ya está mucho más fuerte!",
+      },
+      {
+        name: "Milo",
+        image: "impact-milo.png",
+        type: "Donación directa",
+        amount: 500,
+        author: "Carlos Ruiz",
+        time: "Hace 5 días",
+        copy: "Milo completó su tratamiento de vacunas. Tu donación directa ayudó a proteger su salud.",
+      },
+      {
+        name: "Max",
+        image: "impact-max.png",
+        type: "Fondo Guardián",
+        amount: 150,
+        author: "María López",
+        time: "Hace 1 semana",
+        copy: "Max recibió atención veterinaria de emergencia con apoyo del fondo Guardián.",
+      },
+      {
+        name: "Bella",
+        image: "impact-bella.png",
+        type: "Fondo Guardián",
+        amount: 100,
+        author: "Ana García",
+        time: "Hace 2 semanas",
+        copy: "Bella avanzó hacia su adopción con apoyo asignado desde el fondo comunitario.",
+      },
     ];
     return (
       <ScreenShell>
@@ -3543,6 +4017,76 @@ const notificationIcons: Record<NotificationKind, string> = {
   pet: "notif-pet.svg",
 };
 
+function notificationChipKind(item: { kind: NotificationKind; title: string; body: string }) {
+  if (/guardián/i.test(`${item.title} ${item.body}`)) return "pet";
+  return item.kind ?? "case";
+}
+
+function isGuardianNotification(item: { title: string; body: string }) {
+  return /guardián/i.test(`${item.title} ${item.body}`);
+}
+
+function isPaymentNotification(item: { kind: NotificationKind; title: string; body: string }) {
+  return item.kind === "donation" || isGuardianNotification(item);
+}
+
+function resolveNotificationTone(item: {
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  tone?: NotificationTone;
+}): NotificationTone | null {
+  if (!isPaymentNotification(item)) return null;
+  if (item.tone) return item.tone;
+  const text = `${item.title} ${item.body}`.toLowerCase();
+  if (/no pudimos|fall|cancelad|problema con/.test(text)) return "negative";
+  if (/próximo|proceso|actualiz|reporte|en revisión/.test(text)) return "pending";
+  if (/exitosamente|recibida|ya eres|gracias|cobramos|enviada/.test(text)) return "positive";
+  return "pending";
+}
+
+function NotificationVisual({
+  item,
+  chipKind,
+}: {
+  item: {
+    kind: NotificationKind;
+    title: string;
+    body: string;
+    thumb?: string;
+    thumbStyle?: "photo" | "brand";
+    tone?: NotificationTone;
+  };
+  chipKind: NotificationKind;
+}) {
+  if (item.thumbStyle === "brand") {
+    return (
+      <span className="notif-thumb notif-thumb--brand" aria-hidden="true">
+        <img className="discover-logo" src={`${A}logo-paw.svg`} alt="" width={40} height={40} />
+      </span>
+    );
+  }
+  if (item.thumb && item.thumbStyle === "photo") {
+    return (
+      <span className="notif-thumb notif-thumb--photo" aria-hidden="true">
+        <img src={item.thumb} alt="" />
+      </span>
+    );
+  }
+  const tone = resolveNotificationTone(item);
+  const toneClass = tone ? `tone-${tone}` : "";
+  const guardian = isGuardianNotification(item);
+  const chipIcon =
+    chipKind === "donation" ? (
+      <Icon name="tab-donate.svg" size={20} />
+    ) : chipKind === "pet" && guardian ? (
+      <Icon name="notif-pet.svg" size={20} />
+    ) : (
+      <AssetIcon name={notificationIcons[chipKind]} size={20} />
+    );
+  return <span className={`notif-chip ${chipKind} ${toneClass}`.trim()}>{chipIcon}</span>;
+}
+
 function NotificationList() {
   const navigate = useNavigate();
   const { notifications, markNotificationRead, accountMode } = usePrototypeStore();
@@ -3550,7 +4094,9 @@ function NotificationList() {
     <div className={`plain-screen${accountMode === "rescuer" ? " rescuer-theme" : ""}`}>
       <TopBar title="Notificaciones" back={accountMode === "rescuer" ? "/rescuer/messages" : "/profile"} />
       <div className="content-pad notification-stack">
-        {notifications.map((item) => (
+        {notifications.map((item) => {
+          const chipKind = notificationChipKind(item);
+          return (
           <button
             key={item.id}
             className={`notification-card ${item.read ? "" : "unread"}`}
@@ -3559,9 +4105,7 @@ function NotificationList() {
               navigate(item.target);
             }}
           >
-            <span className={`notif-chip ${item.kind ?? "case"}`}>
-              <AssetIcon name={notificationIcons[item.kind] ?? notificationIcons.case} size={20} />
-            </span>
+            <NotificationVisual item={item} chipKind={chipKind} />
             <span className="notif-body">
               <span className="notif-head">
                 <strong>{item.title}</strong>
@@ -3570,7 +4114,8 @@ function NotificationList() {
               <p>{item.body}</p>
             </span>
           </button>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -3583,6 +4128,110 @@ const stripePaymentStatusLabel = {
   fallado: "Fallado",
 } as const;
 
+function resolvePaymentLogPetImage(petName: string, caseId: string | null, cases: PetCase[]) {
+  if (caseId) {
+    const match = cases.find((item) => item.id === caseId);
+    if (match?.image) return match.image;
+  }
+  const byName = cases.find((item) => item.name === petName);
+  if (byName?.image) return byName.image;
+  const adoption = adoptionPets.find((pet) => pet.name === petName);
+  if (adoption?.image) return adoption.image;
+  return `${A}publish-sample-pet.jpg`;
+}
+
+function formatPaymentLogDate(date: string) {
+  const trimmed = date.trim();
+  if (/\b20\d{2}\b/.test(trimmed)) return trimmed;
+  return `${trimmed} 2026`;
+}
+
+function parsePaymentLogAmount(raw: string | number) {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return { dollars: 0, cents: 0 };
+    const totalCents = Math.round(raw * 100);
+    return { dollars: Math.trunc(totalCents / 100), cents: Math.abs(totalCents % 100) };
+  }
+  const cleaned = raw.replace(/[^0-9.]/g, "");
+  const parsed = Number.parseFloat(cleaned);
+  if (!Number.isFinite(parsed)) return { dollars: 0, cents: 0 };
+  const totalCents = Math.round(parsed * 100);
+  return { dollars: Math.trunc(totalCents / 100), cents: Math.abs(totalCents % 100) };
+}
+
+function formatPaymentLogAmountLabel(dollars: number, cents: number, showPlus = true) {
+  const whole = dollars.toLocaleString("en-US");
+  const prefix = showPlus ? "+" : "";
+  return cents > 0 ? `${prefix}$${whole}.${String(cents).padStart(2, "0")}` : `${prefix}$${whole}`;
+}
+
+function PaymentLogAmount({
+  value,
+  tone,
+  showPlus = true,
+}: {
+  value: string | number;
+  tone: "is-positive" | "is-negative";
+  showPlus?: boolean;
+}) {
+  const { dollars, cents } = parsePaymentLogAmount(value);
+  const whole = dollars.toLocaleString("en-US");
+  return (
+    <span
+      className={`payment-log-amount ${tone}`}
+      aria-label={formatPaymentLogAmountLabel(dollars, cents, showPlus)}
+    >
+      {showPlus ? "+" : null}${whole}
+      {cents > 0 ? (
+        <span className="payment-log-amount-cents" aria-hidden="true">
+          .{String(cents).padStart(2, "0")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function PaymentLogCard({
+  headline,
+  date,
+  method,
+  status,
+  amount,
+  petImage,
+}: {
+  headline: string;
+  date: string;
+  method: string;
+  status: keyof typeof stripePaymentStatusLabel;
+  amount: string | number;
+  petImage: string;
+}) {
+  const isNegativeStatus = status === "cancelado" || status === "fallado";
+  const amountTone = isNegativeStatus ? "is-negative" : "is-positive";
+  return (
+    <li className="payment-log-card">
+      <article className="payment-log-card-body profile-activity-row--static">
+        <span className="payment-log-thumb" aria-hidden="true">
+          <img src={petImage} alt="" />
+        </span>
+        <div className="payment-log-copy">
+          <strong className="payment-log-title">{headline}</strong>
+          <span className="payment-log-date">{formatPaymentLogDate(date)}</span>
+          <span className="payment-log-method-row">
+            <span className="payment-log-method">{method}</span>
+            {isNegativeStatus ? (
+              <span className={`log-pill payment-log-status-pill ${status}`}>
+                {stripePaymentStatusLabel[status]}
+              </span>
+            ) : null}
+          </span>
+        </div>
+        <PaymentLogAmount value={amount} tone={amountTone} showPlus={!isNegativeStatus} />
+      </article>
+    </li>
+  );
+}
+
 function RescuerReceivedPaymentHistory() {
   const { emptyStates } = usePrototypeStore();
   const rows = emptyStates ? [] : rescuerReceivedPaymentHistory;
@@ -3591,7 +4240,10 @@ function RescuerReceivedPaymentHistory() {
     <div className="plain-screen rescuer-theme">
       <TopBar title="Mi historial" back="/rescuer/profile" />
       <div className="content-pad log-section">
-        <p>Consulta el historial de pagos que has recibido por tus casos de apoyo.</p>
+        <p className="log-section-intro">
+          Consulta el historial de pagos que has recibido por tus casos de apoyo.
+        </p>
+        <p className="log-section-intro">Sigue así, personas como tú son especiales para la manada.</p>
         {rows.length ? (
           <ul className="profile-activity-list profile-activity-list--received-log" aria-label="Historial de pagos recibidos">
             {rows.map((row) => (
@@ -3604,7 +4256,14 @@ function RescuerReceivedPaymentHistory() {
                     <small>{row.donorLabel}</small>
                   </span>
                   <span className="profile-activity-amount">
-                    <b>{row.amount}</b>
+                    <PaymentLogAmount
+                      value={row.amount}
+                      tone={
+                        row.status === "cancelado" || row.status === "fallado"
+                          ? "is-negative"
+                          : "is-positive"
+                      }
+                    />
                     <i className={`log-pill ${row.status}`}>{stripePaymentStatusLabel[row.status]}</i>
                   </span>
                 </div>
@@ -3622,27 +4281,22 @@ function RescuerReceivedPaymentHistory() {
 }
 
 function History() {
-  const { accountMode, emptyStates } = usePrototypeStore();
+  const { accountMode, emptyStates, cases } = usePrototypeStore();
   if (accountMode === "rescuer") {
     return <RescuerReceivedPaymentHistory />;
   }
-  const paymentStatusLabel = stripePaymentStatusLabel;
-  const donationRows = useDonationLogRows().filter(
-    (row) => !/apadrinamiento/i.test(row.concept),
-  );
-  const subscriptionRows = emptyStates
+  const donationRows = useDonationLogRows();
+  const guardianRows = emptyStates
     ? []
-    : paymentHistory.map((row) => ({
+    : guardianPaymentHistory.map((row) => ({
         id: row.id,
         date: row.date,
-        kind: "suscripcion" as const,
-        title: "Suscripción",
-        petName: row.petName,
-        rescuerName: row.rescuerName,
+        kind: "guardian" as const,
         method: row.method,
         amount: row.amount,
         status: row.status,
-        caseId: null as string | null,
+        assignedPetName: row.assignedPetName,
+        assignedCaseId: row.assignedCaseId,
       }));
   const caseRows = emptyStates
     ? []
@@ -3657,42 +4311,37 @@ function History() {
         status: row.status,
         caseId: row.caseId as string | null,
       }));
-  const rows = [...subscriptionRows, ...caseRows];
+  const rows = [...guardianRows, ...caseRows];
 
   return (
     <div className="plain-screen">
       <TopBar title="Mi historial" back="/profile" />
       <div className="content-pad log-section">
-        <p>Consulta todo tu historial de pagos.</p>
+        <p className="log-section-intro">
+          Consulta todos los <span className="log-section-intro-accent">+Apoyos</span> que recibió la manada{" "}
+          <strong>gracias a ti.</strong>
+        </p>
         {rows.length ? (
           <ul className="profile-activity-list profile-activity-list--payment-log" aria-label="Historial de pagos">
             {rows.map((row) => {
-              const statusLabel = paymentStatusLabel[row.status];
+              const headline =
+                row.kind === "donacion"
+                  ? `${row.concept} - ${row.title}`
+                  : guardianSubscriptionHeadline(row.assignedPetName);
+              const petImage =
+                row.kind === "donacion"
+                  ? resolvePaymentLogPetImage(row.title, row.caseId, cases)
+                  : resolvePaymentLogPetImage(row.assignedPetName, row.assignedCaseId, cases);
               return (
-                <li key={`${row.kind}-${row.id}`}>
-                  <div className="profile-activity-row profile-activity-row--static">
-                    <span className="profile-activity-date">{row.date}</span>
-                    <span className="profile-activity-body">
-                      {row.kind === "donacion" ? (
-                        <span className="profile-activity-title">
-                          <strong>{row.title}</strong> - {row.concept}
-                        </span>
-                      ) : (
-                        <>
-                          <strong>{row.title}</strong>
-                          <span className="profile-activity-subline">
-                            {row.petName} - {row.rescuerName}
-                          </span>
-                        </>
-                      )}
-                      <small>{row.method}</small>
-                    </span>
-                    <span className="profile-activity-amount">
-                      <b>{row.amount}</b>
-                      <i className={`log-pill ${row.status}`}>{statusLabel}</i>
-                    </span>
-                  </div>
-                </li>
+                <PaymentLogCard
+                  key={`${row.kind}-${row.id}`}
+                  headline={headline}
+                  date={row.date}
+                  method={row.method}
+                  status={row.status}
+                  amount={row.amount}
+                  petImage={petImage}
+                />
               );
             })}
           </ul>
@@ -3733,7 +4382,7 @@ function useDonationLogRows(limit?: number) {
   return limit ? rows.slice(0, limit) : rows;
 }
 
-function SupportCause() {
+function SupportCause({ shellMode = "donor" }: { shellMode?: AccountMode }) {
   const [species, setSpecies] = useState<DiscoverSpeciesChoice>("Perro");
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftAge, setDraftAge] = useState<PetAgeBand | null>(null);
@@ -3784,7 +4433,7 @@ function SupportCause() {
   }, [species, ageFilter, sizeFilter, personalityFilter, kiloSort]);
 
   return (
-    <ScreenShell>
+    <ScreenShell mode={shellMode}>
       <div className="donate-home donor-chrome support-cause-screen">
         <DonorChromeTop />
         <header className="match-top">
@@ -4349,18 +4998,12 @@ function Toast({ text, onDone }: { text: string; onDone: () => void }) {
 }
 
 function Billing() {
-  const { guardianActive, guardianAmount, setGuardian, emptyStates } = usePrototypeStore();
+  const { guardianActive, guardianAmount, setGuardian, emptyStates, cases } = usePrototypeStore();
   const [dialog, setDialog] = useState<"none" | "amount" | "cancel">("none");
   const [choice, setChoice] = useState(guardianAmount);
   const [toast, setToast] = useState("");
   const [justChanged, setJustChanged] = useState(false);
-  const paymentRows = emptyStates ? [] : paymentHistory;
-  const paymentStatusLabel = {
-    pagado: "Pagado",
-    cancelado: "Cancelado",
-    enproceso: "En proceso",
-    fallado: "Fallado",
-  } as const;
+  const paymentRows = emptyStates ? [] : guardianPaymentHistory;
   return (
     <div className="plain-screen">
       <TopBar title="Suscripción y pagos" back="/settings" />
@@ -4411,24 +5054,17 @@ function Billing() {
         ) : null}
         <h2 className="settings-heading">Historial de pagos</h2>
         {paymentRows.length ? (
-          <ul className="profile-activity-list profile-activity-list--payment-log">
+          <ul className="profile-activity-list profile-activity-list--payment-log" aria-label="Historial de pagos">
             {paymentRows.map((row) => (
-              <li key={row.id}>
-                <div className="profile-activity-row profile-activity-row--static">
-                  <span className="profile-activity-date">{row.date}</span>
-                  <span className="profile-activity-body">
-                    <strong>Suscripción</strong>
-                    <span className="profile-activity-subline">
-                      {row.petName} - {row.rescuerName}
-                    </span>
-                    <small>{row.method}</small>
-                  </span>
-                  <span className="profile-activity-amount">
-                    <b>{row.amount}</b>
-                    <i className={`log-pill ${row.status}`}>{paymentStatusLabel[row.status]}</i>
-                  </span>
-                </div>
-              </li>
+              <PaymentLogCard
+                key={row.id}
+                headline={guardianSubscriptionHeadline(row.assignedPetName)}
+                date={row.date}
+                method={row.method}
+                status={row.status}
+                amount={row.amount}
+                petImage={resolvePaymentLogPetImage(row.assignedPetName, row.assignedCaseId, cases)}
+              />
             ))}
           </ul>
         ) : (
@@ -5415,7 +6051,7 @@ function RescuerHome() {
             <button
               type="button"
               className="pet-detail-verified rh-home-verification-status rh-home-verification-status--action"
-              onClick={() => navigate("/rescuer/profile")}
+              onClick={() => navigate("/rescuer/profile/edit")}
             >
               <AssetIcon name={verificationStatus.icon} size={16} alt="" />
               {verificationStatus.label}
@@ -5628,7 +6264,7 @@ function RescuerHome() {
           </span>
         </button>
 
-        <CroquetasConCausaCard onClick={() => navigate("/apoya-causa")} />
+        <CroquetasConCausaCard onClick={() => navigate("/rescuer/apoya-causa")} />
         </div>
       </div>
       {photoTipsOpen ? <RescuerPhotoTipsDialog onClose={() => setPhotoTipsOpen(false)} /> : null}
@@ -7301,7 +7937,7 @@ function PublishAdoptionDetailPreview({
 
 function PublishFlow() {
   const navigate = useNavigate();
-  const { verification, draft, updateDraft, publishDraft, updateCase, updateCaseStatus, cases, donorProfile, rescuerProfile } =
+  const { draft, updateDraft, publishDraft, updateCase, updateCaseStatus, cases, donorProfile, rescuerProfile } =
     usePrototypeStore();
   const location = useLocation();
   const publishSearch = new URLSearchParams(location.search);
@@ -7310,7 +7946,6 @@ function PublishFlow() {
   const correcting = location.search.includes("correct");
   const continuing =
     location.search.includes("draft") || location.search.includes("edit") || location.search.includes("correct");
-  const needsVerification = verification !== "verified";
   const [step, setStep] = useState(continuing ? 1 : 0);
   const [mode, setMode] = useState<"adoption" | "donation">((draft.publishMode as "adoption" | "donation") || "adoption");
   const photos = Array.isArray(draft.photos) ? (draft.photos as string[]) : [];
@@ -7442,10 +8077,6 @@ function PublishFlow() {
   }, [mode, mainPetPhotoStored, photos, updateDraft]);
 
   const pickType = (nextMode: "adoption" | "donation") => {
-    if (nextMode === "donation" && needsVerification) {
-      navigate("/rescuer/verification");
-      return;
-    }
     setMode(nextMode);
     updateDraft({ publishMode: nextMode });
     setStep(1);
@@ -7963,18 +8594,6 @@ function PublishFlow() {
           </div>
         </div>
       </ScreenShell>
-    );
-  }
-
-  if (needsVerification && mode === "donation") {
-    return (
-      <StaticSimulated title="Publicar caso" back="/rescuer/publish">
-        <div className="center-state">
-          <h1>Verifica tu cuenta para publicar</h1>
-          <p>Necesitamos validar tu identidad antes de activar un caso de donaciones.</p>
-          <button className="primary-button" onClick={() => navigate("/rescuer/verification")}>Ir a verificación</button>
-        </div>
-      </StaticSimulated>
     );
   }
 
@@ -9499,10 +10118,10 @@ function RescuerMessages() {
     });
   }, [emptyStates, last?.author, last?.text, last?.time]);
 
-  const openAdoptionCases = useMemo(
-    () => cases.filter((item) => item.adoption && item.caseStatus === "active"),
-    [cases],
-  );
+  const openAdoptionCases = useMemo(() => {
+    if (emptyStates) return [];
+    return cases.filter((item) => item.adoption && item.caseStatus === "active");
+  }, [cases, emptyStates]);
 
   useEffect(() => {
     if (petFilter !== "all" && !openAdoptionCases.some((item) => item.id === petFilter)) {
@@ -9647,6 +10266,77 @@ function RescuerMessages() {
   );
 }
 
+function rescuerProfileCityFromAddress(address: string) {
+  const trimmed = address.trim();
+  if (!trimmed) return "";
+  return trimmed.includes(",") ? trimmed.split(",").slice(-2).join(",").trim() : trimmed;
+}
+
+function useRescuerDeviceLocationLabel(active: boolean) {
+  const [label, setLabel] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "unavailable">("idle");
+
+  useEffect(() => {
+    if (!active) {
+      setLabel(null);
+      setStatus("idle");
+      return;
+    }
+    if (!navigator.geolocation) {
+      setStatus("unavailable");
+      setLabel("Ubicación no disponible en este dispositivo");
+      return;
+    }
+    setStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        const reverse = async () => {
+          try {
+            const response = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=es`,
+              { headers: { Accept: "application/json" } },
+            );
+            if (!response.ok) throw new Error("reverse-geocode-failed");
+            const data = (await response.json()) as {
+              address?: Record<string, string>;
+            };
+            const city =
+              data.address?.city ??
+              data.address?.town ??
+              data.address?.municipality ??
+              data.address?.village;
+            const state = data.address?.state;
+            const next =
+              city && state && city !== state
+                ? `${city}, ${state}`
+                : city || state || "Ubicación detectada";
+            setLabel(next);
+            setStatus("idle");
+          } catch {
+            setLabel("Ubicación detectada");
+            setStatus("idle");
+          }
+        };
+        void reverse();
+      },
+      () => {
+        setStatus("unavailable");
+        setLabel("Permite el acceso a tu ubicación para ver tu ciudad");
+      },
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 },
+    );
+  }, [active]);
+
+  const cityHint =
+    status === "loading"
+      ? "Detectando ubicación…"
+      : label ?? (active ? "Detectando ubicación…" : "");
+  const muted = active && (status === "loading" || status === "unavailable");
+
+  return { cityHint, muted };
+}
+
 function RescuerProfile() {
   const navigate = useNavigate();
   const {
@@ -9662,13 +10352,14 @@ function RescuerProfile() {
     ? "Cuéntanos sobre ti."
     : profile.description?.trim() || "Agrega una descripción breve sobre tu trabajo de rescate desde Editar.";
   const contactDisplay = (value: string) => (emptyStates ? "Por completar" : value);
-  const cityHint = emptyStates
-    ? "Por completar"
-    : profile.address.includes(",")
-      ? profile.address.split(",").slice(-2).join(",").trim()
-      : profile.address;
-  const heroName = emptyStates ? "Tu nombre" : profile.name;
-  const heroInitial = emptyStates ? "?" : profile.name.charAt(0) || "M";
+  const accountName = profile.name.trim();
+  const accountEmail = profile.email.trim();
+  const savedCityHint = rescuerProfileCityFromAddress(profile.address);
+  const { cityHint: deviceCityHint, muted: deviceCityMuted } = useRescuerDeviceLocationLabel(emptyStates);
+  const cityHint = emptyStates ? deviceCityHint : savedCityHint;
+  const cityHintMuted = emptyStates ? deviceCityMuted : false;
+  const heroName = accountName || "Tu nombre";
+  const heroInitial = (accountName.charAt(0) || "?").toUpperCase();
   const switchToDonor = () => {
     setAccountMode("donor");
     navigate("/adoption");
@@ -9719,8 +10410,10 @@ function RescuerProfile() {
               {!emptyStates && profile.avatar ? <img src={profile.avatar} alt="" /> : heroInitial}
             </span>
             <div className="profile-hero-copy">
-              <strong className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>{heroName}</strong>
-              <small className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>{cityHint}</small>
+              <strong className={emptyStates && !accountName ? "rescuer-profile-contact-placeholder" : undefined}>
+                {heroName}
+              </strong>
+              <small className={cityHintMuted ? "rescuer-profile-contact-placeholder" : undefined}>{cityHint}</small>
             </div>
           </div>
           <button
@@ -9780,9 +10473,9 @@ function RescuerProfile() {
                 <Icon name="icon-phone.svg" size={14} />
                 {contactDisplay(profile.phone)}
               </span>
-              <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
+              <span className={emptyStates && !accountEmail ? "rescuer-profile-contact-placeholder" : undefined}>
                 <Icon name="icon-mail.svg" size={14} />
-                {contactDisplay(profile.email)}
+                {accountEmail || "Por completar"}
               </span>
               <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
                 <Icon name="icon-instagram.svg" size={14} />
@@ -9794,7 +10487,7 @@ function RescuerProfile() {
               </span>
               {emptyStates || profile.website ? (
                 <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
-                  <Icon name="icon-share.svg" size={14} />
+                  <Icon name="icon-globe.svg" size={14} />
                   {contactDisplay(profile.website ?? "")}
                 </span>
               ) : null}
@@ -9941,6 +10634,14 @@ const emptyRescuerPublicProfileForm = {
   showPublicToAdopters: true,
 };
 
+function emptyRescuerPublicProfileFormFromAccount(profile: RescuerProfile) {
+  return {
+    ...emptyRescuerPublicProfileForm,
+    name: profile.name,
+    email: profile.email,
+  };
+}
+
 function RescuerPhoneSmsVerifyDialog({
   initialPhone,
   onClose,
@@ -10082,10 +10783,16 @@ function RescuerEditPublicProfile() {
     rescuerRejectionFieldClass(field, rejectionFeedback?.fieldsToFix);
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState(() =>
-    emptyStates ? emptyRescuerPublicProfileForm : rescuerPublicProfileFormFromProfile(rescuerProfile),
+    emptyStates
+      ? emptyRescuerPublicProfileFormFromAccount(rescuerProfile)
+      : rescuerPublicProfileFormFromProfile(rescuerProfile),
   );
   useEffect(() => {
-    setForm(emptyStates ? emptyRescuerPublicProfileForm : rescuerPublicProfileFormFromProfile(rescuerProfile));
+    setForm(
+      emptyStates
+        ? emptyRescuerPublicProfileFormFromAccount(rescuerProfile)
+        : rescuerPublicProfileFormFromProfile(rescuerProfile),
+    );
   }, [emptyStates, rescuerProfile]);
   const [toast, setToast] = useState("");
   const [phoneVerifyOpen, setPhoneVerifyOpen] = useState(false);
@@ -11736,7 +12443,7 @@ function PublicRescuerProfile() {
                     aria-label="Página web"
                     onClick={() => setToast(`Página web: ${publicWebsite} (simulado)`)}
                   >
-                    <Icon name="icon-share.svg" size={20} />
+                    <Icon name="icon-globe.svg" size={20} />
                   </button>
                 ) : null}
               </div>
@@ -11840,8 +12547,9 @@ function PublicRescuerProfile() {
                 })}
               </div>
               <p className="rescuer-public-overview-thanks">
-                {rescuer.name} lleva <strong>{monthsOnDopmi} meses activo en DopMi.</strong> ¡Gracias por ser
-                parte de la manada!
+                {rescuer.name} lleva <strong>{monthsOnDopmi} meses activo en DopMi.</strong>
+                <br />
+                ¡Gracias por ser parte de la manada!
               </p>
             </section>
           ) : null}
@@ -11918,7 +12626,8 @@ export default function App() {
           <Route path="/notifications" element={<NotificationList />} />
           <Route path="/history" element={<History />} />
           <Route path="/profile" element={<DonorProfile />} />
-          <Route path="/apoya-causa" element={<SupportCause />} />
+          <Route path="/apoya-causa" element={<SupportCause shellMode="donor" />} />
+          <Route path="/rescuer/apoya-causa" element={<SupportCause shellMode="rescuer" />} />
           <Route path="/saved" element={<SavedPets />} />
           <Route path="/saved-rescuers" element={<SavedRescuers />} />
           <Route path="/settings" element={<Settings />} />

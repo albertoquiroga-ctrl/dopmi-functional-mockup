@@ -321,6 +321,7 @@ export const usePrototypeStore = create<PrototypeState>()(
                 time: "Ahora",
                 target: `/case/${caseId}`,
                 read: false,
+                tone: "positive" as const,
               },
               ...state.notifications,
             ],
@@ -336,12 +337,13 @@ export const usePrototypeStore = create<PrototypeState>()(
             ? [
                 {
                   id: `guardian-${Date.now()}`,
-                  kind: "donation" as const,
+                  kind: "pet" as const,
                   title: "Ya eres Guardián",
                   body: `Tu aportación mensual es de $${guardianAmount ?? state.guardianAmount} MXN.`,
                   time: "Ahora",
                   target: "/impact",
                   read: false,
+                  tone: "positive" as const,
                 },
                 ...state.notifications,
               ]
@@ -549,7 +551,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 26,
+      version: 30,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
         if (version < 19) {
@@ -625,6 +627,30 @@ export const usePrototypeStore = create<PrototypeState>()(
             ...state,
             rescuerVerificationFeedback:
               state.verification === "rejected" ? { ...defaultRescuerVerificationRejection } : null,
+          };
+        }
+        if (version < 27) {
+          return {
+            ...state,
+            notifications: initialNotifications,
+          };
+        }
+        if (version < 28) {
+          return {
+            ...state,
+            notifications: initialNotifications,
+          };
+        }
+        if (version < 29) {
+          return {
+            ...state,
+            notifications: initialNotifications,
+          };
+        }
+        if (version < 30) {
+          return {
+            ...state,
+            notifications: initialNotifications,
           };
         }
         return state;
