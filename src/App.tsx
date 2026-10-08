@@ -15,6 +15,7 @@ import {
   donationLog,
   helpTopics,
   paymentHistory,
+  rescuerReceivedPaymentHistory,
   rescuers,
   savedCards,
   subscriptionPlans,
@@ -22,11 +23,14 @@ import {
   type Need,
   type NotificationKind,
   type PetCase,
+  defaultRescuerVerificationRejection,
+  type RescuerVerificationFixField,
 } from "./data";
 import {
   adoptionChatIntroText,
   usePrototypeStore,
   type AccountMode,
+  type RescuerProfile,
   type RescuerSupportPaymentEvent,
   type Verification,
 } from "./store";
@@ -158,8 +162,9 @@ function TopBar({
 
 const donorTabs = [
   { path: "/adoption", label: "Adoptar", icon: "rtab-home.svg", size: 22 },
+  { path: "/messages", label: "Mis match", icon: "icon-heart.svg", size: 20 },
   { path: "/donate", label: "Apoyar", icon: "tab-donate.svg", size: 22 },
-  { path: "/messages", label: "Favoritos", icon: "icon-heart.svg", size: 20 },
+  { path: "/apoya-causa", label: "Tienda", icon: "icon-shop.svg", size: 20 },
   { path: "/profile", label: "Perfil", icon: "tab-profile.svg", size: 20 },
 ];
 
@@ -1290,6 +1295,25 @@ function DiscoverFilterButton({ active, onClick }: { active?: boolean; onClick: 
   );
 }
 
+function RescuerPublicFilterButton({ active, onClick }: { active?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`rescuer-public-filter-btn${active ? " is-active" : ""}`}
+      onClick={onClick}
+      aria-label="Filtrar"
+    >
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+        <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+      </svg>
+      <span>Filtrar</span>
+    </button>
+  );
+}
+
 function DiscoverSpeciesFilterBar({
   species,
   onSpeciesChange,
@@ -1332,6 +1356,9 @@ type AdoptionFilterModalProps = {
   open: boolean;
   onClose: () => void;
   variant?: "adoption" | "supportCause";
+  showSpecies?: boolean;
+  draftSpecies?: DiscoverSpeciesChoice | null;
+  setDraftSpecies?: (value: DiscoverSpeciesChoice | null) => void;
   draftSex: "Macho" | "Hembra" | null;
   setDraftSex: (value: "Macho" | "Hembra" | null) => void;
   draftAge?: PetAgeBand | null;
@@ -1348,6 +1375,9 @@ function AdoptionFilterModal({
   open,
   onClose,
   variant = "adoption",
+  showSpecies = false,
+  draftSpecies = null,
+  setDraftSpecies,
   draftSex,
   setDraftSex,
   draftAge = null,
@@ -1369,6 +1399,34 @@ function AdoptionFilterModal({
           <h2>Filtros</h2>
         </header>
         <div className="adoption-filter-grid adoption-filter-grid--stacked">
+          {showSpecies && setDraftSpecies ? (
+            <section>
+              <h3>Especie</h3>
+              <div className="rescuer-public-filter-species" role="group" aria-label="Especie">
+                <button
+                  type="button"
+                  className={draftSpecies === null ? "is-active" : ""}
+                  onClick={() => setDraftSpecies(null)}
+                >
+                  Todas
+                </button>
+                <button
+                  type="button"
+                  className={draftSpecies === "Perro" ? "is-active" : ""}
+                  onClick={() => setDraftSpecies("Perro")}
+                >
+                  Perros
+                </button>
+                <button
+                  type="button"
+                  className={draftSpecies === "Gato" ? "is-active" : ""}
+                  onClick={() => setDraftSpecies("Gato")}
+                >
+                  Gatos
+                </button>
+              </div>
+            </section>
+          ) : null}
           {!isSupportCause ? (
             <section>
               <h3>Sexo</h3>
@@ -3147,6 +3205,7 @@ function Messages() {
   const { threadId = "luna" } = useParams();
   const { messages, sendMessage, startAdoptionChat, accountMode, setAccountMode, cases } = usePrototypeStore();
   const [text, setText] = useState("");
+  const photoInputRef = useRef<HTMLInputElement>(null);
   const rescuerChatRoute = location.pathname.startsWith("/rescuer/messages/");
   const isRescuerView = rescuerChatRoute || accountMode === "rescuer";
   const adopterHint = (location.state as { adopter?: string } | null)?.adopter;
@@ -3181,6 +3240,18 @@ function Messages() {
     sendMessage(chatMode, text.trim(), threadId);
     setText("");
   };
+
+  const attachPhoto = (file: File | undefined) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        sendMessage(chatMode, "", threadId, reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   return (
     <div className={`plain-screen chat-screen ${isRescuerView ? "rescuer-chat rescuer-theme" : "adopter-chat"}`}>
       <TopBar
@@ -3213,14 +3284,34 @@ function Messages() {
             {message.image ? (
               <img className="bubble-photo" src={message.image} alt={pet?.name ?? "Mascota"} />
             ) : null}
-            <p>{message.text}</p>
+            {message.text ? <p>{message.text}</p> : null}
             <span>{message.time}</span>
           </div>
         ))}
       </div>
-      <form className="chat-compose" onSubmit={submit}>
+      <form className="chat-compose chat-compose--with-attach" onSubmit={submit}>
+        <input
+          ref={photoInputRef}
+          className="visually-hidden"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => {
+            attachPhoto(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
         <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Escribe un mensaje..." />
-        <button disabled={!text.trim()} aria-label="Enviar"><AssetIcon name="send.svg" /></button>
+        <button
+          type="button"
+          className="chat-compose-attach"
+          onClick={() => photoInputRef.current?.click()}
+          aria-label="Adjuntar foto"
+        >
+          <Icon name="icon-paperclip.svg" size={22} />
+        </button>
+        <button type="submit" disabled={!text.trim()} aria-label="Enviar">
+          <AssetIcon name="send.svg" />
+        </button>
       </form>
     </div>
   );
@@ -3485,15 +3576,57 @@ function NotificationList() {
   );
 }
 
-function History() {
-  const navigate = useNavigate();
+const stripePaymentStatusLabel = {
+  pagado: "Pagado",
+  cancelado: "Cancelado",
+  enproceso: "En proceso",
+  fallado: "Fallado",
+} as const;
+
+function RescuerReceivedPaymentHistory() {
   const { emptyStates } = usePrototypeStore();
-  const paymentStatusLabel = {
-    pagado: "Pagado",
-    cancelado: "Cancelado",
-    enproceso: "En proceso",
-    fallado: "Fallado",
-  } as const;
+  const rows = emptyStates ? [] : rescuerReceivedPaymentHistory;
+
+  return (
+    <div className="plain-screen rescuer-theme">
+      <TopBar title="Mi historial" back="/rescuer/profile" />
+      <div className="content-pad log-section">
+        <p>Consulta el historial de pagos que has recibido por tus casos de apoyo.</p>
+        {rows.length ? (
+          <ul className="profile-activity-list profile-activity-list--received-log" aria-label="Historial de pagos recibidos">
+            {rows.map((row) => (
+              <li key={row.id}>
+                <div className="profile-activity-row profile-activity-row--received profile-activity-row--static">
+                  <span className="profile-activity-date">{row.date}</span>
+                  <span className="profile-activity-body">
+                    <strong>{row.petName}</strong>
+                    <span className="profile-activity-support-type">{row.supportType}</span>
+                    <small>{row.donorLabel}</small>
+                  </span>
+                  <span className="profile-activity-amount">
+                    <b>{row.amount}</b>
+                    <i className={`log-pill ${row.status}`}>{stripePaymentStatusLabel[row.status]}</i>
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="profile-activity-empty">
+            <p>Aún no has recibido pagos por tus casos de apoyo.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function History() {
+  const { accountMode, emptyStates } = usePrototypeStore();
+  if (accountMode === "rescuer") {
+    return <RescuerReceivedPaymentHistory />;
+  }
+  const paymentStatusLabel = stripePaymentStatusLabel;
   const donationRows = useDonationLogRows().filter(
     (row) => !/apadrinamiento/i.test(row.concept),
   );
@@ -3504,6 +3637,8 @@ function History() {
         date: row.date,
         kind: "suscripcion" as const,
         title: "Suscripción",
+        petName: row.petName,
+        rescuerName: row.rescuerName,
         method: row.method,
         amount: row.amount,
         status: row.status,
@@ -3530,41 +3665,33 @@ function History() {
       <div className="content-pad log-section">
         <p>Consulta todo tu historial de pagos.</p>
         {rows.length ? (
-          <ul className="profile-activity-list">
+          <ul className="profile-activity-list profile-activity-list--payment-log" aria-label="Historial de pagos">
             {rows.map((row) => {
               const statusLabel = paymentStatusLabel[row.status];
-              const body = (
-                <>
-                  <span className="profile-activity-date">{row.date}</span>
-                  <span className="profile-activity-body">
-                    {row.kind === "donacion" ? (
-                      <span className="profile-activity-title">
-                        <strong>{row.title}</strong> - {row.concept}
-                      </span>
-                    ) : (
-                      <strong>{row.title}</strong>
-                    )}
-                    <small>{row.method}</small>
-                  </span>
-                  <span className="profile-activity-amount">
-                    <b>{row.amount}</b>
-                    <i className={`log-pill ${row.status}`}>{statusLabel}</i>
-                  </span>
-                </>
-              );
               return (
                 <li key={`${row.kind}-${row.id}`}>
-                  {row.caseId ? (
-                    <button
-                      type="button"
-                      className="profile-activity-row"
-                      onClick={() => navigate(`/case/${row.caseId}`)}
-                    >
-                      {body}
-                    </button>
-                  ) : (
-                    <div className="profile-activity-row">{body}</div>
-                  )}
+                  <div className="profile-activity-row profile-activity-row--static">
+                    <span className="profile-activity-date">{row.date}</span>
+                    <span className="profile-activity-body">
+                      {row.kind === "donacion" ? (
+                        <span className="profile-activity-title">
+                          <strong>{row.title}</strong> - {row.concept}
+                        </span>
+                      ) : (
+                        <>
+                          <strong>{row.title}</strong>
+                          <span className="profile-activity-subline">
+                            {row.petName} - {row.rescuerName}
+                          </span>
+                        </>
+                      )}
+                      <small>{row.method}</small>
+                    </span>
+                    <span className="profile-activity-amount">
+                      <b>{row.amount}</b>
+                      <i className={`log-pill ${row.status}`}>{statusLabel}</i>
+                    </span>
+                  </div>
                 </li>
               );
             })}
@@ -3657,24 +3784,28 @@ function SupportCause() {
   }, [species, ageFilter, sizeFilter, personalityFilter, kiloSort]);
 
   return (
-    <div className="plain-screen support-cause-screen">
-      <TopBar title="Croquetas con causa" back="/profile" />
-      <AdoptionFilterModal
-        variant="supportCause"
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        draftSex={null}
-        setDraftSex={() => {}}
-        draftAge={draftAge}
-        setDraftAge={setDraftAge}
-        draftSize={draftSize}
-        setDraftSize={setDraftSize}
-        draftPersonality={draftPersonality}
-        setDraftPersonality={setDraftPersonality}
-        onApply={applyFilters}
-        onClear={clearFilters}
-      />
-      <div className="content-pad support-cause-body">
+    <ScreenShell>
+      <div className="donate-home donor-chrome support-cause-screen">
+        <DonorChromeTop />
+        <header className="match-top">
+          <h1>Tienda Dopmi</h1>
+        </header>
+        <AdoptionFilterModal
+          variant="supportCause"
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          draftSex={null}
+          setDraftSex={() => {}}
+          draftAge={draftAge}
+          setDraftAge={setDraftAge}
+          draftSize={draftSize}
+          setDraftSize={setDraftSize}
+          draftPersonality={draftPersonality}
+          setDraftPersonality={setDraftPersonality}
+          onApply={applyFilters}
+          onClear={clearFilters}
+        />
+        <div className="support-cause-body">
         <div className="publish-needs-note support-cause-intro-note">
           Busca las croquetas de tu preferencia y compra con nuestro enlace de referidos que te dará un{" "}
           <strong>5% de descuento.</strong> Al seleccionar una, te llevará a la tienda correspondiente, donde podrás
@@ -3723,8 +3854,9 @@ function SupportCause() {
             No hay croquetas con estos filtros. Prueba otra combinación o limpia los filtros.
           </p>
         )}
+        </div>
       </div>
-    </div>
+    </ScreenShell>
   );
 }
 
@@ -3734,7 +3866,7 @@ function CroquetasConCausaCard({ onClick }: { onClick: () => void }) {
       <span className="profile-feature-banner-body">
         <span className="profile-feature-copy">
           <strong>Croquetas con causa</strong>
-          <small>Utiliza nuestro código de descuento y ayúdanos a seguir apoyando a la manada.</small>
+          <small>Compra en nuestra tienda y ayuda a la app para seguir apoyando a la manada.</small>
         </span>
         <span className="profile-feature-banner-cta">
           Ver más
@@ -3780,7 +3912,10 @@ function DonorProfile() {
 
         <section className="profile-intro">
           <div className="profile-intro-row">
-            <span className="profile-intro-avatar" aria-hidden="true">
+            <span
+              className={`profile-intro-avatar${donorProfile.avatar ? " has-photo" : ""}`}
+              aria-hidden="true"
+            >
               {donorProfile.avatar ? <img src={donorProfile.avatar} alt="" /> : initial}
             </span>
             <div className="profile-intro-copy">
@@ -4077,9 +4212,6 @@ function BasicInfo() {
         <div className="photo-card">
           <span className={`avatar large ${form.avatar ? "has-photo" : ""}`}>
             {form.avatar ? <img src={form.avatar} alt="" /> : initial}
-            <span className="avatar-camera">
-              <AssetIcon name="onb-camera.svg" size={12} />
-            </span>
           </span>
           <span className="nav-row-text">
             <strong>Foto de perfil</strong>
@@ -4222,7 +4354,6 @@ function Billing() {
   const [choice, setChoice] = useState(guardianAmount);
   const [toast, setToast] = useState("");
   const [justChanged, setJustChanged] = useState(false);
-  const plan = subscriptionPlans.find((item) => item.amount === guardianAmount) ?? subscriptionPlans[1];
   const paymentRows = emptyStates ? [] : paymentHistory;
   const paymentStatusLabel = {
     pagado: "Pagado",
@@ -4234,7 +4365,7 @@ function Billing() {
     <div className="plain-screen">
       <TopBar title="Suscripción y pagos" back="/settings" />
       <div className="content-pad list-stack">
-        <h2 className="settings-heading first">Suscripción DopMi</h2>
+        <h2 className="settings-heading first">Suscripción Guardián</h2>
         {guardianActive ? (
           <article className="billing-card">
             <div className="billing-head">
@@ -4243,7 +4374,11 @@ function Billing() {
                 <Icon name="icon-star.svg" size={18} />
               </span>
             </div>
-            <strong className="billing-plan">{plan.name}</strong>
+            <strong className="billing-plan">
+              Pequeño gesto, gran diferencia:
+              <br />
+              gracias por ser parte
+            </strong>
             <p className="billing-amount">
               ${guardianAmount.toFixed(2)} <small>MXN / mes</small>
             </p>
@@ -4259,7 +4394,7 @@ function Billing() {
         ) : (
           <article className="billing-card">
             <div className="billing-head">
-              <strong>Suscripción mensual</strong>
+              <strong>Desde $50 / mes</strong>
               <span className="status-chip">Sin Subscripción</span>
             </div>
             <button className="primary-button" onClick={() => { setGuardian(true, 50); setToast("Suscripción activada"); }}>Suscribirme</button>
@@ -4276,13 +4411,16 @@ function Billing() {
         ) : null}
         <h2 className="settings-heading">Historial de pagos</h2>
         {paymentRows.length ? (
-          <ul className="profile-activity-list">
+          <ul className="profile-activity-list profile-activity-list--payment-log">
             {paymentRows.map((row) => (
               <li key={row.id}>
-                <div className="profile-activity-row">
+                <div className="profile-activity-row profile-activity-row--static">
                   <span className="profile-activity-date">{row.date}</span>
                   <span className="profile-activity-body">
                     <strong>Suscripción</strong>
+                    <span className="profile-activity-subline">
+                      {row.petName} - {row.rescuerName}
+                    </span>
                     <small>{row.method}</small>
                   </span>
                   <span className="profile-activity-amount">
@@ -4363,13 +4501,6 @@ function Billing() {
     </div>
   );
 }
-
-const rescuerActivity = [
-  { amount: "+$40", title: "Donaciones de 6 personas", meta: "Para Luna · Esta semana" },
-  { amount: "+$15", title: "Ana P. — Antiparasitario", meta: "Para Luna · Hace 2 días" },
-  { amount: "+$75", title: "Donaciones de 9 personas", meta: "Para Milo · Esta semana" },
-  { amount: "+$42", title: "Donaciones de 5 personas", meta: "Para Rocky · El mes pasado" },
-];
 
 type RescuerHomeMessageActivityItem = {
   id: string;
@@ -4504,6 +4635,132 @@ function rescuerCaseBelongsToProfile(caseRescuer: string, profileName: string) {
   return profileFirst.length > 0 && caseFirst === profileFirst;
 }
 
+function rescuerHasSavedAccountData(
+  verification: Verification,
+  clabe: string,
+  emptyStates: boolean,
+) {
+  if (emptyStates) return false;
+  return verification === "verified" && /^\d{18}$/.test(clabe.trim());
+}
+
+const RESCUER_VERIFY_SOCIAL_GAP_LABEL = "Red social (Instagram o Facebook)";
+
+const RESCUER_VERIFY_REQUIRED_FIELD_LABELS = [
+  "Nombre",
+  "Foto de perfil",
+  "Correo electrónico",
+  "Teléfono",
+  RESCUER_VERIFY_SOCIAL_GAP_LABEL,
+] as const;
+
+function rescuerProfileVerificationGaps(profile: RescuerProfile, emptyStates: boolean) {
+  if (emptyStates) {
+    return [...RESCUER_VERIFY_REQUIRED_FIELD_LABELS];
+  }
+  const missing: string[] = [];
+  if (!profile.name.trim()) missing.push("Nombre");
+  if (!profile.avatar?.trim()) missing.push("Foto de perfil");
+  if (!profile.email.trim()) missing.push("Correo electrónico");
+  if (!profile.phone.trim() || !profile.phoneVerified) missing.push("Teléfono");
+  const hasSocial = Boolean(profile.instagram.trim() || profile.facebook.trim());
+  if (!hasSocial) missing.push(RESCUER_VERIFY_SOCIAL_GAP_LABEL);
+  return missing;
+}
+
+function RescuerVerifyProfileDialog({
+  mode,
+  missingFields,
+  onClose,
+  onEditProfile,
+  onSubmitRequest,
+}: {
+  mode: "ready" | "gaps";
+  missingFields: string[];
+  onClose: () => void;
+  onEditProfile: () => void;
+  onSubmitRequest: () => void;
+}) {
+  return (
+    <div className="modal-backdrop center" onClick={onClose} role="presentation">
+      <div
+        className="dialog-card rescuer-verify-profile-dialog verify-intro"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rescuer-verify-profile-dialog-title"
+      >
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        {mode === "ready" ? (
+          <>
+            <span className="verify-chip large" aria-hidden="true">
+              <Icon name="icon-shield.svg" size={28} />
+            </span>
+            <h2 id="rescuer-verify-profile-dialog-title">¿Enviar solicitud de verificación?</h2>
+            <article className="intro-card">
+              <Icon name="icon-shield.svg" size={18} />
+              <div>
+                <strong>Confirma tu identidad</strong>
+                <p>
+                  La verificación ayuda a DopMi a confirmar que eres quien dices ser, para que adoptantes y
+                  donantes puedan confiar en tu perfil.
+                </p>
+              </div>
+            </article>
+            <h3>Refugios, fundaciones y centros</h3>
+            <p className="dialog-copy">
+              Si representas una fundación, refugio o centro de bienestar animal, la verificación es clave para
+              mostrar que tu organización es real y responsable.
+            </p>
+            <button type="button" className="purple-button" onClick={onSubmitRequest}>
+              Enviar solicitud
+            </button>
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Ahora no
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="verify-chip large" aria-hidden="true">
+              <Icon name="icon-edit.svg" size={28} />
+            </span>
+            <h2 id="rescuer-verify-profile-dialog-title">Completa tu información</h2>
+            <article className="intro-card">
+              <Icon name="icon-user.svg" size={18} />
+              <div>
+                <strong>Revisa Información básica</strong>
+                <p>
+                  Necesitas nombre, foto, correo, teléfono y al menos una red social en Información básica. Sobre ti y
+                  página web son opcionales.
+                </p>
+              </div>
+            </article>
+            <h3>Campos pendientes</h3>
+            <ul className="check-list rescuer-verify-profile-gap-list">
+              {missingFields.map((field) => (
+                <li key={field}>
+                  <Icon name="check-circle.svg" size={16} />
+                  <div>
+                    <strong>{field}</strong>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className="purple-button" onClick={onEditProfile}>
+              Ir a Información básica
+            </button>
+            <button type="button" className="secondary-button" onClick={onClose}>
+              Cerrar
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type RescuerAdoptionFunnelMetrics = {
   views: number;
   matches: number;
@@ -4547,6 +4804,16 @@ function computeRescuerAdoptionFunnelMetrics(
   ).length;
   return { views, matches, messages, adoptions };
 }
+
+const RESCUER_PUBLIC_OVERVIEW_ICONS: Record<
+  "views" | "matches" | "messages" | "adoptions",
+  string
+> = {
+  views: "rtab-home.svg",
+  matches: "check-circle.svg",
+  messages: "tab-donate.svg",
+  adoptions: "icon-heart.svg",
+};
 
 const ADOPTION_FUNNEL_CARD_SPARK: Record<
   "views" | "matches" | "messages" | "adoptions",
@@ -5044,7 +5311,7 @@ function RescuerHome() {
     );
   }, [cases, emptyStates, rescuerProfile.name]);
   const rescuerFirstName = rescuerProfile.name.trim().split(/\s+/)[0] || "María";
-  const [pendingTab, setPendingTab] = useState<"adoption" | "support">("support");
+  const [pendingTab, setPendingTab] = useState<"adoption" | "support">("adoption");
   const [homeActivityView, setHomeActivityView] = useState<RescuerHomeActivityView>("none");
   const [photoTipsOpen, setPhotoTipsOpen] = useState(false);
   const [pendingFilterOpen, setPendingFilterOpen] = useState(false);
@@ -9380,133 +9647,59 @@ function RescuerMessages() {
   );
 }
 
-function RescuerSocialProfilesSection() {
-  const { rescuerProfile, updateRescuerProfile } = usePrototypeStore();
-  const [editField, setEditField] = useState<"instagram" | "facebook" | null>(null);
-  const [draft, setDraft] = useState("");
-  const [toast, setToast] = useState("");
-
-  const openEdit = (field: "instagram" | "facebook") => {
-    setEditField(field);
-    setDraft(rescuerProfile[field]);
-  };
-
-  const saveEdit = () => {
-    if (!editField) return;
-    const value = draft.trim();
-    if (!value) return;
-    updateRescuerProfile({ [editField]: value });
-    setEditField(null);
-    setToast(editField === "instagram" ? "Instagram actualizado" : "Facebook actualizado");
-  };
-
-  const editMeta = editField
-    ? {
-        instagram: {
-          title: "Editar Instagram",
-          label: "Usuario de Instagram",
-          placeholder: "@tuusuario",
-          hint: "Usa el @ de tu cuenta pública.",
-          inputMode: "text" as const,
-          maxLength: 40,
-          canSave: Boolean(draft.trim()),
-        },
-        facebook: {
-          title: "Editar Facebook",
-          label: "Perfil de Facebook",
-          placeholder: "Nombre del perfil",
-          hint: "El nombre como aparece en tu página o perfil.",
-          inputMode: "text" as const,
-          maxLength: 60,
-          canSave: Boolean(draft.trim()),
-        },
-      }[editField]
-    : null;
-
-  return (
-    <section className="rescuer-profile-social list-stack" aria-label="Redes sociales">
-      <h2 className="settings-heading">Redes sociales</h2>
-      <article className="card-row">
-        <span className="row-tile gray">
-          <Icon name="icon-instagram.svg" size={18} />
-        </span>
-        <span className="nav-row-text">
-          <small>Instagram</small>
-          <strong>{rescuerProfile.instagram}</strong>
-        </span>
-        <button type="button" className="icon-button" onClick={() => openEdit("instagram")} aria-label="Editar Instagram">
-          <Icon name="icon-edit.svg" size={16} />
-        </button>
-      </article>
-      <article className="card-row">
-        <span className="row-tile gray">
-          <Icon name="icon-facebook.svg" size={18} />
-        </span>
-        <span className="nav-row-text">
-          <small>Facebook</small>
-          <strong>{rescuerProfile.facebook}</strong>
-        </span>
-        <button type="button" className="icon-button" onClick={() => openEdit("facebook")} aria-label="Editar Facebook">
-          <Icon name="icon-edit.svg" size={16} />
-        </button>
-      </article>
-      <p className="field-hint">Vincula tus cuentas para comprobar que eres el dueño. Es ideal agregar ambas.</p>
-      {editField && editMeta ? (
-        <div className="modal-backdrop center" onClick={() => setEditField(null)}>
-          <div className="dialog-card settings-edit-dialog" onClick={(event) => event.stopPropagation()}>
-            <button type="button" className="dialog-close" onClick={() => setEditField(null)} aria-label="Cerrar">
-              ×
-            </button>
-            <h2>{editMeta.title}</h2>
-            <label className="dialog-field">
-              <span>{editMeta.label}</span>
-              <input
-                autoFocus
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={editMeta.placeholder}
-                inputMode={editMeta.inputMode}
-                maxLength={editMeta.maxLength}
-                autoComplete="off"
-              />
-            </label>
-            <p className="field-hint">{editMeta.hint}</p>
-            <button type="button" className="purple-button" disabled={!editMeta.canSave} onClick={saveEdit}>
-              Guardar
-            </button>
-            <button type="button" className="secondary-button" onClick={() => setEditField(null)}>
-              Cancelar
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
-    </section>
-  );
-}
-
 function RescuerProfile() {
   const navigate = useNavigate();
   const {
     verification,
     rescuerProfile: profile,
-    emptyStates,
     setAccountMode,
+    setVerification,
+    cases,
+    emptyStates,
   } = usePrototypeStore();
   const verified = verification === "verified";
-  const recent = emptyStates || !verified ? [] : rescuerActivity.slice(0, 3);
-  const statusLabel = {
-    unverified: "Sin verificar",
-    review: "En revisión",
-    rejected: "Requiere correcciones",
-    verified: "Verificado",
-  }[verification];
-  const cityHint = profile.address.includes(",")
-    ? profile.address.split(",").slice(-2).join(",").trim()
-    : profile.address;
+  const aboutDescription = emptyStates
+    ? "Cuéntanos sobre ti."
+    : profile.description?.trim() || "Agrega una descripción breve sobre tu trabajo de rescate desde Editar.";
+  const contactDisplay = (value: string) => (emptyStates ? "Por completar" : value);
+  const cityHint = emptyStates
+    ? "Por completar"
+    : profile.address.includes(",")
+      ? profile.address.split(",").slice(-2).join(",").trim()
+      : profile.address;
+  const heroName = emptyStates ? "Tu nombre" : profile.name;
+  const heroInitial = emptyStates ? "?" : profile.name.charAt(0) || "M";
   const switchToDonor = () => {
     setAccountMode("donor");
     navigate("/adoption");
+  };
+  const publicProfileCaseId =
+    cases.find((item) => rescuerCaseBelongsToProfile(item.rescuer, profile.name))?.id ??
+    encodeURIComponent(profile.name.trim() || "María Rescatista");
+  const hasSavedAccountData = rescuerHasSavedAccountData(verification, profile.clabe, emptyStates);
+  const [verifyIntroOpen, setVerifyIntroOpen] = useState(false);
+  const [verifyProfileDialog, setVerifyProfileDialog] = useState<null | { mode: "ready" } | { mode: "gaps"; fields: string[] }>(
+    null,
+  );
+  const [toast, setToast] = useState("");
+  const openVerifyCard = () => {
+    if (verification === "rejected") {
+      navigate("/rescuer/profile/edit");
+      return;
+    }
+    const gaps = rescuerProfileVerificationGaps(profile, emptyStates);
+    if (gaps.length) {
+      setVerifyProfileDialog({ mode: "gaps", fields: gaps });
+      return;
+    }
+    setVerifyProfileDialog({ mode: "ready" });
+  };
+  const openMiCuenta = () => {
+    if (hasSavedAccountData) {
+      navigate("/rescuer/settings");
+      return;
+    }
+    setVerifyIntroOpen(true);
   };
 
   return (
@@ -9519,148 +9712,145 @@ function RescuerProfile() {
 
         <article className={`profile-hero rescuer${verified ? " verified" : ""}`}>
           <div className="profile-hero-main">
-            <span className={`profile-hero-avatar${profile.avatar ? " has-photo" : ""}`} aria-hidden="true">
-              {profile.avatar ? <img src={profile.avatar} alt="" /> : profile.name.charAt(0)}
+            <span
+              className={`profile-hero-avatar${!emptyStates && profile.avatar ? " has-photo" : ""}`}
+              aria-hidden="true"
+            >
+              {!emptyStates && profile.avatar ? <img src={profile.avatar} alt="" /> : heroInitial}
             </span>
             <div className="profile-hero-copy">
-              <strong>{profile.name}</strong>
-              {!verified ? (
-                <span className="profile-hero-badge">
-                  <Icon name="icon-shield.svg" size={14} />
-                  {statusLabel}
-                </span>
-              ) : null}
-              <small>{cityHint}</small>
+              <strong className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>{heroName}</strong>
+              <small className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>{cityHint}</small>
             </div>
           </div>
-          {verified ? (
-            <button
-              type="button"
-              className="profile-hero-edit"
-              onClick={() => navigate("/rescuer/profile/edit")}
-            >
-              <Icon name="icon-edit.svg" size={16} />
-              Editar
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="profile-hero-edit"
+            onClick={() => navigate("/rescuer/profile/edit")}
+          >
+            <Icon name="icon-edit.svg" size={16} />
+            Editar
+          </button>
         </article>
 
         {verified ? (
-          <button
-            type="button"
-            className="profile-guardian-card is-active rescuer"
-            onClick={() => navigate("/rescuer/settings")}
+          <article
+            className="profile-guardian-card is-active rescuer profile-guardian-card--static"
+            aria-label="Cuenta verificada"
           >
             <span className="profile-guardian-icon" aria-hidden="true">
               <Icon name="icon-verified.svg" size={20} />
             </span>
             <span className="profile-guardian-copy">
               <strong>Cuenta verificada</strong>
-              <small>Puedes recibir donaciones y publicar casos</small>
             </span>
-            <Chevron />
-          </button>
+          </article>
+        ) : verification === "review" ? (
+          <article className={`verify-card rescuer-profile-verify rescuer-profile-verify--static ${verification}`}>
+            <div className="verify-head">
+              <span className="verify-chip">
+                <Icon name="icon-shield.svg" size={24} />
+              </span>
+              <strong>Verificación en proceso</strong>
+            </div>
+          </article>
         ) : (
           <button
             type="button"
             className={`verify-card link-card rescuer-profile-verify ${verification}`}
-            onClick={() => navigate("/rescuer/verification")}
+            onClick={openVerifyCard}
           >
             <div className="verify-head">
               <span className="verify-chip">
                 <Icon name="icon-shield.svg" size={24} />
               </span>
               <strong>
-                {verification === "rejected"
-                  ? "Corrige tu información"
-                  : verification === "review"
-                    ? "Verificación en proceso"
-                    : "Verificar para recibir donaciones"}
+                {verification === "rejected" ? "Revisa tu información" : "Verifica tu cuenta"}
               </strong>
               <Chevron />
             </div>
-            <p>
-              {verification === "rejected"
-                ? "El comprobante no es legible y falta vincular una red social."
-                : verification === "review"
-                  ? "Estamos revisando tu información. Te avisaremos cuando tu cuenta esté lista para recibir donaciones."
-                  : "Completa tu verificación para desbloquear donaciones y reembolsos."}
-            </p>
           </button>
         )}
 
-        {verified && profile.description ? (
-          <section className="rescuer-profile-about">
+        <section className="rescuer-profile-about">
             <h2>Sobre ti</h2>
-            <p>{profile.description}</p>
+            <p className={emptyStates ? "rescuer-profile-about-placeholder" : undefined}>{aboutDescription}</p>
             <div className="rescuer-profile-contacts">
-              <span>
+              <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
                 <Icon name="icon-phone.svg" size={14} />
-                {profile.phone}
+                {contactDisplay(profile.phone)}
               </span>
-              <span>
+              <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
                 <Icon name="icon-mail.svg" size={14} />
-                {profile.email}
+                {contactDisplay(profile.email)}
               </span>
+              <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
+                <Icon name="icon-instagram.svg" size={14} />
+                {contactDisplay(profile.instagram)}
+              </span>
+              <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
+                <Icon name="icon-facebook.svg" size={14} />
+                {contactDisplay(profile.facebook)}
+              </span>
+              {emptyStates || profile.website ? (
+                <span className={emptyStates ? "rescuer-profile-contact-placeholder" : undefined}>
+                  <Icon name="icon-share.svg" size={14} />
+                  {contactDisplay(profile.website ?? "")}
+                </span>
+              ) : null}
             </div>
           </section>
-        ) : null}
 
-        {verified ? <RescuerSocialProfilesSection /> : null}
+        <button
+          type="button"
+          className="profile-guardian-card is-active rescuer"
+          onClick={() => navigate(`/rescuer-profile/${publicProfileCaseId}`)}
+        >
+          <span className="profile-guardian-icon" aria-hidden="true">
+            <Icon name="icon-user.svg" size={20} />
+          </span>
+          <span className="profile-guardian-copy">
+            <strong>Vista previa de tu perfil público</strong>
+            <small>Esto es lo que verán los adoptantes.</small>
+          </span>
+          <Chevron />
+        </button>
 
-        <section className="profile-activity">
-          <div className="profile-section-head">
-            <h2>Actividad reciente</h2>
-            {recent.length ? (
-              <button type="button" className="text-link rescuer" onClick={() => navigate("/rescuer")}>
-                Ver inicio
-              </button>
-            ) : null}
+        <section className="profile-access" aria-label="Pagos y transacciones">
+          <h2>Pagos y transacciones</h2>
+          <div className="profile-access-grid">
+            <button type="button" className="profile-access-item" onClick={openMiCuenta}>
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-card.svg" size={22} />
+              </span>
+              <span>Mi cuenta</span>
+            </button>
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/history")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-billing.svg" size={22} />
+              </span>
+              <span>Mi historial</span>
+            </button>
+            <button
+              type="button"
+              className="profile-access-item"
+              onClick={() => navigate("/help")}
+            >
+              <span className="profile-access-icon" aria-hidden="true">
+                <Icon name="icon-help.svg" size={22} />
+              </span>
+              <span>¿Dudas?</span>
+            </button>
           </div>
-          {recent.length ? (
-            <ul className="profile-activity-list">
-              {recent.map((item) => (
-                <li key={`${item.amount}-${item.meta}`}>
-                  <button
-                    type="button"
-                    className="profile-activity-row rescuer-activity-row"
-                    onClick={() => navigate("/rescuer/cases")}
-                  >
-                    <span className="profile-activity-icon" aria-hidden="true">
-                      <AssetIcon name="icon-donation-in.svg" size={18} />
-                    </span>
-                    <span className="profile-activity-body">
-                      <strong>
-                        {item.amount} · {item.title}
-                      </strong>
-                      <small>{item.meta}</small>
-                    </span>
-                    <Chevron />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="profile-activity-empty">
-              <p>
-                {verified
-                  ? "Aún no hay movimiento. Publica un caso para empezar a recibir apoyo."
-                  : "Verifica tu cuenta para publicar casos y ver donaciones aquí."}
-              </p>
-              <button
-                type="button"
-                className="purple-button"
-                onClick={() => navigate(verified ? "/rescuer/publish" : "/rescuer/verification")}
-              >
-                {verified ? "Publicar caso" : "Ir a verificación"}
-              </button>
-            </div>
-          )}
         </section>
 
         <button type="button" className="profile-feature profile-feature--mode" onClick={switchToDonor}>
           <span className="profile-feature-copy">
-            <strong>Consulta los casos en adopción</strong>
+            <strong>Consulta casos en adopción</strong>
             <small>
               Cambia tu perfil a modo Adoptante. Siempre podrás regresar a la navegación como Rescatista.
             </small>
@@ -9707,29 +9897,229 @@ function RescuerProfile() {
           <Chevron />
         </button>
       </div>
+      {verifyIntroOpen ? (
+        <VerificationIntro
+          onContinue={() => {
+            setVerifyIntroOpen(false);
+            navigate("/rescuer/verification");
+          }}
+          onLater={() => setVerifyIntroOpen(false)}
+        />
+      ) : null}
+      {verifyProfileDialog ? (
+        <RescuerVerifyProfileDialog
+          mode={verifyProfileDialog.mode}
+          missingFields={verifyProfileDialog.mode === "gaps" ? verifyProfileDialog.fields : []}
+          onClose={() => setVerifyProfileDialog(null)}
+          onEditProfile={() => {
+            setVerifyProfileDialog(null);
+            navigate("/rescuer/profile/edit");
+          }}
+          onSubmitRequest={() => {
+            setVerification("review");
+            setVerifyProfileDialog(null);
+            setToast("Solicitud de verificación enviada");
+          }}
+        />
+      ) : null}
+      {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </ScreenShell>
+  );
+}
+
+const emptyRescuerPublicProfileForm = {
+  name: "",
+  description: "",
+  email: "",
+  phone: "",
+  phoneVerified: false,
+  address: "",
+  website: "",
+  instagram: "",
+  facebook: "",
+  avatar: "",
+  showPublicToAdopters: true,
+};
+
+function RescuerPhoneSmsVerifyDialog({
+  initialPhone,
+  onClose,
+  onVerified,
+}: {
+  initialPhone: string;
+  onClose: () => void;
+  onVerified: (phone: string) => void;
+}) {
+  const [phone, setPhone] = useState(initialPhone.replace(/\D/g, ""));
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const canConfirm = phone.length >= 10 && code.trim().length >= 4;
+
+  return (
+    <div className="modal-backdrop center" onClick={onClose} role="presentation">
+      <div
+        className="dialog-card rescuer-phone-verify-dialog"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rescuer-phone-verify-title"
+      >
+        <button type="button" className="dialog-close" onClick={onClose} aria-label="Cerrar">
+          ×
+        </button>
+        <h2 id="rescuer-phone-verify-title">Verifica tu teléfono</h2>
+        <p className="dialog-copy">
+          Te enviaremos un código por SMS. Ingresa tu número y el código que recibas para vincularlo a tu cuenta.
+        </p>
+        <label className="dialog-field">
+          <span>Número de teléfono</span>
+          <input
+            type="tel"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value.replace(/\D/g, ""))}
+            placeholder="525512345678"
+            autoComplete="tel"
+          />
+        </label>
+        <button
+          type="button"
+          className="secondary-button rescuer-phone-verify-send"
+          disabled={phone.length < 10}
+          onClick={() => setCodeSent(true)}
+        >
+          {codeSent ? "Código enviado" : "Enviar código"}
+        </button>
+        <label className="dialog-field">
+          <span>Código SMS</span>
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
+            placeholder="6 dígitos"
+            autoComplete="one-time-code"
+          />
+        </label>
+        <button
+          type="button"
+          className="purple-button"
+          disabled={!canConfirm}
+          onClick={() => {
+            onVerified(phone);
+            onClose();
+          }}
+        >
+          Confirmar
+        </button>
+        <button type="button" className="secondary-button" onClick={onClose}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function rescuerPublicProfileFormFromProfile(profile: RescuerProfile) {
+  return {
+    name: profile.name,
+    description: profile.description,
+    email: profile.email,
+    phone: profile.phone.replace(/\D/g, ""),
+    phoneVerified: profile.phoneVerified ?? false,
+    address: profile.address,
+    website: profile.website,
+    instagram: profile.instagram,
+    facebook: profile.facebook,
+    avatar: profile.avatar ?? "",
+    showPublicToAdopters: profile.showPublicToAdopters ?? true,
+  };
+}
+
+function rescuerRejectionFieldClass(
+  field: RescuerVerificationFixField,
+  fieldsToFix: RescuerVerificationFixField[] | undefined,
+) {
+  return fieldsToFix?.includes(field) ? "field-rejected" : "";
+}
+
+type RescuerPublicProfileFormState = ReturnType<typeof rescuerPublicProfileFormFromProfile>;
+
+function rescuerVerificationSensitiveFieldsChanged(
+  form: RescuerPublicProfileFormState,
+  profile: RescuerProfile,
+) {
+  const savedPhone = profile.phone.replace(/\D/g, "");
+  const formPhone = form.phone.replace(/\D/g, "");
+  return (
+    form.name.trim() !== profile.name.trim() ||
+    (form.avatar ?? "") !== (profile.avatar ?? "") ||
+    formPhone !== savedPhone ||
+    Boolean(form.phoneVerified) !== Boolean(profile.phoneVerified) ||
+    form.instagram.trim() !== profile.instagram.trim() ||
+    form.facebook.trim() !== profile.facebook.trim()
   );
 }
 
 function RescuerEditPublicProfile() {
   const navigate = useNavigate();
-  const { rescuerProfile, updateRescuerProfile } = usePrototypeStore();
+  const {
+    rescuerProfile,
+    updateRescuerProfile,
+    emptyStates,
+    cases,
+    verification,
+    rescuerVerificationFeedback,
+    setVerification,
+  } = usePrototypeStore();
+  const rejectionFeedback =
+    verification === "rejected"
+      ? rescuerVerificationFeedback ?? defaultRescuerVerificationRejection
+      : null;
+  const rejectClass = (field: RescuerVerificationFixField) =>
+    rescuerRejectionFieldClass(field, rejectionFeedback?.fieldsToFix);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({
-    name: rescuerProfile.name,
-    address: rescuerProfile.address,
-    phone: rescuerProfile.phone,
-    email: rescuerProfile.email,
-    description: rescuerProfile.description,
-    avatar: rescuerProfile.avatar ?? "",
-  });
+  const [form, setForm] = useState(() =>
+    emptyStates ? emptyRescuerPublicProfileForm : rescuerPublicProfileFormFromProfile(rescuerProfile),
+  );
+  useEffect(() => {
+    setForm(emptyStates ? emptyRescuerPublicProfileForm : rescuerPublicProfileFormFromProfile(rescuerProfile));
+  }, [emptyStates, rescuerProfile]);
   const [toast, setToast] = useState("");
-  const canSave =
-    form.name.trim() &&
-    form.address.trim() &&
-    form.phone.trim() &&
-    form.email.trim() &&
-    form.description.trim();
+  const [phoneVerifyOpen, setPhoneVerifyOpen] = useState(false);
+  const canSave = Boolean(form.name.trim() && form.email.trim());
+  const verificationSensitiveDirty = useMemo(
+    () => !emptyStates && rescuerVerificationSensitiveFieldsChanged(form, rescuerProfile),
+    [emptyStates, form, rescuerProfile],
+  );
+  const submitForReReview =
+    verification === "rejected" || (verification === "verified" && verificationSensitiveDirty);
+  const previewCaseId = useMemo(() => {
+    const name = form.name.trim() || rescuerProfile.name;
+    return (
+      cases.find((item) => rescuerCaseBelongsToProfile(item.rescuer, name))?.id ??
+      encodeURIComponent(name.trim() || "María Rescatista")
+    );
+  }, [cases, form.name, rescuerProfile.name]);
+
+  const openPublicPreview = () => {
+    updateRescuerProfile({
+      name: form.name.trim(),
+      description: form.description.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      phoneVerified: form.phoneVerified,
+      address: form.address.trim(),
+      website: form.website.trim(),
+      instagram: form.instagram.trim(),
+      facebook: form.facebook.trim(),
+      avatar: form.avatar || undefined,
+      showPublicToAdopters: form.showPublicToAdopters,
+    });
+    navigate(`/rescuer-profile/${previewCaseId}`);
+  };
 
   const pickPhoto = (file: File | undefined) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -9741,97 +10131,227 @@ function RescuerEditPublicProfile() {
   };
 
   const save = () => {
-    if (!canSave) return;
+    const name = form.name.trim();
+    const email = form.email.trim();
+    if (!name || !email) return;
     updateRescuerProfile({
-      name: form.name.trim(),
-      address: form.address.trim(),
-      phone: form.phone.trim(),
-      email: form.email.trim(),
+      name,
       description: form.description.trim(),
+      email,
+      phone: form.phone.trim(),
+      phoneVerified: form.phoneVerified,
+      address: form.address.trim(),
+      website: form.website.trim(),
+      instagram: form.instagram.trim(),
+      facebook: form.facebook.trim(),
       avatar: form.avatar || undefined,
+      showPublicToAdopters: form.showPublicToAdopters,
     });
-    setToast("Perfil actualizado");
+    if (submitForReReview) {
+      setVerification("review");
+      setToast("Cambios guardados. Tu solicitud está en revisión.");
+    } else {
+      setToast("Perfil actualizado");
+    }
     window.setTimeout(() => navigate("/rescuer/profile"), 500);
   };
+  const saveCtaLabel = submitForReReview ? "Guardar y enviar a revisión" : "Guardar cambios";
 
   return (
     <div className="plain-screen rescuer-theme">
-      <TopBar title="Editar perfil público" back="/rescuer/profile" />
+      <TopBar title="Información básica" back="/rescuer/profile" />
       <div className="content-pad form-stack edit-public-profile">
-        <p className="section-lead">Estos datos se muestran en tu perfil público para adoptantes y donantes.</p>
+        {rejectionFeedback ? (
+          <div className="rescuer-verification-admin-banner" role="alert">
+            <strong>Comentarios del administrador</strong>
+            <p>{rejectionFeedback.adminComment}</p>
+          </div>
+        ) : null}
         <input
           ref={fileRef}
           className="visually-hidden"
           type="file"
           accept="image/jpeg,image/png,image/webp"
-          onChange={(event) => pickPhoto(event.target.files?.[0])}
+          onChange={(event) => {
+            pickPhoto(event.target.files?.[0]);
+            event.target.value = "";
+          }}
         />
-        <button type="button" className="photo-card profile-photo-card" onClick={() => fileRef.current?.click()}>
-          <span className={`avatar large purple ${form.avatar ? "has-photo" : ""}`}>
-            {form.avatar ? <img src={form.avatar} alt="" /> : (form.name.trim().charAt(0) || "M")}
-            <span className="avatar-camera purple">
-              <AssetIcon name="onb-camera.svg" size={12} />
+        <section
+          className="edit-public-profile-section"
+          aria-labelledby="edit-public-profile-basic-heading"
+        >
+          <h2 id="edit-public-profile-basic-heading">Información básica</h2>
+          <div className={`photo-card ${rejectClass("avatar")}`.trim()}>
+            <span className={`avatar large ${!emptyStates && form.avatar ? "has-photo" : ""}`}>
+              {!emptyStates && form.avatar ? (
+                <img src={form.avatar} alt="" />
+              ) : (
+                form.name.trim().charAt(0) || "?"
+              )}
             </span>
-          </span>
-          <span className="nav-row-text">
-            <strong>Foto de perfil</strong>
-            <small>Cambia tu foto de perfil</small>
-          </span>
-        </button>
-        <label className="publish-field">
-          <span>Nombre</span>
+            <span className="nav-row-text">
+              <strong>Foto de perfil</strong>
+              <small>Cambia tu foto de perfil</small>
+            </span>
+            <button
+              type="button"
+              className="photo-card-edit"
+              onClick={() => fileRef.current?.click()}
+              aria-label="Editar foto de perfil"
+            >
+              <Icon name="icon-edit.svg" size={18} />
+              Editar
+            </button>
+          </div>
+          <label className={`publish-field ${rejectClass("name")}`.trim()}>
+            <span>Nombre *</span>
+            <input
+              required
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+              placeholder="Tu nombre o el de tu refugio"
+              autoComplete="name"
+            />
+          </label>
+          <label className={`publish-field ${rejectClass("email")}`.trim()}>
+            <span>Correo electrónico *</span>
+            <input
+              type="email"
+              required
+              readOnly
+              aria-readonly="true"
+              value={form.email}
+              placeholder="correo@ejemplo.com"
+              autoComplete="email"
+              title="El correo no se puede editar aquí"
+            />
+          </label>
+          <label className={`publish-field publish-field--phone-link ${rejectClass("phone")}`.trim()}>
+            <span>Teléfono</span>
+            <article className={`card-row ${rejectClass("phone")}`.trim()}>
+              <span className="nav-row-text">
+                <small>
+                  {form.phoneVerified && form.phone
+                    ? `+${form.phone}`
+                    : "Verifica tu número con un código por SMS"}
+                </small>
+              </span>
+              <button
+                type="button"
+                className="purple-button compact"
+                onClick={() => {
+                  if (form.phoneVerified) return;
+                  setPhoneVerifyOpen(true);
+                }}
+              >
+                {form.phoneVerified ? "Vinculado" : "Vincular"}
+              </button>
+            </article>
+          </label>
+          <label className={`publish-field ${rejectClass("address")}`.trim()}>
+            <span>Dirección</span>
+            <input
+              value={form.address}
+              onChange={(event) => setForm({ ...form, address: event.target.value })}
+              placeholder="Calle, colonia, ciudad"
+              autoComplete="street-address"
+            />
+          </label>
+          <label className={`publish-field ${rejectClass("description")}`.trim()}>
+            <span>Sobre ti</span>
+            <textarea
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              placeholder="Cuenta quién eres y cómo ayudas a las mascotas"
+              rows={5}
+            />
+          </label>
+        </section>
+        <section className="edit-public-profile-section" aria-labelledby="edit-public-profile-networks-heading">
+          <h2 id="edit-public-profile-networks-heading">Redes</h2>
+          <article className={`card-row ${rejectClass("instagram")}`.trim()}>
+            <span className="nav-row-text">
+              <strong>Instagram</strong>
+              <small>Vincula tu cuenta de Instagram</small>
+            </span>
+            <button
+              type="button"
+              className="purple-button compact"
+              onClick={() => {
+                if (form.instagram.trim()) return;
+                setForm({ ...form, instagram: "@maria.rescata" });
+              }}
+            >
+              {form.instagram.trim() ? "Vinculado" : "Vincular"}
+            </button>
+          </article>
+          <article className={`card-row ${rejectClass("facebook")}`.trim()}>
+            <span className="nav-row-text">
+              <strong>Facebook</strong>
+              <small>Vincula tu cuenta de Facebook</small>
+            </span>
+            <button
+              type="button"
+              className="purple-button compact"
+              onClick={() => {
+                if (form.facebook.trim()) return;
+                setForm({ ...form, facebook: "Maria Rescatista" });
+              }}
+            >
+              {form.facebook.trim() ? "Vinculado" : "Vincular"}
+            </button>
+          </article>
+          <label className={`publish-field ${rejectClass("website")}`.trim()}>
+            <span>Página web</span>
+            <input
+              value={form.website}
+              onChange={(event) => setForm({ ...form, website: event.target.value })}
+              placeholder="www.ejemplo.mx"
+              autoComplete="url"
+              inputMode="url"
+            />
+          </label>
+        </section>
+        <div className="edit-public-profile-visibility check-row">
           <input
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="Tu nombre o el de tu refugio"
-            autoComplete="name"
+            id="rescuer-show-public-profile"
+            type="checkbox"
+            checked={form.showPublicToAdopters}
+            onChange={(event) => setForm({ ...form, showPublicToAdopters: event.target.checked })}
           />
-        </label>
-        <label className="publish-field">
-          <span>Dirección</span>
-          <input
-            value={form.address}
-            onChange={(event) => setForm({ ...form, address: event.target.value })}
-            placeholder="Calle, colonia, ciudad"
-            autoComplete="street-address"
-          />
-        </label>
-        <label className="publish-field">
-          <span>Teléfono</span>
-          <input
-            type="tel"
-            value={form.phone}
-            onChange={(event) => setForm({ ...form, phone: event.target.value })}
-            placeholder="+52 55 1234 5678"
-            autoComplete="tel"
-          />
-        </label>
-        <label className="publish-field">
-          <span>Email</span>
-          <input
-            type="email"
-            value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
-            placeholder="correo@ejemplo.com"
-            autoComplete="email"
-          />
-        </label>
-        <label className="publish-field">
-          <span>Descripción</span>
-          <textarea
-            value={form.description}
-            onChange={(event) => setForm({ ...form, description: event.target.value })}
-            placeholder="Cuenta quién eres y cómo ayudas a las mascotas"
-            rows={5}
-          />
-        </label>
+          <label htmlFor="rescuer-show-public-profile" className="edit-public-profile-visibility-copy">
+            Quiero mostrar esta información en mi perfil a los adoptantes.{" "}
+            <button
+              type="button"
+              className="edit-public-profile-preview"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openPublicPreview();
+              }}
+            >
+              Ver vista previa &gt;
+            </button>
+          </label>
+        </div>
         <button type="button" className="purple-button" disabled={!canSave} onClick={save}>
-          Guardar cambios
+          {saveCtaLabel}
         </button>
         <button type="button" className="secondary-button" onClick={() => navigate("/rescuer/profile")}>
           Cancelar
         </button>
       </div>
+      {phoneVerifyOpen ? (
+        <RescuerPhoneSmsVerifyDialog
+          initialPhone={form.phone}
+          onClose={() => setPhoneVerifyOpen(false)}
+          onVerified={(phone) => {
+            setForm({ ...form, phone, phoneVerified: true });
+            setToast("Teléfono verificado");
+          }}
+        />
+      ) : null}
       {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </div>
   );
@@ -10895,243 +11415,457 @@ function ReportDialog({ title, onClose }: { title: string; onClose: (sent: boole
   );
 }
 
+type RescuerPublicMediaItem = {
+  id: string;
+  name: string;
+  image: string;
+  link: string;
+  species: "Perro" | "Gato";
+  sex: "Macho" | "Hembra";
+  size: PetSize;
+  personality: PetPersonality[];
+};
+
 function PublicRescuerProfile() {
   const navigate = useNavigate();
   const { caseId = "" } = useParams();
-  const { cases, savedPetIds, toggleSavedPet } = usePrototypeStore();
+  const { cases, rescuerProfile } = usePrototypeStore();
   const fromCase = cases.find((item) => item.id === caseId);
   const name = fromCase?.rescuer ?? decodeURIComponent(caseId);
   const rescuer = rescuers.find((item) => item.name === name) ?? rescuers[0];
-  const [tab, setTab] = useState<"adoption" | "cases" | "activity">("activity");
+  const [tab, setTab] = useState<"adoption" | "support" | "overview">("overview");
   const [report, setReport] = useState(false);
   const [toast, setToast] = useState("");
+  const [mediaFilterOpen, setMediaFilterOpen] = useState(false);
+  const [draftSpecies, setDraftSpecies] = useState<DiscoverSpeciesChoice | null>(null);
+  const [speciesFilter, setSpeciesFilter] = useState<DiscoverSpeciesChoice | null>(null);
+  const [draftSex, setDraftSex] = useState<"Macho" | "Hembra" | null>(null);
+  const [sexFilter, setSexFilter] = useState<"Macho" | "Hembra" | null>(null);
+  const [draftSize, setDraftSize] = useState<PetSize | null>(null);
+  const [sizeFilter, setSizeFilter] = useState<PetSize | null>(null);
+  const [draftPersonality, setDraftPersonality] = useState<PetPersonality[]>([]);
+  const [personalityFilter, setPersonalityFilter] = useState<PetPersonality[]>([]);
+  const mediaFiltersActive =
+    !!speciesFilter || !!sexFilter || !!sizeFilter || personalityFilter.length > 0;
+  const openAdoptionFilters = () => {
+    setDraftSpecies(speciesFilter);
+    setDraftSex(sexFilter);
+    setDraftSize(sizeFilter);
+    setDraftPersonality(personalityFilter);
+    setMediaFilterOpen(true);
+  };
+  const applyAdoptionFilters = () => {
+    setSpeciesFilter(draftSpecies);
+    setSexFilter(draftSex);
+    setSizeFilter(draftSize);
+    setPersonalityFilter(draftPersonality);
+    setMediaFilterOpen(false);
+  };
+  const clearAdoptionFilters = () => {
+    setDraftSpecies(null);
+    setDraftSex(null);
+    setDraftSize(null);
+    setDraftPersonality([]);
+    setSpeciesFilter(null);
+    setSexFilter(null);
+    setSizeFilter(null);
+    setPersonalityFilter([]);
+    setMediaFilterOpen(false);
+  };
   const ownCases = cases.filter((item) => item.rescuer === rescuer.name);
-  const adoptionList = [
-    ...ownCases.filter((item) => item.adoption).map((item) => ({ id: item.id, name: item.name, age: item.age, image: item.image, distance: item.distance, link: `/case/${item.id}` })),
-    ...adoptionPets
-      .filter((item) => item.rescuer === rescuer.name)
-      .map((item) => ({ id: item.id, name: item.name, age: item.sex, image: item.image, distance: item.distance, link: `/adoption/${item.id}` })),
+  const adoptionList = useMemo(
+    () => [
+      ...ownCases
+        .filter((item) => item.adoption)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          image: item.image,
+          link: `/case/${item.id}`,
+        })),
+      ...adoptionPets
+        .filter((item) => item.rescuer === rescuer.name)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          image: item.image,
+          link: `/adoption/${item.id}`,
+        })),
+    ],
+    [ownCases, rescuer.name],
+  );
+  const isAdoptionListingActive = (id: string) => {
+    const pet = adoptionPets.find((entry) => entry.id === id);
+    if (pet) return pet.listed !== false;
+    const petCase = ownCases.find((entry) => entry.id === id);
+    return petCase?.caseStatus === "active";
+  };
+  const adoptionActiveList = useMemo(
+    () => adoptionList.filter((item) => isAdoptionListingActive(item.id)),
+    [adoptionList, ownCases],
+  );
+  const supportActiveList = useMemo(
+    () =>
+      ownCases.filter(
+        (item) =>
+          item.caseStatus === "active" &&
+          item.needs.some((need) => need.status === "active" && need.funded < need.requested),
+      ),
+    [ownCases],
+  );
+  const adoptionMediaList = useMemo((): RescuerPublicMediaItem[] => {
+    return adoptionActiveList.map((item) => {
+      const pet = adoptionPets.find((entry) => entry.id === item.id);
+      const petCase = ownCases.find((entry) => entry.id === item.id);
+      let species: "Perro" | "Gato" = petCase?.species ?? "Perro";
+      if (pet) {
+        if ("species" in pet && (pet.species === "Perro" || pet.species === "Gato")) {
+          species = pet.species;
+        } else if ("type" in pet && (pet.type === "Perro" || pet.type === "Gato")) {
+          species = pet.type;
+        }
+      }
+      const sex = pet?.sex ?? petCase?.sex ?? "Macho";
+      const size: PetSize = pet && "size" in pet ? pet.size : "Mediano";
+      const personality: PetPersonality[] =
+        pet && "personality" in pet ? [...pet.personality] as PetPersonality[] : [];
+      return {
+        ...item,
+        species,
+        sex,
+        size,
+        personality,
+      };
+    });
+  }, [adoptionActiveList, ownCases]);
+  const supportMediaList = useMemo((): RescuerPublicMediaItem[] => {
+    return supportActiveList.map((item) => ({
+      id: item.id,
+      name: item.name,
+      image: item.image,
+      link: `/case/${item.id}`,
+      species: item.species,
+      sex: item.sex,
+      size: "Mediano" as PetSize,
+      personality: [] as PetPersonality[],
+    }));
+  }, [supportActiveList]);
+  const filterAdoptionMediaList = (items: RescuerPublicMediaItem[]) =>
+    items.filter((item) => {
+      if (speciesFilter && item.species !== speciesFilter) return false;
+      if (sexFilter && item.sex !== sexFilter) return false;
+      if (sizeFilter && item.size !== sizeFilter) return false;
+      if (
+        personalityFilter.length &&
+        !personalityFilter.some((trait) => item.personality.includes(trait))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  const renderAdoptionMediaPanel = (items: RescuerPublicMediaItem[], emptyMessage: string) => {
+    if (!items.length) {
+      return <p className="empty-inline">{emptyMessage}</p>;
+    }
+    const visible = filterAdoptionMediaList(items);
+    return (
+      <>
+        <div className="rescuer-public-media-head">
+          <RescuerPublicFilterButton active={mediaFiltersActive} onClick={openAdoptionFilters} />
+        </div>
+        {visible.length ? (
+          <div className="rescuer-public-media-grid">
+            {visible.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="rescuer-public-media-cell"
+                onClick={() => navigate(item.link)}
+                aria-label={`Ver a ${item.name}`}
+              >
+                <img src={item.image} alt={item.name} />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-inline">No hay mascotas con este filtro.</p>
+        )}
+      </>
+    );
+  };
+  const adoptionActiveCount = adoptionActiveList.length;
+  const adoptionClosedCount = ownCases.filter(
+    (item) => item.adoption && item.caseStatus === "closed",
+  ).length;
+  const supportActiveCount = supportActiveList.length;
+  const supportClosedCount = ownCases.filter((item) => {
+    if (item.adoption || !item.needs.length) return false;
+    if (item.caseStatus === "closed") return true;
+    const goal = item.needs.reduce((sum, need) => sum + need.requested, 0);
+    const received = item.needs.reduce((sum, need) => sum + need.funded, 0);
+    return goal > 0 && received >= goal;
+  }).length;
+  const monthsOnDopmi = rescuer.monthsOnDopmi;
+  const rescuerInitial = rescuer.name.trim().charAt(0).toUpperCase();
+  const profileMatchesAccount = rescuerCaseBelongsToProfile(rescuer.name, rescuerProfile.name);
+  const profileAvatar = profileMatchesAccount && rescuerProfile.avatar ? rescuerProfile.avatar : "";
+  const publicContact = profileMatchesAccount
+    ? {
+        email: rescuerProfile.email,
+        phone: rescuerProfile.phone,
+        address: rescuerProfile.address,
+        website: rescuerProfile.website ?? "",
+      }
+    : { ...rescuer.contact, website: "" };
+  const showAdopterFacingDetails =
+    !profileMatchesAccount || (rescuerProfile.showPublicToAdopters ?? true);
+  const publicBio = profileMatchesAccount ? rescuerProfile.description.trim() : rescuer.bio.trim();
+  const publicInstagram = profileMatchesAccount
+    ? rescuerProfile.instagram.trim()
+    : rescuer.social.instagram.trim();
+  const publicFacebook = profileMatchesAccount
+    ? rescuerProfile.facebook.trim()
+    : rescuer.social.facebook.trim();
+  const publicEmail = publicContact.email.trim();
+  const publicPhone = publicContact.phone.trim();
+  const publicAddress = publicContact.address.trim();
+  const publicWebsite = publicContact.website.trim();
+  const showPublicBio = showAdopterFacingDetails && Boolean(publicBio);
+  const showPublicEmail = showAdopterFacingDetails && Boolean(publicEmail);
+  const showPublicPhone = showAdopterFacingDetails && Boolean(publicPhone);
+  const showPublicAddress = showAdopterFacingDetails && Boolean(publicAddress);
+  const showPublicWebsite = showAdopterFacingDetails && Boolean(publicWebsite);
+  const showPublicContactRow =
+    showPublicEmail || showPublicPhone || showPublicAddress || showPublicWebsite;
+  const showPublicInstagram = showAdopterFacingDetails && Boolean(publicInstagram);
+  const showPublicFacebook = showAdopterFacingDetails && Boolean(publicFacebook);
+  const showPublicSocialActions = showPublicInstagram || showPublicFacebook;
+  const overviewStats: {
+    value: number;
+    label: string;
+    sub: string;
+    tone: keyof typeof ADOPTION_FUNNEL_CARD_SPARK;
+  }[] = [
+    {
+      value: adoptionActiveCount,
+      label: "Mascotas están buscando un hogar.",
+      sub: "",
+      tone: "views",
+    },
+    {
+      value: adoptionClosedCount,
+      label: "Mascotas encontraron un hogar.",
+      sub: "",
+      tone: "matches",
+    },
+    {
+      value: supportActiveCount,
+      label: "Mascotas están recibiendo apoyo.",
+      sub: "",
+      tone: "messages",
+    },
+    {
+      value: supportClosedCount,
+      label: "Mascotas recibieron apoyo.",
+      sub: "",
+      tone: "adoptions",
+    },
   ];
-  const donationCases = ownCases.filter((item) => item.needs.length);
+
   return (
     <div className="plain-screen">
       <TopBar
         back={fromCase ? `/case/${fromCase.id}` : "/saved-rescuers"}
         actions={
           <button className="icon-button" onClick={() => setToast("Enlace del perfil copiado")} aria-label="Compartir">
-            <Icon name="send.svg" size={20} />
+            <Icon name="icon-share.svg" size={20} />
           </button>
         }
       />
       <div className="content-pad rescuer-public">
-        <div className="public-profile">
-          <span className="avatar xl">{rescuer.name.charAt(0)}</span>
-          <h1>
-            {rescuer.name}
-            {rescuer.verified ? <AssetIcon name="icon-verified.svg" size={20} alt="Verificado" /> : null}
-          </h1>
-          <p className="public-city">
-            <Icon name="location.svg" size={14} /> {rescuer.city}
-          </p>
-          <strong className="public-count">{rescuer.publishedCases} casos publicados</strong>
-          <p className="public-bio">{rescuer.bio}</p>
-        </div>
-        <h2 className="settings-heading first">Redes sociales</h2>
-        <div className="social-links">
-          <button onClick={() => setToast(`Instagram ${rescuer.social.instagram} (simulado)`)}>
-            <Icon name="icon-instagram.svg" size={18} />
-            Instagram
-          </button>
-          <button onClick={() => setToast(`Facebook ${rescuer.social.facebook} (simulado)`)}>
-            <Icon name="icon-facebook.svg" size={18} />
-            Facebook
-          </button>
-        </div>
-        <div className="profile-tabs">
-          <button className={tab === "activity" ? "active" : ""} onClick={() => setTab("activity")}>Actividad</button>
-          <button className={tab === "adoption" ? "active" : ""} onClick={() => setTab("adoption")}>En adopción</button>
-          <button className={tab === "cases" ? "active" : ""} onClick={() => setTab("cases")}>Casos</button>
-          <button className="report-link" onClick={() => setReport(true)}>Reportar</button>
-        </div>
-        {tab === "activity" ? (
-          (() => {
-            const adoptionActive = adoptionList.filter((item) => {
-              const pet = adoptionPets.find((entry) => entry.id === item.id);
-              if (pet) return pet.listed !== false;
-              const petCase = ownCases.find((entry) => entry.id === item.id);
-              return petCase?.caseStatus === "active";
-            }).length;
-            const donationActive = ownCases.filter(
-              (item) =>
-                item.caseStatus === "active" &&
-                item.needs.some((need) => need.status === "active" && need.funded < need.requested),
-            ).length;
-            const donationPublished = ownCases.filter((item) => item.needs.length > 0).length;
-            const adoptionPublished = adoptionList.length;
-            const raised = ownCases.reduce(
-              (sum, item) => sum + item.needs.reduce((inner, need) => inner + need.funded, 0),
-              0,
-            );
-            const needsCompleted = ownCases.reduce(
-              (sum, item) =>
-                sum +
-                item.needs.filter(
-                  (need) =>
-                    need.status === "funded" ||
-                    need.status === "completed" ||
-                    need.status === "evidence" ||
-                    need.funded >= need.requested,
-                ).length,
-              0,
-            );
-            const petsHelped = new Set([
-              ...ownCases.map((item) => item.id),
-              ...adoptionPets.filter((item) => item.rescuer === rescuer.name).map((item) => item.id),
-            ]).size;
-            const closedCases = ownCases.filter((item) => item.caseStatus === "closed").length;
-            const highlight = [
-              {
-                value: donationActive,
-                label: "Donaciones activas",
-                hint: "Con meta abierta ahora",
-                tone: "yellow",
-                icon: "tab-donate.svg",
-              },
-              {
-                value: adoptionActive,
-                label: "Adopciones activas",
-                hint: "Buscando hogar",
-                tone: "ink",
-                icon: "tab-adoption.svg",
-              },
-            ] as const;
-            const stats = [
-              {
-                value: donationPublished || rescuer.publishedCases,
-                label: "Casos de donación",
-                sub: "Historial publicado",
-                icon: "notif-case.svg",
-              },
-              {
-                value: adoptionPublished,
-                label: "Publicaciones de adopción",
-                sub: "En todo el historial",
-                icon: "notif-pet.svg",
-              },
-              {
-                value: `$${raised.toLocaleString("es-MX")}`,
-                label: "Recaudado",
-                sub: "Aportes recibidos",
-                icon: "icon-donation-in.svg",
-              },
-              {
-                value: needsCompleted,
-                label: "Necesidades cubiertas",
-                sub: "Metas completadas",
-                icon: "check-circle.svg",
-              },
-              {
-                value: petsHelped,
-                label: "Mascotas ayudadas",
-                sub: "Adopción y donación",
-                icon: "empty-impact-paw.svg",
-              },
-              {
-                value: closedCases,
-                label: "Casos cerrados",
-                sub: "Historial concluido",
-                icon: "icon-verified.svg",
-              },
-            ];
+        <header className="rescuer-public-header">
+          <div className="rescuer-public-card">
+            <div className={`rescuer-public-avatar${profileAvatar ? " has-photo" : ""}`}>
+              {profileAvatar ? <img src={profileAvatar} alt="" /> : rescuerInitial}
+            </div>
+            <h1 className="rescuer-public-name">
+              {rescuer.name}
+              {rescuer.verified ? <AssetIcon name="icon-verified.svg" size={20} alt="Verificado" /> : null}
+            </h1>
+            <p className="rescuer-public-location">
+              <Icon name="location.svg" size={14} />
+              {rescuer.city}
+            </p>
+            {showPublicBio ? <p className="rescuer-public-bio">{publicBio}</p> : null}
+            {showPublicContactRow ? (
+              <div className="rescuer-public-contact-row" aria-label="Contacto">
+                {showPublicEmail ? (
+                  <button
+                    type="button"
+                    className="rescuer-public-circle-btn"
+                    aria-label="Correo"
+                    onClick={() => setToast(`Correo: ${publicEmail} (simulado)`)}
+                  >
+                    <Icon name="icon-mail.svg" size={20} />
+                  </button>
+                ) : null}
+                {showPublicPhone ? (
+                  <button
+                    type="button"
+                    className="rescuer-public-circle-btn"
+                    aria-label="Teléfono"
+                    onClick={() => setToast(`Teléfono: ${publicPhone} (simulado)`)}
+                  >
+                    <Icon name="icon-phone.svg" size={20} />
+                  </button>
+                ) : null}
+                {showPublicAddress ? (
+                  <button
+                    type="button"
+                    className="rescuer-public-circle-btn"
+                    aria-label="Dirección"
+                    onClick={() => setToast(`Dirección: ${publicAddress} (simulado)`)}
+                  >
+                    <Icon name="location.svg" size={20} />
+                  </button>
+                ) : null}
+                {showPublicWebsite ? (
+                  <button
+                    type="button"
+                    className="rescuer-public-circle-btn"
+                    aria-label="Página web"
+                    onClick={() => setToast(`Página web: ${publicWebsite} (simulado)`)}
+                  >
+                    <Icon name="icon-share.svg" size={20} />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {showPublicSocialActions ? (
+              <div className="rescuer-public-social-actions">
+                {showPublicInstagram ? (
+                  <button
+                    type="button"
+                    onClick={() => setToast(`Instagram ${publicInstagram} (simulado)`)}
+                  >
+                    <Icon name="icon-instagram.svg" size={18} />
+                    Instagram
+                  </button>
+                ) : null}
+                {showPublicFacebook ? (
+                  <button
+                    type="button"
+                    onClick={() => setToast(`Facebook ${publicFacebook} (simulado)`)}
+                  >
+                    <Icon name="icon-facebook.svg" size={18} />
+                    Facebook
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </header>
 
-            return (
-              <section className="rescuer-dash" aria-label="Resumen de actividad">
-                <p className="rescuer-dash-lead">
-                  Numeralia de lo que {rescuer.name.split(" ")[0]} ha impulsado en DopMi.
-                </p>
-                <div className="rescuer-dash-hero">
-                  {highlight.map((item) => (
-                    <article key={item.label} className={`rescuer-dash-hero-card tone-${item.tone}`}>
-                      <span className="rescuer-dash-hero-icon" aria-hidden="true">
-                        <Icon name={item.icon} size={18} />
-                      </span>
-                      <strong>{item.value}</strong>
-                      <span>{item.label}</span>
-                      <small>{item.hint}</small>
-                    </article>
-                  ))}
-                </div>
-                <div className="rescuer-dash-grid">
-                  {stats.map((stat) => (
-                    <article key={stat.label} className="rescuer-dash-stat">
-                      <span className="rescuer-dash-stat-icon" aria-hidden="true">
-                        <Icon name={stat.icon} size={16} />
-                      </span>
-                      <strong>{stat.value}</strong>
-                      <span>{stat.label}</span>
-                      <small>{stat.sub}</small>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            );
-          })()
-        ) : null}
-        {tab === "adoption" ? (
-          adoptionList.length ? (
-            adoptionList.map((item) => {
-              const isSaved = savedPetIds.includes(item.id);
-              return (
-                <article className="case-card" key={item.id}>
-                  <div className="case-image">
+        <div className="rescuer-public-tabs" role="tablist" aria-label="Contenido del perfil">
+          {(
+            [
+              { id: "overview" as const, label: "Resumen" },
+              { id: "adoption" as const, label: "Adopción" },
+              { id: "support" as const, label: "Apoyo" },
+            ] as const
+          ).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.id}
+              className={tab === item.id ? "is-active" : ""}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="rescuer-public-panel" role="tabpanel">
+          {tab === "adoption"
+            ? renderAdoptionMediaPanel(
+                adoptionMediaList,
+                "No hay mascotas en adopción activas por ahora.",
+              )
+            : null}
+
+          {tab === "support" ? (
+            supportMediaList.length ? (
+              <div className="rescuer-public-media-grid">
+                {supportMediaList.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="rescuer-public-media-cell"
+                    onClick={() => navigate(item.link)}
+                    aria-label={`Ver caso de ${item.name}`}
+                  >
                     <img src={item.image} alt={item.name} />
-                    <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
-                  </div>
-                  <div className="need-summary public-adoption-actions">
-                    <button
-                      type="button"
-                      className={`round-save ${isSaved ? "selected" : ""}`}
-                      onClick={() => toggleSavedPet(item.id)}
-                      aria-label={isSaved ? "Quitar de guardados" : "Guardar"}
-                    >
-                      <Icon name="icon-bookmark.svg" size={20} />
-                    </button>
-                    <button type="button" className="primary-button" onClick={() => navigate(item.link)}>
-                      Conoce la historia de {item.name}
-                    </button>
-                  </div>
-                </article>
-              );
-            })
-          ) : (
-            <p className="empty-inline">Este rescatista no tiene mascotas en adopción por ahora.</p>
-          )
-        ) : null}
-        {tab === "cases" ? (
-          donationCases.length ? (
-            donationCases.map((item) => (
-              <article className="case-card" key={item.id}>
-                <div className="case-image">
-                  <img src={item.image} alt={item.name} />
-                  <div className="case-title"><strong>{item.name}, {item.age}</strong><span>{item.distance}</span></div>
-                </div>
-                {item.needs.slice(0, 1).map((need) => (
-                  <div className="need-summary" key={need.id}>
-                    <div><strong>{need.title}</strong><b>${need.funded} / ${need.requested}</b></div>
-                    <div className="progress"><i style={{ width: `${(need.funded / need.requested) * 100}%` }} /></div>
-                    <div className="card-actions">
-                      <button className="primary-button" onClick={() => navigate(`/case/${item.id}`)}>Ver caso</button>
-                      <button className="secondary-button" onClick={() => navigate(`/donate/${item.id}/${need.id}`)}>Donar</button>
-                    </div>
-                  </div>
+                  </button>
                 ))}
-              </article>
-            ))
-          ) : (
-            <p className="empty-inline">Sin casos de donación activos.</p>
-          )
-        ) : null}
+              </div>
+            ) : (
+              <p className="empty-inline">No hay casos en apoyo activos por ahora.</p>
+            )
+          ) : null}
+
+          {tab === "overview" ? (
+            <section className="rescuer-public-overview-block" aria-label="Resumen del rescatista">
+              <p className="rescuer-public-overview-lead">Gracias a {rescuer.name}:</p>
+              <div className="rh-adoption-funnel rescuer-public-overview">
+                {overviewStats.map((stat) => {
+                  const displayValue = stat.value.toLocaleString("es-MX");
+                  return (
+                    <article
+                      key={stat.tone}
+                      className={`rh-adoption-funnel-card rh-adoption-funnel-card--${stat.tone}`}
+                      aria-label={`${displayValue}. ${stat.label}`}
+                    >
+                      <p className="rh-adoption-funnel-value">{displayValue}</p>
+                      <span className="rh-adoption-funnel-card-icon" aria-hidden="true">
+                        <Icon name={RESCUER_PUBLIC_OVERVIEW_ICONS[stat.tone]} size={22} />
+                      </span>
+                      <div className="rh-adoption-funnel-card-copy">
+                        <p className="rh-adoption-funnel-label">{stat.label}</p>
+                        {stat.sub ? <p className="rh-adoption-funnel-hint">{stat.sub}</p> : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+              <p className="rescuer-public-overview-thanks">
+                {rescuer.name} lleva <strong>{monthsOnDopmi} meses activo en DopMi.</strong> ¡Gracias por ser
+                parte de la manada!
+              </p>
+            </section>
+          ) : null}
+        </div>
+        <button type="button" className="pet-detail-report pet-detail-report--footer" onClick={() => setReport(true)}>
+          <Icon name="icon-alert-circle.svg" size={16} />
+          Reportar perfil
+        </button>
       </div>
+      <AdoptionFilterModal
+        open={mediaFilterOpen}
+        onClose={() => setMediaFilterOpen(false)}
+        showSpecies
+        draftSpecies={draftSpecies}
+        setDraftSpecies={setDraftSpecies}
+        draftSex={draftSex}
+        setDraftSex={setDraftSex}
+        draftSize={draftSize}
+        setDraftSize={setDraftSize}
+        draftPersonality={draftPersonality}
+        setDraftPersonality={setDraftPersonality}
+        onApply={applyAdoptionFilters}
+        onClear={clearAdoptionFilters}
+      />
       {report ? (
         <ReportDialog
           title="Reportar rescatista"

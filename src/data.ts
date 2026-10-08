@@ -512,6 +512,8 @@ export type Rescuer = {
   bio: string;
   verified: boolean;
   publishedCases: number;
+  monthsOnDopmi: number;
+  contact: { email: string; phone: string; address: string };
   social: { instagram: string; facebook: string };
 };
 
@@ -522,6 +524,12 @@ export const rescuers: Rescuer[] = [
     bio: "Rescata perros entregados por familias y los prepara para adopción responsable.",
     verified: true,
     publishedCases: 1,
+    monthsOnDopmi: 14,
+    contact: {
+      email: "diego@patitas.mx",
+      phone: "+52 442 555 0101",
+      address: "Centro, Querétaro, Qro.",
+    },
     social: { instagram: "@diego.patitas", facebook: "Diego F Rescates" },
   },
   {
@@ -530,6 +538,12 @@ export const rescuers: Rescuer[] = [
     bio: "Rescata perritos de calle desde 2019. Trabaja con una clínica veterinaria aliada en Monterrey.",
     verified: true,
     publishedCases: 1,
+    monthsOnDopmi: 28,
+    contact: {
+      email: "maria@rescatista.com",
+      phone: "+52 81 555 0202",
+      address: "Col. Del Valle, Monterrey, NL",
+    },
     social: { instagram: "@maria.rescata", facebook: "Maria Rescata" },
   },
   {
@@ -538,6 +552,12 @@ export const rescuers: Rescuer[] = [
     bio: "Enfocado en gatos heridos. Colabora con el Centro de Bienestar Animal San Pedro.",
     verified: true,
     publishedCases: 1,
+    monthsOnDopmi: 22,
+    contact: {
+      email: "carlos@bienestar-sp.mx",
+      phone: "+52 81 555 0303",
+      address: "San Pedro Garza García, NL",
+    },
     social: { instagram: "@carlos.patitas", facebook: "Carlos Ruiz" },
   },
   {
@@ -546,6 +566,12 @@ export const rescuers: Rescuer[] = [
     bio: "Casa hogar temporal para perros medianos y grandes en la Ciudad de México.",
     verified: true,
     publishedCases: 1,
+    monthsOnDopmi: 18,
+    contact: {
+      email: "patricia@casahogar.mx",
+      phone: "+52 55 555 0404",
+      address: "Col. Narvarte, Ciudad de México, CDMX",
+    },
     social: { instagram: "@patricia.hogar", facebook: "Patricia V." },
   },
   {
@@ -554,6 +580,12 @@ export const rescuers: Rescuer[] = [
     bio: "Refugio comunitario con 12 años apoyando animales en situación de calle.",
     verified: false,
     publishedCases: 1,
+    monthsOnDopmi: 36,
+    contact: {
+      email: "contacto@refugiopatitas.mx",
+      phone: "+52 81 555 0505",
+      address: "Guadalupe, NL",
+    },
     social: { instagram: "@refugiopatitas", facebook: "Refugio Patitas" },
   },
   {
@@ -562,20 +594,52 @@ export const rescuers: Rescuer[] = [
     bio: "Voluntario de rescate y transporte de mascotas hacia sus familias adoptivas.",
     verified: true,
     publishedCases: 1,
+    monthsOnDopmi: 9,
+    contact: {
+      email: "diego.rescate@email.com",
+      phone: "+52 81 555 0606",
+      address: "Monterrey, NL",
+    },
     social: { instagram: "@diego.rescate", facebook: "Diego F." },
   },
 ];
 
+export type RescuerVerificationFixField =
+  | "name"
+  | "avatar"
+  | "email"
+  | "phone"
+  | "address"
+  | "description"
+  | "instagram"
+  | "facebook"
+  | "website";
+
+export type RescuerVerificationFeedback = {
+  adminComment: string;
+  fieldsToFix: RescuerVerificationFixField[];
+};
+
+/** Comentarios simulados del panel de administración cuando la verificación es rechazada. */
+export const defaultRescuerVerificationRejection: RescuerVerificationFeedback = {
+  adminComment:
+    "El número de teléfono no coincide con el código SMS y no pudimos validar tu perfil de Instagram. Corrige los campos marcados y vuelve a enviar tu solicitud.",
+  fieldsToFix: ["phone", "instagram"],
+};
+
 export const rescuerAccount = {
   name: "María Rescatista",
   email: "maria@rescatista.com",
-  phone: "+52 55 1234 5678",
+  phone: "525512345678",
+  phoneVerified: true,
   address: "Calle Reforma 123, Col. Centro, Ciudad de México, CDMX",
   description:
     "Refugio dedicado al rescate y rehabilitación de animales en situación de calle. Trabajamos con amor y compromiso para darles una segunda oportunidad.",
   instagram: "@maria.rescata",
   facebook: "Maria Rescatista",
+  website: "www.mariarescata.mx",
   clabe: "012345678901234567",
+  showPublicToAdopters: true,
 };
 
 export type NotificationKind = "message" | "donation" | "case" | "pet";
@@ -650,9 +714,121 @@ export const subscriptionPlans: SubscriptionPlan[] = [
 ];
 
 export const paymentHistory = [
-  { id: "p1", date: "3 jun", method: "Visa *4242", amount: "$50.00", status: "pagado" as const },
-  { id: "p2", date: "3 may", method: "Apple Pay", amount: "$50.00", status: "pagado" as const },
-  { id: "p3", date: "3 abr", method: "Visa *4242", amount: "$50.00", status: "cancelado" as const },
+  {
+    id: "p1",
+    date: "3 jun",
+    method: "Visa *4242",
+    amount: "$50.00",
+    status: "pagado" as const,
+    petName: "Luna",
+    rescuerName: "María Rescatista",
+  },
+  {
+    id: "p2",
+    date: "3 may",
+    method: "Apple Pay",
+    amount: "$50.00",
+    status: "pagado" as const,
+    petName: "Milo",
+    rescuerName: "María Rescatista",
+  },
+  {
+    id: "p3",
+    date: "3 abr",
+    method: "Visa *4242",
+    amount: "$50.00",
+    status: "cancelado" as const,
+    petName: "Max",
+    rescuerName: "Alberto Quiroga",
+  },
+];
+
+/** Estados de pago alineados con Stripe (mock). */
+export type StripePaymentStatus = "pagado" | "cancelado" | "enproceso" | "fallado";
+
+export type RescuerReceivedPaymentRow = {
+  id: string;
+  date: string;
+  petName: string;
+  caseId: string;
+  supportType: "Veterinario" | "Medicina" | "Alimento";
+  donorLabel: string;
+  amount: string;
+  status: StripePaymentStatus;
+};
+
+/** Historial de pagos recibidos por la rescatista (casos de apoyo). */
+export const rescuerReceivedPaymentHistory: RescuerReceivedPaymentRow[] = [
+  {
+    id: "recv-1",
+    date: "6 oct",
+    petName: "Luna",
+    caseId: "luna",
+    supportType: "Medicina",
+    donorLabel: "Ana P.",
+    amount: "$35.00",
+    status: "pagado",
+  },
+  {
+    id: "recv-2",
+    date: "4 oct",
+    petName: "Luna",
+    caseId: "luna",
+    supportType: "Alimento",
+    donorLabel: "Suscripción Guardián",
+    amount: "$50.00",
+    status: "pagado",
+  },
+  {
+    id: "recv-3",
+    date: "3 oct",
+    petName: "Milo",
+    caseId: "milo",
+    supportType: "Veterinario",
+    donorLabel: "Sofía R.",
+    amount: "$25.00",
+    status: "pagado",
+  },
+  {
+    id: "recv-4",
+    date: "29 sep",
+    petName: "Nina",
+    caseId: "nina",
+    supportType: "Medicina",
+    donorLabel: "Luis G.",
+    amount: "$15.00",
+    status: "enproceso",
+  },
+  {
+    id: "recv-5",
+    date: "22 sep",
+    petName: "Nube",
+    caseId: "nube-review",
+    supportType: "Alimento",
+    donorLabel: "Carlos M.",
+    amount: "$42.00",
+    status: "cancelado",
+  },
+  {
+    id: "recv-6",
+    date: "15 sep",
+    petName: "Milo",
+    caseId: "milo",
+    supportType: "Veterinario",
+    donorLabel: "Suscripción Guardián",
+    amount: "$50.00",
+    status: "fallado",
+  },
+  {
+    id: "recv-7",
+    date: "8 sep",
+    petName: "Rocky",
+    caseId: "rocky",
+    supportType: "Alimento",
+    donorLabel: "María T.",
+    amount: "$28.00",
+    status: "pagado",
+  },
 ];
 
 export const savedCards = [

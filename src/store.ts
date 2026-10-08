@@ -1,9 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  defaultRescuerVerificationRejection,
   initialCases,
   initialNotifications,
   rescuerAccount,
+  type RescuerVerificationFeedback,
   type Need,
   type Notification,
   type PetCase,
@@ -24,12 +26,16 @@ export type RescuerProfile = {
   name: string;
   email: string;
   phone: string;
+  phoneVerified?: boolean;
   address: string;
   description: string;
   instagram: string;
   facebook: string;
+  website: string;
   clabe: string;
   avatar?: string;
+  /** Si es false, el perfil público no muestra datos de contacto a adoptantes (prototipo). */
+  showPublicToAdopters?: boolean;
 };
 
 export type Donation = {
@@ -90,6 +96,7 @@ type PrototypeState = {
   emptyStates: boolean;
   donorProfile: DonorProfile;
   rescuerProfile: RescuerProfile;
+  rescuerVerificationFeedback: RescuerVerificationFeedback | null;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
@@ -101,7 +108,7 @@ type PrototypeState = {
   toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
   setGuardian: (active: boolean, amount?: number) => void;
-  sendMessage: (author: "donor" | "rescuer", text: string, threadId?: string) => void;
+  sendMessage: (author: "donor" | "rescuer", text: string, threadId?: string, image?: string) => void;
   startAdoptionChat: (pet: { id: string; name: string; image: string; sex?: "Macho" | "Hembra" }) => void;
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
@@ -216,6 +223,7 @@ const initialState = {
     city: "Monterrey, NL",
   },
   rescuerProfile: { ...rescuerAccount },
+  rescuerVerificationFeedback: null as RescuerVerificationFeedback | null,
 };
 
 export const usePrototypeStore = create<PrototypeState>()(
@@ -224,7 +232,12 @@ export const usePrototypeStore = create<PrototypeState>()(
       ...initialState,
       setAccountMode: (accountMode) => set({ accountMode }),
       setDonorIntent: (donorIntent) => set({ donorIntent }),
-      setVerification: (verification) => set({ verification }),
+      setVerification: (verification) =>
+        set({
+          verification,
+          rescuerVerificationFeedback:
+            verification === "rejected" ? { ...defaultRescuerVerificationRejection } : null,
+        }),
       setPaymentOutcome: (paymentOutcome) => set({ paymentOutcome }),
       setEmptyStates: (emptyStates) =>
         set((state) => ({
@@ -334,8 +347,10 @@ export const usePrototypeStore = create<PrototypeState>()(
               ]
             : state.notifications,
         })),
-      sendMessage: (author, text, threadId) =>
-        set((state) => ({
+      sendMessage: (author, text, threadId, image) =>
+        set((state) => {
+          const preview = text.trim() || (image ? "Envió una foto" : "");
+          return {
           messages: [
             ...state.messages,
             {
@@ -343,6 +358,7 @@ export const usePrototypeStore = create<PrototypeState>()(
               author,
               text,
               threadId,
+              image,
               time: new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date()),
             },
           ],
@@ -353,7 +369,7 @@ export const usePrototypeStore = create<PrototypeState>()(
                     id: `message-notification-${Date.now()}`,
                     kind: "message" as const,
                     title: "Nuevo mensaje para María",
-                    body: text,
+                    body: preview,
                     time: "Ahora",
                     target: threadId ? `/messages/${threadId}` : "/messages/luna",
                     read: false,
@@ -361,7 +377,8 @@ export const usePrototypeStore = create<PrototypeState>()(
                   ...state.notifications,
                 ]
               : state.notifications,
-        })),
+        };
+        }),
       startAdoptionChat: (pet) =>
         set((state) => {
           const hasThread = state.messages.some((message) => message.threadId === pet.id);
@@ -532,7 +549,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 25,
+      version: 26,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
         if (version < 19) {
@@ -601,6 +618,13 @@ export const usePrototypeStore = create<PrototypeState>()(
               return seed;
             }),
             rescuerSupportPaymentEvents: buildInitialRescuerSupportPaymentEvents(now),
+          };
+        }
+        if (version < 26) {
+          return {
+            ...state,
+            rescuerVerificationFeedback:
+              state.verification === "rejected" ? { ...defaultRescuerVerificationRejection } : null,
           };
         }
         return state;
