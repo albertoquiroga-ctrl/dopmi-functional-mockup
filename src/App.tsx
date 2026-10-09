@@ -1888,10 +1888,14 @@ function AdoptionHome() {
                           <AssetIcon name="location.svg" size={12} alt="" />
                           {currentPet.location}
                         </p>
-                        <p className="discover-card-story">{currentPet.story}</p>
                         <div className="discover-card-tags">
                           <span>{currentPet.sex}</span>
                           <span>{currentPet.size}</span>
+                          {currentPet.personality[0] ? (
+                            <span>
+                              {PERSONALITY_LABEL_BY_SLUG[currentPet.personality[0]] ?? currentPet.personality[0]}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -2385,9 +2389,18 @@ function DonateCaseStoriesViewer({
   const funded = currentPet.needs.reduce((sum, need) => sum + need.funded, 0);
   const missionPct = Math.min(100, Math.round((funded / Math.max(total, 1)) * 100));
   const supportTypes = donateCaseNeedTypesOrdered(currentPet, true);
+  const isHeroStorySlide = currentSlide.kind === "hero";
   const isUrgentStorySlide = currentSlide.kind === "urgent-video";
   const isThankYouStorySlide = currentSlide.kind === "thank-you-video";
   const isEvidenceStorySlide = currentSlide.kind === "evidence";
+  const storyFrameClass = [
+    "donate-story-frame",
+    isHeroStorySlide ? "donate-story-frame--hero" : "",
+    isUrgentStorySlide ? "donate-story-frame--urgent" : "",
+    !isHeroStorySlide && !isUrgentStorySlide ? "donate-story-frame--plain" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const evidenceNeed =
     isEvidenceStorySlide && currentSlide.needId
       ? currentPet.needs.find((need) => need.id === currentSlide.needId)
@@ -2440,7 +2453,7 @@ function DonateCaseStoriesViewer({
           setPaused(false);
         }}
       >
-        <div className={`donate-story-frame${isUrgentStorySlide ? " donate-story-frame--urgent" : ""}`}>
+        <div className={storyFrameClass}>
           <div className="donate-story-segments" aria-hidden="true">
             {currentSlides.map((slide, index) => (
               <span key={`${slide.kind}-${slide.needType ?? index}`} className="donate-story-segment">
@@ -2619,7 +2632,7 @@ const guardianHeroPerks = [
 const guardianPromoTitle = "Sé un Guardián";
 
 const guardianPromoSlides = [
-  { id: "guardian-hero", image: "guardian-urgent.jpg" },
+  { id: "guardian-hero", image: "guardian-carousel-hero.jpg" },
   { id: "guardian-impact", image: "guardian-luna.jpg" },
   { id: "guardian-community", image: "guardian-milo.jpg" },
 ] as const;
@@ -2629,22 +2642,17 @@ function DonationHome() {
   const { cases, emptyStates } = usePrototypeStore();
   const [storyCaseId, setStoryCaseId] = useState<string | null>(null);
   const guardianCarouselRef = useRef<HTMLDivElement>(null);
-  const [guardianSlideIndex, setGuardianSlideIndex] = useState(0);
+  const guardianCarouselDrag = useRef({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+    moved: false,
+    captured: false,
+    slideEl: null as HTMLElement | null,
+  });
+  const [guardianCarouselDragging, setGuardianCarouselDragging] = useState(false);
 
-  const scrollGuardianCarouselTo = (index: number) => {
-    const carousel = guardianCarouselRef.current;
-    if (!carousel) return;
-    const slide = carousel.querySelector<HTMLElement>(`[data-guardian-slide="${index}"]`);
-    slide?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
-    setGuardianSlideIndex(index);
-  };
-
-  const advanceGuardianCarouselMock = () => {
-    const next = (guardianSlideIndex + 1) % guardianPromoSlides.length;
-    scrollGuardianCarouselTo(next);
-  };
-
-  const syncGuardianCarouselIndex = () => {
+  const snapGuardianCarousel = () => {
     const carousel = guardianCarouselRef.current;
     if (!carousel) return;
     const slides = carousel.querySelectorAll<HTMLElement>("[data-guardian-slide]");
@@ -2659,7 +2667,69 @@ function DonationHome() {
         closest = index;
       }
     });
-    setGuardianSlideIndex(closest);
+    slides[closest]?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  };
+
+  const onGuardianCarouselPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    const carousel = guardianCarouselRef.current;
+    if (!carousel) return;
+    guardianCarouselDrag.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: carousel.scrollLeft,
+      moved: false,
+      captured: false,
+      slideEl: (event.target as HTMLElement).closest(".donate-guardian-slide"),
+    };
+    setGuardianCarouselDragging(true);
+  };
+
+  const onGuardianCarouselPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const carousel = guardianCarouselRef.current;
+    if (!guardianCarouselDrag.current.active || !carousel) return;
+    const delta = event.clientX - guardianCarouselDrag.current.startX;
+    if (Math.abs(delta) > 6) {
+      guardianCarouselDrag.current.moved = true;
+      if (!guardianCarouselDrag.current.captured) {
+        guardianCarouselDrag.current.captured = true;
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /* captura no disponible */
+        }
+      }
+    }
+    if (!guardianCarouselDrag.current.moved) return;
+    carousel.scrollLeft = guardianCarouselDrag.current.startScrollLeft - delta;
+  };
+
+  const finishGuardianCarouselDrag = (event: PointerEvent<HTMLDivElement>) => {
+    if (!guardianCarouselDrag.current.active) return;
+    const { moved, slideEl, captured } = guardianCarouselDrag.current;
+    guardianCarouselDrag.current.active = false;
+    guardianCarouselDrag.current.slideEl = null;
+    setGuardianCarouselDragging(false);
+    if (captured) {
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        /* ya liberado */
+      }
+    }
+    if (moved) {
+      guardianCarouselDrag.current.moved = false;
+      guardianCarouselDrag.current.captured = false;
+      snapGuardianCarousel();
+      return;
+    }
+    guardianCarouselDrag.current.moved = false;
+    guardianCarouselDrag.current.captured = false;
+    const endSlide = (event.target as HTMLElement).closest(".donate-guardian-slide");
+    if (slideEl && endSlide === slideEl) navigate("/impact/support");
+  };
+
+  const openGuardianSupportFromSlide = () => {
+    navigate("/impact/support");
   };
 
   const openCases = emptyStates
@@ -2697,7 +2767,7 @@ function DonationHome() {
               className="donate-guardian-foot donate-guardian-foot--dock"
               onClick={() => navigate("/impact/support")}
             >
-              <small>Desde $50 / mes</small>
+              <small>Desde $20 / mes</small>
               <span className="donate-guardian-cta">Suscríbete ahora</span>
             </button>
           ) : null}
@@ -2729,22 +2799,15 @@ function DonationHome() {
         </section>
 
         <section className="donate-guardian">
-          <h2>Apoya a casos urgentes</h2>
-          <p>Con cada aporte mensual ayudarás a cubrir necesidades de mascotas que buscan un hogar.</p>
           <div className="donate-guardian-carousel-wrap">
-            <button
-              type="button"
-              className="donate-guardian-mock-step"
-              aria-label={`Cambiar imagen del carrusel Guardián, slide ${guardianSlideIndex + 1} de ${guardianPromoSlides.length}`}
-              onClick={advanceGuardianCarouselMock}
-            >
-              Cambiar imagen ({guardianSlideIndex + 1}/{guardianPromoSlides.length}) · prototipo
-            </button>
             <div
               ref={guardianCarouselRef}
-              className="donate-guardian-carousel"
+              className={`donate-guardian-carousel${guardianCarouselDragging ? " is-dragging" : ""}`}
               aria-label="Conoce Guardián"
-              onScroll={syncGuardianCarouselIndex}
+              onPointerDown={onGuardianCarouselPointerDown}
+              onPointerMove={onGuardianCarouselPointerMove}
+              onPointerUp={finishGuardianCarouselDrag}
+              onPointerCancel={finishGuardianCarouselDrag}
             >
             <div className="donate-guardian-track">
               {guardianPromoSlides.map((slide, index) => (
@@ -2753,21 +2816,26 @@ function DonationHome() {
                   type="button"
                   className="donate-guardian-slide"
                   data-guardian-slide={index}
-                  onClick={() => navigate("/impact/support")}
+                  aria-label="Elegir tu apoyo como Guardián"
+                  onClick={openGuardianSupportFromSlide}
                 >
-                  <img className="donate-guardian-slide-photo" src={`${A}${slide.image}`} alt="" />
-                  <div className="donate-guardian-slide-shade" aria-hidden="true" />
-                  <div className="donate-guardian-slide-copy">
-                    <strong>{guardianPromoTitle}</strong>
-                    <ul>
-                      {guardianHeroPerks.map((perk) => (
-                        <li key={perk.label}>
-                          <Icon name={perk.icon} size={14} />
-                          {perk.label}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  <img className="donate-guardian-slide-photo" src={`${A}${slide.image}`} alt="" draggable={false} />
+                  {slide.id !== "guardian-hero" ? (
+                    <>
+                      <div className="donate-guardian-slide-shade" aria-hidden="true" />
+                      <div className="donate-guardian-slide-copy">
+                        <strong>{guardianPromoTitle}</strong>
+                        <ul>
+                          {guardianHeroPerks.map((perk) => (
+                            <li key={perk.label}>
+                              <Icon name={perk.icon} size={14} />
+                              {perk.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -3470,82 +3538,223 @@ function Impact() {
   );
 }
 
+const guardianSupportBubbleLayout = [
+  { src: "luna-card.png", top: "6%", left: "8%", size: 78, delay: 0 },
+  { src: "rocky.png", top: "4%", left: "38%", size: 64, delay: 40 },
+  { src: "milo-card.png", top: "12%", left: "62%", size: 86, delay: 80 },
+  { src: "toby.png", top: "22%", left: "18%", size: 92, delay: 30 },
+  { src: "guardian-urgent.jpg", top: "18%", left: "48%", size: 70, delay: 120 },
+  { src: "publish-sample-pet.jpg", top: "28%", left: "72%", size: 58, delay: 160 },
+  { src: "luna-detail.png", top: "34%", left: "4%", size: 68, delay: 90 },
+  { src: "guardian-luna.jpg", top: "38%", left: "32%", size: 80, delay: 140 },
+  { src: "guardian-milo.jpg", top: "42%", left: "56%", size: 74, delay: 200 },
+  { src: "impact-luna.png", top: "48%", left: "78%", size: 62, delay: 60 },
+  { src: "rocky.png", top: "52%", left: "14%", size: 56, delay: 180 },
+  { src: "milo-card.png", top: "56%", left: "44%", size: 88, delay: 220 },
+  { src: "luna-card.png", top: "58%", left: "68%", size: 52, delay: 100 },
+  { src: "toby.png", top: "8%", left: "82%", size: 48, delay: 260 },
+] as const;
+
+const GUARDIAN_BUBBLE_ORIGIN = { x: 50, y: 94 };
+const GUARDIAN_BUBBLE_STAGE = { width: 375, height: 320 };
+
+/** Comisión estimada del procesador (prototipo): 3.6% + $3 MXN. */
+function estimatePaymentProcessorFee(subtotal: number) {
+  if (subtotal <= 0) return 0;
+  return Math.round((subtotal * 0.036 + 3) * 100) / 100;
+}
+
+function formatGuardianMoney(value: number) {
+  const cents = Math.round(value * 100) % 100;
+  if (cents === 0) return `$${Math.round(value).toLocaleString("es-MX")}`;
+  return `$${value.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function guardianSupportBubbleEnter(left: string, top: string, size: number) {
+  const leftN = Number.parseFloat(left);
+  const topN = Number.parseFloat(top);
+  const finalX = (leftN / 100) * GUARDIAN_BUBBLE_STAGE.width + size / 2;
+  const finalY = (topN / 100) * GUARDIAN_BUBBLE_STAGE.height + size / 2;
+  const startX = (GUARDIAN_BUBBLE_ORIGIN.x / 100) * GUARDIAN_BUBBLE_STAGE.width;
+  const startY = (GUARDIAN_BUBBLE_ORIGIN.y / 100) * GUARDIAN_BUBBLE_STAGE.height;
+  const enterX = startX - finalX;
+  const enterY = startY - finalY;
+  const dist = Math.hypot(enterX, enterY);
+  return { enterX, enterY, dist };
+}
+
+function GuardianSupportBubbles({ burstKey }: { burstKey: number }) {
+  return (
+    <div className="guardian-support-bubbles" aria-hidden="true">
+      {guardianSupportBubbleLayout.map((bubble, index) => {
+        const motion = guardianSupportBubbleEnter(bubble.left, bubble.top, bubble.size);
+        return (
+        <span
+          key={`${burstKey}-${index}`}
+          className="guardian-support-bubble"
+          style={{
+            top: bubble.top,
+            left: bubble.left,
+            width: bubble.size,
+            height: bubble.size,
+            animationDelay: `${Math.round(motion.dist * 0.45 + index * 12)}ms`,
+            ["--bubble-enter-x" as string]: `${motion.enterX}px`,
+            ["--bubble-enter-y" as string]: `${motion.enterY}px`,
+          }}
+        >
+          <img src={`${A}${bubble.src}`} alt="" />
+        </span>
+        );
+      })}
+    </div>
+  );
+}
+
+const GUARDIAN_SUPPORT_MIN_MXN = 20;
+
 function ImpactSupport() {
   const navigate = useNavigate();
   const { paymentOutcome, setGuardian } = usePrototypeStore();
-  const presets = [50, 200, 500];
-  const [amount, setAmount] = useState(50);
+  const presets = [100, 200, 350] as const;
+  const [amount, setAmount] = useState(200);
   const [custom, setCustom] = useState(false);
-  const [method, setMethod] = useState<"card" | "apple" | "google">("card");
-  const total = `$${amount.toFixed(2)} MXN`;
+  const [customAmountInput, setCustomAmountInput] = useState("");
+  const [coverFees, setCoverFees] = useState(true);
+  const [bubbleBurstKey, setBubbleBurstKey] = useState(1);
+
+  const selectPreset = (value: number) => {
+    setAmount(value);
+    setCustom(false);
+    setCustomAmountInput("");
+    setBubbleBurstKey((key) => key + 1);
+  };
+
+  const openCustomAmount = () => {
+    setCustomAmountInput(String(amount));
+    setCustom(true);
+  };
+
+  const parsedSupport = custom ? Number.parseFloat(customAmountInput) : amount;
+  const supportValid = Number.isFinite(parsedSupport) && parsedSupport >= GUARDIAN_SUPPORT_MIN_MXN;
+  const monthlySupport = supportValid ? parsedSupport : amount;
+  const feeBase = Number.isFinite(parsedSupport) && parsedSupport > 0 ? parsedSupport : monthlySupport;
+  const transactionFee = estimatePaymentProcessorFee(feeBase);
+  const displaySupport = custom && Number.isFinite(parsedSupport) ? parsedSupport : amount;
+  const displayTotal =
+    (Number.isFinite(displaySupport) ? displaySupport : 0) +
+    (coverFees ? estimatePaymentProcessorFee(Number.isFinite(displaySupport) ? Math.max(0, displaySupport) : 0) : 0);
+  const showCustomMinError =
+    custom &&
+    customAmountInput.trim() !== "" &&
+    (!Number.isFinite(parsedSupport) || parsedSupport < GUARDIAN_SUPPORT_MIN_MXN);
+
   const confirm = () => {
+    if (!supportValid) return;
+    const safeAmount = parsedSupport;
     if (paymentOutcome === "error") {
-      navigate(`/impact/error?amount=${amount}`);
+      navigate(`/impact/error?amount=${safeAmount}`);
       return;
     }
-    setGuardian(true, amount);
-    navigate(`/impact/success?amount=${amount}&method=${method}`);
+    setGuardian(true, safeAmount);
+    navigate(`/impact/success?amount=${safeAmount}&method=card`);
   };
+
   return (
-    <div className="plain-screen">
+    <div className="plain-screen guardian-support-screen">
       <TopBar back="/donate" />
-      <div className="content-pad support-flow">
-        <div className="support-intro">
+      <GuardianSupportBubbles burstKey={bubbleBurstKey} />
+      <div className="guardian-support-panel">
+        <header className="guardian-support-head">
           <h1>Elige tu apoyo</h1>
-          <p>Selecciona cuánto quieres aportar cada mes.</p>
-        </div>
-        <div className="amount-grid three">
-          {presets.map((value) => (
+          <p className="guardian-support-lead">Tu aporte mensual ayuda a casos publicados por rescatistas.</p>
+        </header>
+
+        <div className="guardian-support-stack">
+          <div className="amount-grid guardian-support-amounts" role="group" aria-label="Monto mensual">
+            {presets.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={!custom && amount === value ? "selected" : ""}
+                aria-pressed={!custom && amount === value}
+                onClick={() => selectPreset(value)}
+              >
+                <strong>${value}</strong>
+                <small>MXN / mes</small>
+              </button>
+            ))}
+          </div>
+
+          {custom ? (
+            <div className="guardian-support-custom">
+              <label className={`amount-input guardian-support-custom-input${showCustomMinError ? " is-invalid" : ""}`}>
+                <span>$</span>
+                <input
+                  type="number"
+                  min={GUARDIAN_SUPPORT_MIN_MXN}
+                  step={10}
+                  inputMode="decimal"
+                  autoFocus
+                  value={customAmountInput}
+                  onChange={(event) => setCustomAmountInput(event.target.value)}
+                  aria-invalid={showCustomMinError}
+                  aria-describedby={showCustomMinError ? "guardian-support-min-error" : undefined}
+                />
+                <span>MXN / mes</span>
+              </label>
+              {showCustomMinError ? (
+                <p id="guardian-support-min-error" className="guardian-support-custom-error" role="alert">
+                  No puede ser menor a ${GUARDIAN_SUPPORT_MIN_MXN}.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="guardian-support-alt">
+              ¿Prefieres otro monto?{" "}
+              <button type="button" className="inline-link guardian-support-inline" onClick={openCustomAmount}>
+                Elige desde $20
+              </button>
+            </p>
+          )}
+
+          <div className="guardian-support-fee">
+            <span id="guardian-support-fee-label" className="guardian-support-alt">
+              Suma {formatGuardianMoney(transactionFee)} para apoyar al rescatista a cubrir los costos de transacción.
+            </span>
             <button
-              key={value}
-              className={!custom && amount === value ? "selected" : ""}
-              onClick={() => { setAmount(value); setCustom(false); }}
+              type="button"
+              className={`switch ${coverFees ? "on" : ""}`}
+              role="switch"
+              aria-checked={coverFees}
+              aria-labelledby="guardian-support-fee-label"
+              onClick={() => setCoverFees((value) => !value)}
             >
-              <strong>${value}</strong>
-              <small>MXN / mes</small>
+              <i />
             </button>
-          ))}
+          </div>
         </div>
-        {custom ? (
-          <>
-            <label className="amount-input">
-              <span>$</span>
-              <input type="number" min="20" autoFocus value={amount} onChange={(event) => setAmount(Number(event.target.value) || 0)} />
-              <span>MXN</span>
-            </label>
-            <button className="inline-link center" onClick={() => { setCustom(false); setAmount(50); }}>Volver a cantidades sugeridas</button>
-          </>
-        ) : (
-          <button className="inline-link center" onClick={() => setCustom(true)}>Otra cantidad</button>
-        )}
 
-        <article className="summary-card">
-          <h2>Resumen</h2>
-          <div><span>Apoyo mensual</span><strong>{total}</strong></div>
-          <div><span>Frecuencia</span><strong>Mensual</strong></div>
-          <div className="summary-total"><span>Total de hoy</span><strong>{total}</strong></div>
-        </article>
-
-        <h2 className="support-section">Selecciona método de pago</h2>
-        <div className="wallet-grid">
-          <button className={`wallet-button ${method === "apple" ? "selected" : ""}`} onClick={() => setMethod("apple")}>
-            <AssetIcon name="icon-apple.svg" size={18} />Apple Pay
-          </button>
-          <button className={`wallet-button ${method === "google" ? "selected" : ""}`} onClick={() => setMethod("google")}>
-            <AssetIcon name="icon-google.svg" size={18} />Google Pay
+        <div className="guardian-support-meta">
+          <p className="guardian-support-billing">
+            <Icon name="icon-clock.svg" size={14} />
+            Cargo mensual recurrente. Puedes ajustar o cancelar tu apoyo en cualquier momento.
+          </p>
+          <button type="button" className="inline-link guardian-support-footlink" onClick={() => navigate("/transparency")}>
+            ¿Cómo se reparte tu aporte?
           </button>
         </div>
-        <button className={`pay-card ${method === "card" ? "selected" : ""}`} onClick={() => setMethod("card")}>
-          <span className="row-tile gray"><Icon name="icon-card.svg" size={18} /></span>
-          <span className="nav-row-text"><strong>Visa •••• 4242</strong><small>Predeterminada</small></span>
-          {method === "card" ? <span className="pay-check"><Icon name="check.svg" size={14} /></span> : null}
-        </button>
-        <button className="dashed-button" onClick={() => navigate("/settings/payment-methods")}>
-          <Icon name="icon-card.svg" size={16} />Agregar nueva tarjeta
-        </button>
+      </div>
 
-        <p className="support-note">Al confirmar, autorizas a DopMi a realizar un cargo mensual. Puedes ajustar o cancelar tu apoyo en cualquier momento desde Ajustes.</p>
-        <button className="primary-button" onClick={confirm}>Confirmar apoyo · {total}</button>
+      <div className="guardian-support-dock">
+        <button
+          type="button"
+          className="primary-button guardian-support-cta"
+          onClick={confirm}
+          disabled={!supportValid}
+        >
+          Ser Guardián por {formatGuardianMoney(displayTotal)} al mes
+        </button>
+        <p className="guardian-support-dock-note">Serás redirigido para completar la transacción.</p>
       </div>
     </div>
   );
@@ -4998,6 +5207,7 @@ function Toast({ text, onDone }: { text: string; onDone: () => void }) {
 }
 
 function Billing() {
+  const navigate = useNavigate();
   const { guardianActive, guardianAmount, setGuardian, emptyStates, cases } = usePrototypeStore();
   const [dialog, setDialog] = useState<"none" | "amount" | "cancel">("none");
   const [choice, setChoice] = useState(guardianAmount);
@@ -5029,18 +5239,16 @@ function Billing() {
               <span>Próximo cobro</span>
               <strong>3 julio 2026</strong>
             </div>
-            <div className="billing-meta">
-              <span>Método de pago</span>
-              <strong>Visa *4242</strong>
-            </div>
           </article>
         ) : (
           <article className="billing-card">
             <div className="billing-head">
-              <strong>Desde $50 / mes</strong>
+              <strong>Desde $20 / mes</strong>
               <span className="status-chip">Sin Subscripción</span>
             </div>
-            <button className="primary-button" onClick={() => { setGuardian(true, 50); setToast("Suscripción activada"); }}>Suscribirme</button>
+            <button type="button" className="primary-button" onClick={() => navigate("/impact/support")}>
+              Suscribirme
+            </button>
           </article>
         )}
         {justChanged ? (
