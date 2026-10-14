@@ -6,11 +6,23 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
+  type Ref,
+  type RefObject,
 } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+  type NavigateFunction,
+} from "react-router-dom";
 import {
   adoptionPets,
   donationLog,
@@ -19,17 +31,20 @@ import {
   rescuerReceivedPaymentHistory,
   rescuers,
   savedCards,
-  subscriptionPlans,
   type HelpTopic,
   type Need,
   type NotificationKind,
   type NotificationTone,
   type PetCase,
   defaultRescuerVerificationRejection,
+  filterPrototypeNotifications,
   type RescuerVerificationFixField,
 } from "./data";
 import {
   adoptionChatIntroText,
+  GUARDIAN_CHECKOUT_CASE_ID,
+  PAYMENT_METHOD_CHECKOUT_CASE_ID,
+  PAYMENT_METHOD_CHECKOUT_NEED_ID,
   usePrototypeStore,
   type AccountMode,
   type RescuerProfile,
@@ -38,6 +53,49 @@ import {
 } from "./store";
 
 const A = "/assets/";
+
+function profileHomePath(accountMode: AccountMode) {
+  return accountMode === "rescuer" ? "/rescuer/profile" : "/profile";
+}
+
+type ScreenReturnState = { from?: string };
+
+function useScreenReturnBack(defaultBack: string) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return useCallback(() => {
+    const from = (location.state as ScreenReturnState | null)?.from;
+    if (from && from.startsWith("/") && from !== location.pathname) {
+      navigate(from);
+      return;
+    }
+    navigate(defaultBack);
+  }, [defaultBack, location.pathname, location.state, navigate]);
+}
+
+type LegalDocLocationState = { from?: string };
+
+function navigateToLegalDoc(navigate: NavigateFunction, target: string, from: string) {
+  navigate(target, { state: { from } satisfies LegalDocLocationState });
+}
+
+function useReturnFromLegalDoc(fallback: string) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return useCallback(() => {
+    const from = (location.state as LegalDocLocationState | null)?.from;
+    if (from && from.startsWith("/") && from !== location.pathname) {
+      navigate(from);
+      return;
+    }
+    if (location.key !== "default") {
+      navigate(-1);
+      return;
+    }
+    navigate(fallback);
+  }, [fallback, location.key, location.pathname, location.state, navigate]);
+}
+
 function guardianSubscriptionHeadline(petName: string) {
   return `Suscripción - ${petName}`;
 }
@@ -97,11 +155,6 @@ function useGoBack(fallback?: string | (() => void)) {
   return () => {
     if (typeof fallback === "function") {
       fallback();
-      return;
-    }
-    const historyIdx = (window.history.state as { idx?: number } | null)?.idx;
-    if (typeof historyIdx === "number" && historyIdx > 0) {
-      navigate(-1);
       return;
     }
     if (typeof fallback === "string" && fallback) {
@@ -261,15 +314,25 @@ function ScreenShell({
   children,
   className = "",
   overlay = null,
+  scrollRef,
+  pinHeader = null,
 }: {
   mode?: AccountMode;
   children: ReactNode;
   className?: string;
   overlay?: ReactNode;
+  scrollRef?: Ref<HTMLElement>;
+  /** Fuera del scroll: no se mueve al desplazarse el contenido. */
+  pinHeader?: ReactNode;
 }) {
   return (
-    <div className={`screen-shell ${mode === "rescuer" ? "rescuer-theme" : ""} ${className}`.trim()}>
-      <main className="screen-scroll">{children}</main>
+    <div
+      className={`screen-shell ${mode === "rescuer" ? "rescuer-theme" : ""} ${pinHeader ? "screen-shell--pinned-header" : ""} ${className}`.trim()}
+    >
+      {pinHeader ? <div className="screen-shell-pin">{pinHeader}</div> : null}
+      <main className="screen-scroll" ref={scrollRef}>
+        {children}
+      </main>
       <BottomNav mode={mode} />
       {overlay}
     </div>
@@ -288,7 +351,7 @@ function DonorChromeTop({
 }) {
   const navigate = useNavigate();
   const { notifications } = usePrototypeStore();
-  const unread = notifications.filter((item) => !item.read).length;
+  const unread = filterPrototypeNotifications(notifications).filter((item) => !item.read).length;
   return (
     <header className="discover-top">
       <div className="discover-brand">
@@ -322,10 +385,17 @@ function TestPanel() {
     verification,
     accountMode,
     emptyStates,
+    guardianActive,
+    guardianNoSupportCases,
+    guardianSubscriptionPaymentFailed,
+    guardianAmount,
     setPaymentOutcome,
     setVerification,
     setAccountMode,
     setEmptyStates,
+    setGuardian,
+    setGuardianSubscription,
+    setGuardianSubscriptionPaymentFailed,
     resetPrototype,
   } = usePrototypeStore();
   const [open, setOpen] = useState(false);
@@ -343,8 +413,12 @@ function TestPanel() {
           </div>
           <label>
             Resultado de pago
-            <select value={paymentOutcome} onChange={(event) => setPaymentOutcome(event.target.value as "success" | "error")}>
+            <select
+              value={paymentOutcome}
+              onChange={(event) => setPaymentOutcome(event.target.value as "success" | "error" | "pending")}
+            >
               <option value="success">Exitoso</option>
+              <option value="pending">En procesamiento</option>
               <option value="error">Error</option>
             </select>
           </label>
@@ -370,6 +444,43 @@ function TestPanel() {
               <option value="donor">Adoptante / Donante</option>
               <option value="rescuer">Rescatista</option>
             </select>
+          </label>
+          <label>
+            Suscripción Guardián
+            <select
+              value={
+                !guardianActive
+                  ? "none"
+                  : guardianNoSupportCases
+                    ? "subscribed-no-cases"
+                    : "subscribed"
+              }
+              onChange={(event) => {
+                setGuardianSubscription(
+                  event.target.value as "none" | "subscribed" | "subscribed-no-cases",
+                );
+              }}
+            >
+              <option value="none">No suscrito</option>
+              <option value="subscribed">Suscrito</option>
+              <option value="subscribed-no-cases">Suscrito / sin casos activos para apoyar</option>
+            </select>
+          </label>
+          <label className="test-toggle-row">
+            <span>Cobro Guardián fallido</span>
+            <button
+              type="button"
+              className={`switch ${guardianSubscriptionPaymentFailed ? "on" : ""}`}
+              role="switch"
+              aria-checked={guardianSubscriptionPaymentFailed}
+              aria-label="Simular cobro Guardián fallido"
+              disabled={!guardianActive}
+              onClick={() => {
+                setGuardianSubscriptionPaymentFailed(!guardianSubscriptionPaymentFailed);
+              }}
+            >
+              <i />
+            </button>
           </label>
           <label className="test-toggle-row">
             <span>Empty states</span>
@@ -903,6 +1014,7 @@ function Welcome({ mode }: { mode: AccountMode }) {
 
 function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [accepted, setAccepted] = useState(false);
   const enter = () => navigate(mode === "donor" ? "/adoption" : "/rescuer");
   const bgImage = mode === "rescuer" ? `${A}publish-sample-pet.jpg` : `${A}welcome-pets.png`;
@@ -983,7 +1095,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
                 className="auth-text-link"
                 onClick={(event) => {
                   event.preventDefault();
-                  navigate(`/terms/${mode}`);
+                  navigateToLegalDoc(navigate, `/terms/${mode}`, location.pathname);
                 }}
               >
                 Términos y Condiciones
@@ -994,7 +1106,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
                 className="auth-text-link"
                 onClick={(event) => {
                   event.preventDefault();
-                  navigate(`/privacy/${mode}`);
+                  navigateToLegalDoc(navigate, `/privacy/${mode}`, location.pathname);
                 }}
               >
                 Aviso de Privacidad
@@ -1042,10 +1154,10 @@ function StaticSimulated({ title, children, back }: { title: string; children: R
 }
 
 function LegalDoc({ kind }: { kind: "terms" | "privacy" }) {
-  const navigate = useNavigate();
   const { mode } = useParams();
   const backMode: AccountMode = mode === "rescuer" ? "rescuer" : "donor";
-  const back = `/signup/${backMode}`;
+  const fallback = `/signup/${backMode}`;
+  const returnFromLegal = useReturnFromLegalDoc(fallback);
 
   const doc =
     kind === "privacy"
@@ -1085,7 +1197,7 @@ function LegalDoc({ kind }: { kind: "terms" | "privacy" }) {
   return (
     <div className="auth-gate auth-gate--form auth-gate--legal">
       <div className="auth-gate-top">
-        <button type="button" className="auth-gate-back" onClick={() => navigate(back)} aria-label="Atrás">
+        <button type="button" className="auth-gate-back" onClick={returnFromLegal} aria-label="Atrás">
           <AssetIcon name="back.svg" size={24} />
         </button>
         <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
@@ -1107,7 +1219,7 @@ function LegalDoc({ kind }: { kind: "terms" | "privacy" }) {
       </div>
 
       <div className="onb-gate-footer">
-        <button type="button" className="auth-gate-primary" onClick={() => navigate(back)}>
+        <button type="button" className="auth-gate-primary" onClick={returnFromLegal}>
           Entendido
         </button>
       </div>
@@ -2096,7 +2208,11 @@ function AdoptionDetail() {
             <button
               type="button"
               className="pet-detail-rescuer"
-              onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(pet.rescuer)}`)}
+              onClick={() =>
+                navigate(`/rescuer-profile/${encodeURIComponent(pet.rescuer)}`, {
+                  state: { from: `/adoption/${petId}` },
+                })
+              }
             >
               <span>{pet.rescuer}</span>
               <span className="pet-detail-rescuer-avatar" aria-hidden="true">
@@ -2216,6 +2332,34 @@ function isDonateNeedCompleted(need: Need) {
     need.status === "completed" ||
     need.status === "evidence"
   );
+}
+
+/** Suma lo que falta por cubrir en necesidades abiertas del caso (vista donante). */
+function caseDonorRemainingTotal(item: PetCase) {
+  return item.needs.reduce((sum, need) => {
+    if (isDonateNeedCompleted(need)) return sum;
+    return sum + Math.max(0, need.requested - need.funded);
+  }, 0);
+}
+
+const DONATE_REMAINING_PRESET_MIN_MXN = 20;
+const DONATE_AMOUNT_CUSTOM_MIN_MXN = 20;
+
+function donateAmountPresetDisabled(remainingAmount: number, presetValue: number) {
+  return remainingAmount > 0 && remainingAmount < presetValue;
+}
+
+function initialDonateAmountDialogState(remainingAmount: number) {
+  const showRemaining = remainingAmount >= DONATE_REMAINING_PRESET_MIN_MXN;
+  const preset50Disabled = donateAmountPresetDisabled(remainingAmount, 50);
+  const preset100Disabled = donateAmountPresetDisabled(remainingAmount, 100);
+  if (showRemaining && preset50Disabled && preset100Disabled) {
+    return { mode: "remaining" as const, preset: 50 as const };
+  }
+  if (preset100Disabled && !preset50Disabled) {
+    return { mode: "preset" as const, preset: 50 as const };
+  }
+  return { mode: "preset" as const, preset: 100 as const };
 }
 
 function donateCaseNeedTypesOrdered(item: PetCase, openOnly = false) {
@@ -2573,14 +2717,21 @@ function DonateCaseRing({
   funded,
   requested,
   pct,
+  supportMeta,
   onClick,
+  visualRef,
+  ringImageStyle,
 }: {
   image: string;
   name: string;
   funded: number;
   requested: number;
   pct: number;
+  /** Cuando hay suscripción Guardián: mes y año de la última aportación al caso. */
+  supportMeta?: string;
   onClick: () => void;
+  visualRef?: Ref<HTMLSpanElement>;
+  ringImageStyle?: CSSProperties;
 }) {
   const size = 72;
   const stroke = 4;
@@ -2590,7 +2741,7 @@ function DonateCaseRing({
 
   return (
     <button type="button" className="donate-case-ring" onClick={onClick}>
-      <span className="donate-case-ring-visual" aria-hidden="true">
+      <span className="donate-case-ring-visual" aria-hidden="true" ref={visualRef}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
           <circle
             cx={size / 2}
@@ -2613,12 +2764,10 @@ function DonateCaseRing({
             transform={`rotate(-90 ${size / 2} ${size / 2})`}
           />
         </svg>
-        <img src={image} alt="" />
+        <img src={image} alt="" style={ringImageStyle} />
       </span>
       <strong>{name}</strong>
-      <span>
-        <b>${funded}</b> / ${requested}
-      </span>
+      <span>{supportMeta ?? (<><b>${funded}</b> / ${requested}</>)}</span>
     </button>
   );
 }
@@ -2637,106 +2786,647 @@ const guardianPromoSlides = [
   { id: "guardian-community", image: "guardian-milo.jpg" },
 ] as const;
 
-function DonationHome() {
-  const navigate = useNavigate();
-  const { cases, emptyStates } = usePrototypeStore();
-  const [storyCaseId, setStoryCaseId] = useState<string | null>(null);
-  const guardianCarouselRef = useRef<HTMLDivElement>(null);
-  const guardianCarouselDrag = useRef({
-    active: false,
-    startX: 0,
-    startScrollLeft: 0,
-    moved: false,
-    captured: false,
-    slideEl: null as HTMLElement | null,
-  });
-  const [guardianCarouselDragging, setGuardianCarouselDragging] = useState(false);
+type GuardianPromoSlide = (typeof guardianPromoSlides)[number];
 
-  const snapGuardianCarousel = () => {
-    const carousel = guardianCarouselRef.current;
-    if (!carousel) return;
-    const slides = carousel.querySelectorAll<HTMLElement>("[data-guardian-slide]");
-    if (!slides.length) return;
-    const left = carousel.scrollLeft;
-    let closest = 0;
-    let minDist = Number.POSITIVE_INFINITY;
-    slides.forEach((slide, index) => {
-      const dist = Math.abs(slide.offsetLeft - left);
-      if (dist < minDist) {
-        minDist = dist;
-        closest = index;
-      }
-    });
-    slides[closest]?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
-  };
+const donateGuardianImpactScatter = [
+  { left: "4%", top: "10%", width: "36%", rotate: -12, z: 1 },
+  { left: "56%", top: "4%", width: "34%", rotate: 10, z: 2 },
+  { left: "58%", top: "44%", width: "38%", rotate: 8, z: 2 },
+  { left: "0%", top: "46%", width: "32%", rotate: -9, z: 1 },
+] as const;
 
-  const onGuardianCarouselPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const carousel = guardianCarouselRef.current;
-    if (!carousel) return;
-    guardianCarouselDrag.current = {
-      active: true,
-      startX: event.clientX,
-      startScrollLeft: carousel.scrollLeft,
-      moved: false,
-      captured: false,
-      slideEl: (event.target as HTMLElement).closest(".donate-guardian-slide"),
-    };
-    setGuardianCarouselDragging(true);
-  };
+const donateGuardianImpactChips = [
+  { left: "18%", top: "68%", size: 44, z: 3, rotate: -8 },
+  { left: "72%", top: "22%", size: 40, z: 3, rotate: 10 },
+] as const;
 
-  const onGuardianCarouselPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const carousel = guardianCarouselRef.current;
-    if (!guardianCarouselDrag.current.active || !carousel) return;
-    const delta = event.clientX - guardianCarouselDrag.current.startX;
-    if (Math.abs(delta) > 6) {
-      guardianCarouselDrag.current.moved = true;
-      if (!guardianCarouselDrag.current.captured) {
-        guardianCarouselDrag.current.captured = true;
-        try {
-          event.currentTarget.setPointerCapture(event.pointerId);
-        } catch {
-          /* captura no disponible */
-        }
-      }
-    }
-    if (!guardianCarouselDrag.current.moved) return;
-    carousel.scrollLeft = guardianCarouselDrag.current.startScrollLeft - delta;
-  };
+function resolveCaseImageSrc(image: string) {
+  return image.startsWith("/") ? image : `${A}${image}`;
+}
 
-  const finishGuardianCarouselDrag = (event: PointerEvent<HTMLDivElement>) => {
-    if (!guardianCarouselDrag.current.active) return;
-    const { moved, slideEl, captured } = guardianCarouselDrag.current;
-    guardianCarouselDrag.current.active = false;
-    guardianCarouselDrag.current.slideEl = null;
-    setGuardianCarouselDragging(false);
-    if (captured) {
-      try {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {
-        /* ya liberado */
-      }
-    }
-    if (moved) {
-      guardianCarouselDrag.current.moved = false;
-      guardianCarouselDrag.current.captured = false;
-      snapGuardianCarousel();
+function guardianImpactAssignedCase(
+  cases: PetCase[],
+  caseItems: { item: PetCase; need: Need; pct: number }[],
+) {
+  const latestPaid = guardianPaymentHistory.find((row) => row.status === "pagado");
+  return (
+    (latestPaid?.assignedCaseId ? cases.find((entry) => entry.id === latestPaid.assignedCaseId) : undefined) ??
+    (latestPaid?.assignedPetName ? cases.find((entry) => entry.name === latestPaid.assignedPetName) : undefined) ??
+    caseItems[0]?.item ??
+    cases.find((entry) => entry.id === "rocky") ??
+    cases[0] ??
+    null
+  );
+}
+
+/** Cobro del mes sin casos activos para asignar (p. ej. modo prueba o historial sin mascota). */
+function guardianChargeHadNoActiveSupportCases(emptyStates: boolean, guardianNoSupportCases: boolean) {
+  if (emptyStates) return false;
+  if (guardianNoSupportCases) return true;
+  const latestPaid = guardianPaymentHistory.find((row) => row.status === "pagado");
+  if (!latestPaid) return false;
+  return !latestPaid.assignedCaseId;
+}
+
+type DonateGuardianHeroFlyState = {
+  progress: number;
+  rect: { left: number; top: number; width: number; height: number };
+  imageSrc: string;
+  imageAlt: string;
+};
+
+function useDonateGuardianHeroFly(
+  enabled: boolean,
+  scrollRef: RefObject<HTMLElement | null>,
+  heroRef: RefObject<HTMLImageElement | null>,
+  ringRef: RefObject<HTMLSpanElement | null>,
+  imageSrc: string,
+  imageAlt: string,
+  mountTick: number,
+) {
+  const [fly, setFly] = useState<DonateGuardianHeroFlyState | null>(null);
+  const [progress, setProgress] = useState(0);
+  const initialGapRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (!enabled) {
+      setFly(null);
+      setProgress(0);
+      initialGapRef.current = 0;
       return;
     }
-    guardianCarouselDrag.current.moved = false;
-    guardianCarouselDrag.current.captured = false;
-    const endSlide = (event.target as HTMLElement).closest(".donate-guardian-slide");
-    if (slideEl && endSlide === slideEl) navigate("/impact/support");
+
+    const scrollEl = scrollRef.current;
+    const hero = heroRef.current;
+    const ring = ringRef.current;
+    if (!scrollEl || !hero || !ring) return;
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) return;
+
+    let raf = 0;
+
+    const measureGap = () => {
+      const heroRect = hero.getBoundingClientRect();
+      const ringRect = ring.getBoundingClientRect();
+      const heroCenter = heroRect.top + heroRect.height / 2;
+      const ringCenter = ringRect.top + ringRect.height / 2;
+      return { heroRect, ringRect, gap: heroCenter - ringCenter };
+    };
+
+    const update = () => {
+      const { heroRect, ringRect, gap } = measureGap();
+      if (initialGapRef.current <= 0 && gap > 8) initialGapRef.current = gap;
+
+      const progress =
+        initialGapRef.current > 0
+          ? Math.min(1, Math.max(0, 1 - gap / initialGapRef.current))
+          : scrollEl.scrollTop > 12
+            ? 1
+            : 0;
+
+      setProgress(progress);
+
+      if (progress <= 0.001) {
+        setFly(null);
+        return;
+      }
+
+      const ringPhoto = ring.querySelector("img");
+      const ringPhotoRect = ringPhoto?.getBoundingClientRect() ?? ringRect;
+
+      if (progress >= 0.999) {
+        setFly(null);
+        return;
+      }
+
+      setFly({
+        progress,
+        rect: {
+          left: heroRect.left + (ringPhotoRect.left - heroRect.left) * progress,
+          top: heroRect.top + (ringPhotoRect.top - heroRect.top) * progress,
+          width: heroRect.width + (ringPhotoRect.width - heroRect.width) * progress,
+          height: heroRect.height + (ringPhotoRect.height - heroRect.height) * progress,
+        },
+        imageSrc,
+        imageAlt,
+      });
+    };
+
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    };
+
+    const onResize = () => {
+      initialGapRef.current = 0;
+      onScroll();
+    };
+
+    update();
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      scrollEl.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [enabled, scrollRef, heroRef, ringRef, imageSrc, imageAlt, mountTick]);
+
+  return { fly, progress };
+}
+
+function DonateGuardianMonthlyImpact({
+  cases,
+  caseItems,
+  onHeroImageMount,
+  heroFlyProgress = 0,
+  billingNoActiveSupportCases = false,
+}: {
+  cases: PetCase[];
+  caseItems: { item: PetCase; need: Need; pct: number }[];
+  onHeroImageMount?: (node: HTMLImageElement | null) => void;
+  heroFlyProgress?: number;
+  billingNoActiveSupportCases?: boolean;
+}) {
+  const navigate = useNavigate();
+  const assignedCase = billingNoActiveSupportCases ? null : guardianImpactAssignedCase(cases, caseItems);
+
+  const openAssignedCaseDetail = () => {
+    if (!assignedCase) return;
+    navigate(`/case/${assignedCase.id}`);
   };
 
-  const openGuardianSupportFromSlide = () => {
-    navigate("/impact/support");
+  const scatterPool = (
+    caseItems.length
+      ? caseItems.map(({ item }) => item)
+      : cases.filter((entry) => entry.caseStatus === "active")
+  ).filter((entry) => entry.id !== assignedCase?.id);
+
+  const scatterImages = [
+    ...scatterPool.map((entry) => resolveCaseImageSrc(entry.image)),
+    ...guardianPromoSlides.map((slide) => `${A}${slide.image}`),
+  ].slice(0, donateGuardianImpactScatter.length);
+
+  if (!assignedCase && !billingNoActiveSupportCases) {
+    return (
+      <div className="donate-guardian-impact">
+        <div className="donate-guardian-impact-sticky">
+          <h2>Ayudar se siente bien</h2>
+        </div>
+        <p className="donate-guardian-impact-lead">Tu suscripción está activa. Pronto verás aquí a quién apoyaste este mes.</p>
+      </div>
+    );
+  }
+
+  const chipImages = assignedCase
+    ? scatterPool.slice(0, donateGuardianImpactChips.length).map((entry) => resolveCaseImageSrc(entry.image))
+    : [];
+
+  return (
+    <div className="donate-guardian-impact">
+      <div className="donate-guardian-impact-sticky">
+        <h2>Ayudar se siente bien</h2>
+      </div>
+      <div className="donate-guardian-impact-body">
+      <p className="donate-guardian-impact-watermark" aria-hidden="true">
+        ¡Gracias!
+      </p>
+      {assignedCase ? (
+        <div className="donate-guardian-impact-stage">
+          <button
+            type="button"
+            className="donate-guardian-impact-collage"
+            onClick={openAssignedCaseDetail}
+            aria-label={`Ver detalle de ${assignedCase.name}`}
+          >
+            {scatterImages.map((src, index) => {
+              const layout = donateGuardianImpactScatter[index];
+              return (
+                <div
+                  key={`${src}-${index}`}
+                  className="donate-guardian-impact-card"
+                  style={{
+                    left: layout.left,
+                    top: layout.top,
+                    width: layout.width,
+                    zIndex: layout.z,
+                    transform: `rotate(${layout.rotate}deg)`,
+                  }}
+                >
+                  <img src={src} alt="" draggable={false} />
+                </div>
+              );
+            })}
+            {chipImages.map((src, index) => {
+              const chip = donateGuardianImpactChips[index];
+              return (
+                <div
+                  key={`chip-${src}-${index}`}
+                  className="donate-guardian-impact-chip"
+                  style={{
+                    left: chip.left,
+                    top: chip.top,
+                    width: chip.size,
+                    height: chip.size,
+                    zIndex: chip.z,
+                    transform: `rotate(${chip.rotate}deg)`,
+                  }}
+                >
+                  <img src={src} alt="" draggable={false} />
+                </div>
+              );
+            })}
+            <div
+              className="donate-guardian-impact-hero"
+              style={{ "--hero-fly-progress": heroFlyProgress } as CSSProperties}
+            >
+              <img
+                ref={onHeroImageMount}
+                src={resolveCaseImageSrc(assignedCase.image)}
+                alt={assignedCase.name}
+                draggable={false}
+              />
+            </div>
+          </button>
+        </div>
+      ) : null}
+      <div className="donate-guardian-impact-foot">
+        {billingNoActiveSupportCases ? (
+          <>
+            <p className="donate-guardian-impact-lead donate-guardian-impact-lead--no-assignment">
+              ¡Excelentes noticias! No hubo casos activos que necesitaran apoyo en este momento.
+            </p>
+            <p className="donate-guardian-impact-followup">
+              Tu suscripción permanece activa para los posibles casos activos del siguiente ciclo.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="donate-guardian-impact-lead">Tu apoyo llegó a:</p>
+            <p className="donate-guardian-impact-name">{assignedCase?.name}</p>
+          </>
+        )}
+        <p className="donate-guardian-impact-watermark donate-guardian-impact-watermark--below-name">Este mes logramos</p>
+      </div>
+      <DonateGuardianImpactFeed cases={cases} />
+      </div>
+    </div>
+  );
+}
+
+function petCasesThatReceivedSupportThisMonth(cases: PetCase[], emptyStates: boolean) {
+  if (emptyStates) return [];
+
+  const year = new Date().getFullYear();
+  const now = new Date();
+  const ordered: PetCase[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rescuerReceivedPaymentHistory) {
+    if (row.status !== "pagado" || !row.caseId) continue;
+    const at = parseDonorContributionDateLabel(row.date, year);
+    if (!Number.isFinite(at)) continue;
+    const paidAt = new Date(at);
+    if (paidAt.getFullYear() !== now.getFullYear() || paidAt.getMonth() !== now.getMonth()) continue;
+    if (seen.has(row.caseId)) continue;
+
+    const petCase = cases.find((entry) => entry.id === row.caseId);
+    if (!petCase) continue;
+
+    seen.add(row.caseId);
+    ordered.push(petCase);
+  }
+
+  return ordered;
+}
+
+function guardianTopRescuerReceivedThisMonth(cases: PetCase[]) {
+  const now = Date.now();
+  const year = new Date().getFullYear();
+  const totals = new Map<string, { sum: number; caseId: string }>();
+
+  for (const row of rescuerReceivedPaymentHistory) {
+    if (row.status !== "pagado") continue;
+    const at = parseDonorContributionDateLabel(row.date, year);
+    if (!Number.isFinite(at)) continue;
+    const paidAt = new Date(at);
+    const nowDate = new Date(now);
+    if (paidAt.getFullYear() !== nowDate.getFullYear() || paidAt.getMonth() !== nowDate.getMonth()) continue;
+
+    const petCase = cases.find((entry) => entry.id === row.caseId);
+    const rescuerName = petCase?.rescuer?.trim();
+    if (!rescuerName) continue;
+
+    const { dollars, cents } = parsePaymentLogAmount(row.amount);
+    const amount = dollars + cents / 100;
+    const current = totals.get(rescuerName) ?? { sum: 0, caseId: row.caseId };
+    current.sum += amount;
+    totals.set(rescuerName, current);
+  }
+
+  const entries = [...totals.entries()];
+  if (entries.length === 0) return null;
+
+  const [topName, top] = entries.reduce(
+    (acc, [name, data]) => (data.sum > acc[1].sum ? [name, data] : acc),
+    entries[0],
+  );
+  const avatarCase = cases.find((entry) => entry.id === top.caseId);
+  return {
+    name: topName,
+    avatarSrc: avatarCase ? resolveCaseImageSrc(avatarCase.image) : `${A}logo-paw.svg`,
   };
+}
+
+/** Casos de apoyo con al menos una necesidad urgente ya cubierta o finalizada. */
+function guardianUrgentCasesCompletedCount(cases: PetCase[], emptyStates: boolean) {
+  if (emptyStates) return 0;
+
+  return cases.reduce((count, petCase) => {
+    if (petCase.caseStatus === "draft" || petCase.caseStatus === "review" || petCase.caseStatus === "rejected") {
+      return count;
+    }
+    const urgentNeeds = petCase.needs.filter((need) => need.urgent);
+    if (urgentNeeds.length === 0) return count;
+    if (!urgentNeeds.every((need) => isDonateNeedCompleted(need))) return count;
+    return count + 1;
+  }, 0);
+}
+
+function donateGuardianFeedMedia(
+  supportedCases: PetCase[],
+  slot: number,
+  fallbacks: string[],
+): { src: string; alt: string } {
+  if (supportedCases.length > 0) {
+    const petCase = supportedCases[slot % supportedCases.length];
+    return { src: resolveCaseImageSrc(petCase.image), alt: petCase.name };
+  }
+  return { src: fallbacks[slot] ?? fallbacks[0], alt: "" };
+}
+
+function DonateGuardianImpactFeed({ cases }: { cases: PetCase[] }) {
+  const { emptyStates } = usePrototypeStore();
+  const supportedCases = petCasesThatReceivedSupportThisMonth(cases, emptyStates);
+  const mediaFallbacks = [
+    `${A}guardian-luna.jpg`,
+    `${A}guardian-milo.jpg`,
+    `${A}guardian-carousel-hero.jpg`,
+    `${A}impact-luna.png`,
+  ];
+  const media0 = donateGuardianFeedMedia(supportedCases, 0, mediaFallbacks);
+  const media1 = donateGuardianFeedMedia(supportedCases, 1, mediaFallbacks);
+  const media2 = donateGuardianFeedMedia(supportedCases, 2, mediaFallbacks);
+  const media3 = donateGuardianFeedMedia(supportedCases, 3, mediaFallbacks);
+  const topRescuer = emptyStates ? null : guardianTopRescuerReceivedThisMonth(cases);
+  const rescuerHighlight = topRescuer ?? { name: "Rescatista", avatarSrc: `${A}logo-paw.svg` };
+  const urgentCasesCompleted = guardianUrgentCasesCompletedCount(cases, emptyStates);
+
+  return (
+    <div className="donate-guardian-impact-feed" aria-label="Logros y momentos del mes">
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--stat donate-guardian-feed-card--stat-yellow">
+        <strong>55</strong>
+        <span>Casos apoyados</span>
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--quote">
+        <p>Un pequeño gesto. Una gran diferencia.</p>
+        <span className="donate-guardian-feed-quote-mark" aria-hidden="true">
+          <img src={`${A}logo-paw.svg`} alt="" width={28} height={28} />
+        </span>
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--media">
+        <img src={media0.src} alt={media0.alt} loading="lazy" />
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--media donate-guardian-feed-card--video">
+        <img src={media1.src} alt={media1.alt} loading="lazy" />
+        <span className="donate-guardian-feed-video-badge">▶ 3:55</span>
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--media donate-guardian-feed-card--media-tall">
+        <img src={media2.src} alt={media2.alt} loading="lazy" />
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--stat donate-guardian-feed-card--stat-dark">
+        <strong>{urgentCasesCompleted}</strong>
+        <span>Casos urgentes completados</span>
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--testimonial">
+        <img className="donate-guardian-feed-avatar" src={rescuerHighlight.avatarSrc} alt="" />
+        <div>
+          <strong>{rescuerHighlight.name}</strong>
+          <p>Celebremos a quienes están detrás.</p>
+        </div>
+      </article>
+      <article className="donate-guardian-feed-card donate-guardian-feed-card--media">
+        <img src={media3.src} alt={media3.alt} loading="lazy" />
+      </article>
+    </div>
+  );
+}
+
+function GuardianPromoSlideFace({ slide }: { slide: GuardianPromoSlide }) {
+  return (
+    <>
+      <img className="donate-guardian-slide-photo" src={`${A}${slide.image}`} alt="" draggable={false} />
+      {slide.id !== "guardian-hero" ? (
+        <>
+          <div className="donate-guardian-slide-shade" aria-hidden="true" />
+          <div className="donate-guardian-slide-copy">
+            <strong>{guardianPromoTitle}</strong>
+            <ul>
+              {guardianHeroPerks.map((perk) => (
+                <li key={perk.label}>
+                  <Icon name={perk.icon} size={14} />
+                  {perk.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      ) : null}
+    </>
+  );
+}
+
+const donorContributionMonthToken: Record<string, number> = {
+  ene: 0,
+  feb: 1,
+  mar: 2,
+  abr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  ago: 7,
+  sep: 8,
+  set: 8,
+  oct: 9,
+  nov: 10,
+  dic: 11,
+};
+
+function parseDonorContributionDateLabel(raw: string, fallbackYear = new Date().getFullYear()) {
+  const parts = raw.trim().toLowerCase().split(/\s+/);
+  if (parts.length < 2) return Number.NaN;
+  const day = Number.parseInt(parts[0], 10);
+  const monthKey = parts[1].replace(/\./g, "").slice(0, 3);
+  const month = donorContributionMonthToken[monthKey];
+  if (!Number.isFinite(day) || month === undefined) return Number.NaN;
+  return new Date(fallbackYear, month, day).getTime();
+}
+
+function bumpLatestContributionDate(map: Map<string, number>, caseId: string, at: number) {
+  if (!Number.isFinite(at)) return;
+  const previous = map.get(caseId);
+  if (previous === undefined || at > previous) map.set(caseId, at);
+}
+
+function donorContributionDatesByCase(
+  donations: { caseId: string; date: string }[],
+  emptyStates: boolean,
+) {
+  const latest = new Map<string, number>();
+  const year = new Date().getFullYear();
+
+  donations.forEach((donation) => {
+    const parsed = Date.parse(donation.date);
+    bumpLatestContributionDate(
+      latest,
+      donation.caseId,
+      Number.isFinite(parsed) ? parsed : parseDonorContributionDateLabel(donation.date, year),
+    );
+  });
+
+  if (emptyStates) return latest;
+
+  donationLog.forEach((row) => {
+    if (row.status !== "pagado" || !row.caseId) return;
+    bumpLatestContributionDate(latest, row.caseId, parseDonorContributionDateLabel(row.date, year));
+  });
+  guardianPaymentHistory.forEach((row) => {
+    if (row.status !== "pagado" || !row.assignedCaseId) return;
+    bumpLatestContributionDate(latest, row.assignedCaseId, parseDonorContributionDateLabel(row.date, year));
+  });
+
+  return latest;
+}
+
+function formatDonorContributionMonthYear(at: number) {
+  const date = new Date(at);
+  const month = new Intl.DateTimeFormat("es-MX", { month: "short" })
+    .format(date)
+    .replace(/\./g, "")
+    .trim()
+    .slice(0, 3)
+    .toLowerCase();
+  const year = String(date.getFullYear()).slice(-2);
+  return `${month} ${year}`;
+}
+
+function donorContributedCaseIds(donations: { caseId: string }[], emptyStates: boolean) {
+  const ids = new Set<string>();
+  donations.forEach((donation) => ids.add(donation.caseId));
+  if (emptyStates) return ids;
+  donationLog.forEach((row) => {
+    if (row.status === "pagado" && row.caseId) ids.add(row.caseId);
+  });
+  guardianPaymentHistory.forEach((row) => {
+    if (row.status === "pagado" && row.assignedCaseId) ids.add(row.assignedCaseId);
+  });
+  return ids;
+}
+
+function DonationHome() {
+  const navigate = useNavigate();
+  const { cases, emptyStates, guardianActive, guardianNoSupportCases, donations } = usePrototypeStore();
+  const [storyCaseId, setStoryCaseId] = useState<string | null>(null);
+  const [guardianDeckIndex, setGuardianDeckIndex] = useState(0);
+  const [guardianDeckTick, setGuardianDeckTick] = useState(0);
+  const [guardianDragX, setGuardianDragX] = useState(0);
+  const guardianDragXRef = useRef(0);
+  const guardianStartX = useRef(0);
+  const [guardianDragging, setGuardianDragging] = useState(false);
+  const [guardianExiting, setGuardianExiting] = useState<"left" | "right" | null>(null);
+
+  const guardianSlideCount = guardianPromoSlides.length;
+  const guardianSlideAt = (offset: number) =>
+    guardianPromoSlides[((guardianDeckIndex + offset) % guardianSlideCount + guardianSlideCount) % guardianSlideCount];
+  const guardianCurrentSlide = guardianSlideAt(0);
+  const guardianNextSlide = guardianSlideAt(1);
+  const guardianFarBackSlide = guardianSlideAt(2);
+
+  const advanceGuardianDeck = () => {
+    setGuardianExiting(null);
+    setGuardianDragX(0);
+    guardianDragXRef.current = 0;
+    setGuardianDeckIndex((value) => (value + 1) % guardianSlideCount);
+    setGuardianDeckTick((value) => value + 1);
+  };
+
+  const flingGuardianCard = (dir: "left" | "right") => {
+    if (guardianExiting) return;
+    setGuardianExiting(dir);
+    window.setTimeout(advanceGuardianDeck, 280);
+  };
+
+  const onGuardianDeckPointerDown = (event: PointerEvent<HTMLElement>) => {
+    if (guardianExiting) return;
+    guardianStartX.current = event.clientX;
+    guardianDragXRef.current = 0;
+    setGuardianDragging(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* captura no disponible */
+    }
+  };
+
+  const onGuardianDeckPointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (!guardianDragging || guardianExiting) return;
+    const delta = event.clientX - guardianStartX.current;
+    guardianDragXRef.current = delta;
+    setGuardianDragX(delta);
+  };
+
+  const onGuardianDeckPointerUp = () => {
+    if (!guardianDragging) return;
+    setGuardianDragging(false);
+    const delta = guardianDragXRef.current;
+    if (Math.abs(delta) < 8) {
+      setGuardianDragX(0);
+      guardianDragXRef.current = 0;
+      return;
+    }
+    if (delta > 110) {
+      flingGuardianCard("right");
+      return;
+    }
+    if (delta < -110) {
+      flingGuardianCard("left");
+      return;
+    }
+    setGuardianDragX(0);
+    guardianDragXRef.current = 0;
+  };
+
+  const guardianCardTransform = guardianExiting
+    ? `translateX(${guardianExiting === "right" ? 420 : -420}px) rotate(${guardianExiting === "right" ? 18 : -18}deg)`
+    : `translateX(${guardianDragX}px) rotate(${guardianDragX / 28}deg)`;
 
   const openCases = emptyStates
     ? []
     : cases.filter((item) => item.caseStatus === "active" && item.needs.some((need) => need.status === "active"));
 
-  const caseItems = openCases.map((item) => {
+  const contributedCaseIds = guardianActive ? donorContributedCaseIds(donations, emptyStates) : null;
+  const contributionDatesByCase = useMemo(
+    () => (guardianActive ? donorContributionDatesByCase(donations, emptyStates) : null),
+    [donations, emptyStates, guardianActive],
+  );
+  const railCases =
+    contributedCaseIds === null
+      ? openCases
+      : openCases.filter((item) => contributedCaseIds.has(item.id));
+
+  const caseItems = railCases.map((item) => {
     const need =
       item.needs.find((entry) => entry.status === "active" && entry.urgent) ??
       item.needs.find((entry) => entry.status === "active")!;
@@ -2744,11 +3434,74 @@ function DonationHome() {
     return { item, need, pct };
   });
 
+  const donateScrollRef = useRef<HTMLElement>(null);
+  const guardianHeroImageRef = useRef<HTMLImageElement>(null);
+  const guardianRingVisualRef = useRef<HTMLSpanElement>(null);
+  const [guardianFlyMountTick, setGuardianFlyMountTick] = useState(0);
+  const onGuardianHeroImageMount = useCallback((node: HTMLImageElement | null) => {
+    guardianHeroImageRef.current = node;
+    if (node) setGuardianFlyMountTick((value) => value + 1);
+  }, []);
+  const onGuardianRingVisualMount = useCallback((node: HTMLSpanElement | null) => {
+    guardianRingVisualRef.current = node;
+    if (node) setGuardianFlyMountTick((value) => value + 1);
+  }, []);
+  const guardianBillingNoActiveSupportCases =
+    guardianActive && guardianChargeHadNoActiveSupportCases(emptyStates, guardianNoSupportCases);
+  const guardianAssignedCase = guardianActive
+    ? guardianBillingNoActiveSupportCases
+      ? null
+      : guardianImpactAssignedCase(cases, caseItems)
+    : null;
+  const guardianFlyTargetCaseId =
+    guardianAssignedCase &&
+    caseItems.some(({ item }) => item.id === guardianAssignedCase.id)
+      ? guardianAssignedCase.id
+      : caseItems[0]?.item.id;
+  const { fly: guardianHeroFly, progress: guardianHeroFlyProgress } = useDonateGuardianHeroFly(
+    guardianActive &&
+      !guardianBillingNoActiveSupportCases &&
+      Boolean(guardianAssignedCase && guardianFlyTargetCaseId),
+    donateScrollRef,
+    guardianHeroImageRef,
+    guardianRingVisualRef,
+    guardianAssignedCase ? resolveCaseImageSrc(guardianAssignedCase.image) : "",
+    guardianAssignedCase?.name ?? "",
+    guardianFlyMountTick,
+  );
+
+  const donateTitle = guardianActive ? "Tu impacto Guardián" : "Ayudar se siente bien";
+
   return (
     <ScreenShell
-      className="donate-shell"
+      scrollRef={donateScrollRef}
+      className={`donate-shell${guardianActive ? " donate-shell--guardian-active" : ""}`}
+      pinHeader={
+        guardianActive ? (
+          <div className="donate-guardian-pinned-chrome donor-chrome">
+            <DonorChromeTop />
+            <header className="match-top">
+              <h1>{donateTitle}</h1>
+            </header>
+          </div>
+        ) : null
+      }
       overlay={
         <>
+          {guardianHeroFly ? (
+            <div
+              className="donate-guardian-hero-fly"
+              aria-hidden="true"
+              style={{
+                left: guardianHeroFly.rect.left,
+                top: guardianHeroFly.rect.top,
+                width: guardianHeroFly.rect.width,
+                height: guardianHeroFly.rect.height,
+              }}
+            >
+              <img src={guardianHeroFly.imageSrc} alt="" draggable={false} />
+            </div>
+          ) : null}
           {storyCaseId ? (
             <DonateCaseStoriesViewer
               key={storyCaseId}
@@ -2761,7 +3514,7 @@ function DonationHome() {
               }}
             />
           ) : null}
-          {!storyCaseId ? (
+          {!storyCaseId && !guardianActive ? (
             <button
               type="button"
               className="donate-guardian-foot donate-guardian-foot--dock"
@@ -2774,73 +3527,101 @@ function DonationHome() {
         </>
       }
     >
-      <div className="donate-home donor-chrome">
-        <DonorChromeTop />
-        <header className="match-top">
-          <h1>Ayudar se siente bien</h1>
-        </header>
+      <div className={`donate-home donor-chrome${guardianActive ? " donate-home--guardian-scroll" : ""}`}>
+        {guardianActive ? null : (
+          <>
+            <DonorChromeTop />
+            <header className="match-top">
+              <h1>{donateTitle}</h1>
+            </header>
+          </>
+        )}
 
         <section className="donate-discover">
           {!caseItems.length ? null : (
             <div className="donate-cases-rail" role="list">
-              {caseItems.map(({ item, need, pct }) => (
-                <DonateCaseRing
-                  key={`${item.id}-${need.id}`}
-                  image={item.image}
-                  name={item.name}
-                  funded={need.funded}
-                  requested={need.requested}
-                  pct={pct}
-                  onClick={() => setStoryCaseId(item.id)}
-                />
-              ))}
+              {caseItems.map(({ item, need, pct }) => {
+                const contributedAt = contributionDatesByCase?.get(item.id);
+                const isGuardianFlyTarget = guardianActive && item.id === guardianFlyTargetCaseId;
+                const ringPhotoOpacity =
+                  isGuardianFlyTarget && guardianHeroFlyProgress > 0.02
+                    ? Math.min(1, Math.max(0, (guardianHeroFlyProgress - 0.82) / 0.18))
+                    : 1;
+                return (
+                  <DonateCaseRing
+                    key={`${item.id}-${need.id}`}
+                    image={item.image}
+                    name={item.name}
+                    funded={need.funded}
+                    requested={need.requested}
+                    pct={pct}
+                    supportMeta={
+                      contributionDatesByCase && contributedAt !== undefined
+                        ? formatDonorContributionMonthYear(contributedAt)
+                        : undefined
+                    }
+                    visualRef={isGuardianFlyTarget ? onGuardianRingVisualMount : undefined}
+                    ringImageStyle={isGuardianFlyTarget ? { opacity: ringPhotoOpacity } : undefined}
+                    onClick={() => setStoryCaseId(item.id)}
+                  />
+                );
+              })}
             </div>
           )}
         </section>
 
         <section className="donate-guardian">
-          <div className="donate-guardian-carousel-wrap">
-            <div
-              ref={guardianCarouselRef}
-              className={`donate-guardian-carousel${guardianCarouselDragging ? " is-dragging" : ""}`}
-              aria-label="Conoce Guardián"
-              onPointerDown={onGuardianCarouselPointerDown}
-              onPointerMove={onGuardianCarouselPointerMove}
-              onPointerUp={finishGuardianCarouselDrag}
-              onPointerCancel={finishGuardianCarouselDrag}
-            >
-            <div className="donate-guardian-track">
-              {guardianPromoSlides.map((slide, index) => (
-                <button
-                  key={slide.id}
-                  type="button"
-                  className="donate-guardian-slide"
-                  data-guardian-slide={index}
-                  aria-label="Elegir tu apoyo como Guardián"
-                  onClick={openGuardianSupportFromSlide}
-                >
-                  <img className="donate-guardian-slide-photo" src={`${A}${slide.image}`} alt="" draggable={false} />
-                  {slide.id !== "guardian-hero" ? (
-                    <>
-                      <div className="donate-guardian-slide-shade" aria-hidden="true" />
-                      <div className="donate-guardian-slide-copy">
-                        <strong>{guardianPromoTitle}</strong>
-                        <ul>
-                          {guardianHeroPerks.map((perk) => (
-                            <li key={perk.label}>
-                              <Icon name={perk.icon} size={14} />
-                              {perk.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </>
-                  ) : null}
-                </button>
-              ))}
+          {guardianActive ? (
+            <DonateGuardianMonthlyImpact
+              cases={cases}
+              caseItems={caseItems}
+              onHeroImageMount={onGuardianHeroImageMount}
+              heroFlyProgress={guardianHeroFlyProgress}
+              billingNoActiveSupportCases={guardianBillingNoActiveSupportCases}
+            />
+          ) : (
+            <div className="donate-guardian-deck-wrap">
+              <div className="donate-guardian-deck" aria-label="Conoce Guardián" aria-live="polite">
+                <div className="donate-guardian-deck-stage">
+                  <article
+                    key={`back-far-${guardianFarBackSlide.id}-${guardianDeckTick}`}
+                    className="donate-guardian-slide donate-guardian-slide--back donate-guardian-slide--back-1"
+                    aria-hidden="true"
+                  >
+                    <img
+                      className="donate-guardian-slide-photo"
+                      src={`${A}${guardianFarBackSlide.image}`}
+                      alt=""
+                      draggable={false}
+                    />
+                  </article>
+                  <article
+                    key={`next-${guardianNextSlide.id}-${guardianDeckTick}`}
+                    className="donate-guardian-slide donate-guardian-slide--next"
+                    aria-hidden="true"
+                  >
+                    <img
+                      className="donate-guardian-slide-photo"
+                      src={`${A}${guardianNextSlide.image}`}
+                      alt=""
+                      draggable={false}
+                    />
+                  </article>
+                  <article
+                    key={`active-${guardianCurrentSlide.id}-${guardianDeckTick}`}
+                    className={`donate-guardian-slide donate-guardian-slide--active${guardianDragging ? " is-dragging" : ""}${guardianExiting ? " is-exiting" : ""}`}
+                    style={{ transform: guardianCardTransform }}
+                    onPointerDown={onGuardianDeckPointerDown}
+                    onPointerMove={onGuardianDeckPointerMove}
+                    onPointerUp={onGuardianDeckPointerUp}
+                    onPointerCancel={onGuardianDeckPointerUp}
+                  >
+                    <GuardianPromoSlideFace slide={guardianCurrentSlide} />
+                  </article>
+                </div>
+              </div>
             </div>
-            </div>
-          </div>
+          )}
         </section>
       </div>
     </ScreenShell>
@@ -2949,7 +3730,8 @@ function NeedCard({
 function CaseDetail() {
   const { caseId = "luna" } = useParams();
   const navigate = useNavigate();
-  const { cases } = usePrototypeStore();
+  const location = useLocation();
+  const { cases, pendingDonationCheckout, paymentOutcome } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const total = item.needs.reduce((sum, need) => sum + need.requested, 0);
   const funded = item.needs.reduce((sum, need) => sum + need.funded, 0);
@@ -2979,6 +3761,36 @@ function CaseDetail() {
     if (target) setDonateNeedId(target.id);
   };
 
+  useEffect(() => {
+    const needToOpen =
+      location.state && typeof location.state === "object" && "openDonateNeedId" in location.state
+        ? (location.state as { openDonateNeedId?: string }).openDonateNeedId
+        : undefined;
+    if (!needToOpen || !item.needs.some((need) => need.id === needToOpen)) return;
+    setDonateNeedId(needToOpen);
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: { skipPaymentRedirect: true } },
+    );
+  }, [item.needs, location.pathname, location.search, location.state, navigate]);
+
+  useEffect(() => {
+    const skipRedirect = Boolean(
+      location.state && typeof location.state === "object" && "skipPaymentRedirect" in location.state
+        ? (location.state as { skipPaymentRedirect?: boolean }).skipPaymentRedirect
+        : false,
+    );
+    if (skipRedirect) return;
+    if (
+      paymentOutcome === "pending" &&
+      pendingDonationCheckout?.type === "case" &&
+      pendingDonationCheckout.caseId === item.id
+    ) {
+      const { needId, chargeAmount } = pendingDonationCheckout;
+      navigate(`/payment/processing/${item.id}/${needId}?amount=${chargeAmount}`, { replace: true });
+    }
+  }, [item.id, location.state, navigate, paymentOutcome, pendingDonationCheckout]);
+
   return (
     <ScreenShell
       className="adoption-detail-shell donate-case-shell"
@@ -2986,11 +3798,13 @@ function CaseDetail() {
         <>
           {donateNeed && donateNeedId ? (
             <DonateAmountDialog
-              remaining={Math.max(0, donateNeed.requested - donateNeed.funded)}
+              remaining={caseDonorRemainingTotal(item)}
               onClose={() => setDonateNeedId(null)}
-              onConfirm={(amount) => {
+              onConfirm={({ donationAmount, chargeAmount }) => {
+                const needId = donateNeed.id;
                 setDonateNeedId(null);
-                navigate(`/donate/${item.id}/${donateNeed.id}`, { state: { amount } });
+                usePrototypeStore.getState().startDonationCheckout(item.id, needId, donationAmount, chargeAmount);
+                navigate(`/stripe/checkout/${item.id}/${needId}?amount=${chargeAmount}`);
               }}
             />
           ) : null}
@@ -3017,7 +3831,9 @@ function CaseDetail() {
             <button
               type="button"
               className="pet-detail-rescuer"
-              onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(item.rescuer)}`)}
+              onClick={() =>
+                navigate(`/rescuer-profile/${item.id}`, { state: { from: `/case/${caseId}` } })
+              }
             >
               <span>{item.rescuer}</span>
               <span className="pet-detail-rescuer-avatar" aria-hidden="true">
@@ -3144,7 +3960,7 @@ function CaseDetail() {
             disabled={!primaryNeed}
             onClick={() => openDonate()}
           >
-            Donar
+            Quiero apoyar
           </button>
         </div>
       </div>
@@ -3215,14 +4031,272 @@ function DonationFlow() {
 function DonationSuccess() {
   const { caseId = "luna" } = useParams();
   const navigate = useNavigate();
-  const amount = new URLSearchParams(useLocation().search).get("amount") ?? "150";
+  const search = new URLSearchParams(useLocation().search);
+  const amountRaw = search.get("amount") ?? "150";
+  const chargeAmount = Math.max(1, Number(amountRaw) || 150);
+  const { cases } = usePrototypeStore();
+  const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
+  const paidLabel = new Intl.DateTimeFormat("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date());
+
   return (
-    <div className="plain-screen success-screen">
-      <div className="success-icon"><AssetIcon name="check.svg" size={32} /></div>
-      <h1>¡Eres mi héroe, choca esas huellitas!</h1>
-      <p>Gracias por apoyar. Tu donación de ${amount} MXN ya fue asignada y el progreso del caso se actualizó.</p>
-      <button className="primary-button" onClick={() => navigate(`/case/${caseId}`)}>Ver caso actualizado</button>
-      <button className="secondary-button" onClick={() => navigate("/history")}>Ir al historial</button>
+    <div className="plain-screen donation-success-layout">
+      <div className="donation-success-body content-pad">
+        <div className="donation-success-hero" aria-hidden="true">
+          <span className="donation-success-sparkle donation-success-sparkle--1" />
+          <span className="donation-success-sparkle donation-success-sparkle--2" />
+          <span className="donation-success-sparkle donation-success-sparkle--3" />
+          <span className="donation-success-sparkle donation-success-sparkle--4" />
+          <div className="donation-success-badge">
+            <AssetIcon name="check.svg" size={34} alt="" />
+          </div>
+        </div>
+        <h1 className="donation-success-title">Pago exitoso</h1>
+        <p className="donation-success-lead">¡Muchas gracias por apoyar a la manada!</p>
+
+        <article className="donation-success-amount-card">
+          <figure className="donation-success-polaroid">
+            <img src={item.image} alt={item.name} />
+          </figure>
+          <div className="donation-success-dest">
+            <p className="donation-success-paid-label">Se destinó a</p>
+            <p className="donation-success-paid-name">{item.name}</p>
+          </div>
+        </article>
+
+        <div className="donation-success-meta">
+          <article className="donation-success-meta-card donation-success-meta-card--detail">
+            <span className="donation-success-meta-icon donation-success-meta-icon--detail">
+              <Icon name="icon-wallet.svg" size={22} />
+            </span>
+            <div>
+              <span>Monto</span>
+              <strong>{formatGuardianMoney(chargeAmount)} MXN</strong>
+            </div>
+          </article>
+          <article className="donation-success-meta-card donation-success-meta-card--detail">
+            <span className="donation-success-meta-icon donation-success-meta-icon--detail">
+              <Icon name="icon-doc.svg" size={22} />
+            </span>
+            <div>
+              <span>Fecha</span>
+              <strong>{paidLabel}</strong>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div className="donation-success-dock content-pad">
+        <button type="button" className="donation-success-ok" onClick={() => navigate("/donate")}>
+          Ir a inicio
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DonationStripeCheckout() {
+  const { caseId = "luna", needId = "luna-food" } = useParams();
+  const navigate = useNavigate();
+  const search = new URLSearchParams(useLocation().search);
+  const amount = Math.max(1, Number(search.get("amount")) || 150);
+  const isPaymentMethodUpdate = caseId === PAYMENT_METHOD_CHECKOUT_CASE_ID;
+
+  useEffect(() => {
+    const opened = window.open("https://checkout.stripe.com/", "_blank", "noopener,noreferrer");
+    if (!opened) {
+      // Ventanas emergentes bloqueadas: el usuario puede continuar con el botón de abajo.
+    }
+  }, []);
+
+  return (
+    <div className="plain-screen stripe-checkout-sim">
+      <div className="stripe-checkout-sim__bar" aria-hidden="true">
+        <span>Stripe</span>
+      </div>
+      <div className="stripe-checkout-sim__body content-pad">
+        <h1>{isPaymentMethodUpdate ? "Actualizar método de pago" : "Pago seguro"}</h1>
+        <p className="supporting-copy">
+          {isPaymentMethodUpdate ? (
+            <>
+              Te redirigimos a Stripe para verificar y guardar tu nuevo método de pago. Si cierras esta ventana y vuelves a
+              DopMi, verás el estado de la actualización.
+            </>
+          ) : (
+            <>
+              Te redirigimos a Stripe para completar tu aportación de {formatGuardianMoney(amount)} MXN. Si cierras esta ventana y vuelves a
+              DopMi, verás el estado de procesamiento.
+            </>
+          )}
+        </p>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => window.open("https://checkout.stripe.com/", "_blank", "noopener,noreferrer")}
+        >
+          Abrir checkout de Stripe
+        </button>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => navigate(`/payment/processing/${caseId}/${needId}?amount=${amount}`)}
+        >
+          Volver a DopMi
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const PAYMENT_PROCESSING_DONE_MS = 680;
+
+function DonationPaymentProcessing() {
+  const { caseId = "luna", needId = "luna-food" } = useParams();
+  const navigate = useNavigate();
+  const search = new URLSearchParams(useLocation().search);
+  const amountParam = search.get("amount");
+  const paymentOutcome = usePrototypeStore((state) => state.paymentOutcome);
+  const { cases, donate, setGuardian, clearPendingDonationCheckout } = usePrototypeStore();
+  const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
+  const pending = usePrototypeStore((state) => state.pendingDonationCheckout);
+  const isPaymentMethodCheckout =
+    pending?.type === "payment-method" || caseId === PAYMENT_METHOD_CHECKOUT_CASE_ID;
+  const isGuardianCheckout =
+    !isPaymentMethodCheckout &&
+    (pending?.type === "guardian" || caseId === GUARDIAN_CHECKOUT_CASE_ID);
+  const chargeAmount = Math.max(
+    1,
+    Number(amountParam) || pending?.chargeAmount || 150,
+  );
+  const donationAmount = Math.max(1, pending?.donationAmount ?? chargeAmount);
+  const [checking, setChecking] = useState(false);
+  const [resolvingOutcome, setResolvingOutcome] = useState<"success" | "error" | null>(null);
+  const resolvedRef = useRef(false);
+
+  const playDoneAndNavigate = useCallback(
+    (outcome: "success" | "error") => {
+      if (resolvedRef.current) return;
+      resolvedRef.current = true;
+      setChecking(true);
+      setResolvingOutcome(outcome);
+      window.setTimeout(() => {
+        const pendingCheckout = usePrototypeStore.getState().pendingDonationCheckout;
+        const paymentMethodFlow =
+          pendingCheckout?.type === "payment-method" || caseId === PAYMENT_METHOD_CHECKOUT_CASE_ID;
+        const guardianFlow =
+          !paymentMethodFlow &&
+          (pendingCheckout?.type === "guardian" || caseId === GUARDIAN_CHECKOUT_CASE_ID);
+        if (outcome === "error") {
+          const guardianRetry = pendingCheckout?.guardianOrigin;
+          clearPendingDonationCheckout();
+          const errorPath = paymentMethodFlow
+            ? `/payment-error/${caseId}/${needId}`
+            : `/payment-error/${caseId}/${needId}?amount=${chargeAmount}`;
+          navigate(errorPath, {
+            state: guardianRetry ? { guardianRetry } : paymentMethodFlow ? { paymentMethodUpdate: true } : undefined,
+          });
+          return;
+        }
+        if (paymentMethodFlow) {
+          clearPendingDonationCheckout();
+          navigate("/profile/payment-method/success?method=card");
+          return;
+        }
+        if (guardianFlow) {
+          setGuardian(true, donationAmount, pendingCheckout?.coverFees ?? true);
+          clearPendingDonationCheckout();
+          navigate(`/impact/success?amount=${donationAmount}&method=card`);
+          return;
+        }
+        donate(caseId, needId, donationAmount);
+        clearPendingDonationCheckout();
+        navigate(`/donation-success/${caseId}?amount=${chargeAmount}`);
+      }, PAYMENT_PROCESSING_DONE_MS);
+    },
+    [
+      caseId,
+      needId,
+      chargeAmount,
+      donationAmount,
+      clearPendingDonationCheckout,
+      donate,
+      navigate,
+      setGuardian,
+    ],
+  );
+
+  useEffect(() => {
+    if (resolvedRef.current) return;
+    if (paymentOutcome === "success" || paymentOutcome === "error") {
+      playDoneAndNavigate(paymentOutcome);
+      return;
+    }
+    const pollId = window.setInterval(() => {
+      if (resolvedRef.current) return;
+      const outcome = usePrototypeStore.getState().paymentOutcome;
+      if (outcome === "success" || outcome === "error") {
+        window.clearInterval(pollId);
+        playDoneAndNavigate(outcome);
+      }
+    }, 700);
+    return () => window.clearInterval(pollId);
+  }, [paymentOutcome, playDoneAndNavigate]);
+
+  const loaderDone = checking && resolvingOutcome === "success";
+  const loaderError = checking && resolvingOutcome === "error";
+
+  const processingTitle = isPaymentMethodCheckout
+    ? "Método de pago"
+    : isGuardianCheckout
+      ? "Ser Guardián"
+      : `Apoyar a ${item.name}`;
+  const processingBack = () => {
+    if (isPaymentMethodCheckout) return navigate("/profile");
+    if (isGuardianCheckout) return navigate("/impact/support");
+    return navigate(`/case/${caseId}`, { state: { skipPaymentRedirect: true } });
+  };
+
+  return (
+    <div className="plain-screen payment-processing-layout">
+      <TopBar title={processingTitle} back={processingBack} />
+      <div className="payment-processing-screen payment-processing-body content-pad">
+        <div
+          className={`payment-processing-loader${checking ? " is-checking" : ""}${loaderError ? " is-error" : ""}`}
+          aria-hidden="true"
+        >
+          <svg className="payment-processing-ring" viewBox="0 0 96 96" focusable="false">
+            <circle className="payment-processing-ring-track" cx="48" cy="48" r="42" />
+            <circle className="payment-processing-ring-progress" cx="48" cy="48" r="42" />
+          </svg>
+          <div className="payment-processing-icon">
+            {loaderDone ? (
+              <AssetIcon name="check.svg" size={36} alt="" />
+            ) : loaderError ? (
+              <AssetIcon name="payment-card-error.svg" size={32} alt="" />
+            ) : (
+              <AssetIcon name="icon-clock.svg" size={36} alt="" />
+            )}
+          </div>
+        </div>
+        <h1>{checking ? "Listo" : "Espera un momento"}</h1>
+        <p className="lead" role="status" aria-live="polite">
+          {checking
+            ? isPaymentMethodCheckout
+              ? "Confirmamos la actualización de tu método de pago…"
+              : "Confirmamos tu pago…"
+            : isPaymentMethodCheckout
+              ? "Estamos verificando tu nuevo método de pago. Puede tomar un minuto; no cierres la app."
+              : "Estamos esperando respuesta de la transacción. Tranquilo, puede tomar un minuto. No inicies otra aportación."}
+        </p>
+      </div>
+      <div className="payment-processing-dock content-pad">
+        <button type="button" className="text-action" disabled={checking} onClick={processingBack}>
+          {isPaymentMethodCheckout ? "Volver" : isGuardianCheckout ? "Volver" : "Volver al caso"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -3230,24 +4304,118 @@ function DonationSuccess() {
 function PaymentError() {
   const { caseId = "luna", needId = "luna-vet" } = useParams();
   const navigate = useNavigate();
-  const amount = new URLSearchParams(useLocation().search).get("amount") ?? "150";
+  const location = useLocation();
+  const amountRaw = new URLSearchParams(location.search).get("amount") ?? "150";
+  const chargeAmount = Math.max(1, Number(amountRaw) || 150);
+  const { cases } = usePrototypeStore();
+  const isPaymentMethodUpdate = caseId === PAYMENT_METHOD_CHECKOUT_CASE_ID;
+  const isGuardianCheckout = !isPaymentMethodUpdate && caseId === GUARDIAN_CHECKOUT_CASE_ID;
+  const guardianRetry =
+    location.state && typeof location.state === "object" && "guardianRetry" in location.state
+      ? (location.state as { guardianRetry?: "billing-amount" | "subscribe" }).guardianRetry
+      : undefined;
+  const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
+  const retryPaymentMethodUpdate = () => {
+    usePrototypeStore.getState().startPaymentMethodUpdateCheckout();
+    navigate(`/stripe/checkout/${PAYMENT_METHOD_CHECKOUT_CASE_ID}/${PAYMENT_METHOD_CHECKOUT_NEED_ID}`);
+  };
+  const leavePaymentMethodError = () => navigate("/profile");
+  const leaveGuardianPaymentError = () => {
+    if (guardianRetry === "billing-amount") {
+      navigate("/profile/billing", { state: { openAmountDialog: true } });
+      return;
+    }
+    navigate("/impact/support");
+  };
+  const retryDonation = () => {
+    if (isPaymentMethodUpdate) {
+      retryPaymentMethodUpdate();
+      return;
+    }
+    if (isGuardianCheckout) {
+      leaveGuardianPaymentError();
+      return;
+    }
+    navigate(`/case/${caseId}`, { state: { skipPaymentRedirect: true, openDonateNeedId: needId } });
+  };
+  const paymentErrorBack = () => {
+    if (isPaymentMethodUpdate) return leavePaymentMethodError();
+    if (isGuardianCheckout) return leaveGuardianPaymentError();
+    return navigate(`/case/${caseId}`, { state: { skipPaymentRedirect: true } });
+  };
   return (
-    <div className="plain-screen">
-      <TopBar title="Pago no completado" back={`/case/${caseId}`} />
-      <div className="payment-error">
+    <div className="plain-screen payment-error-layout">
+      <TopBar
+        title={isPaymentMethodUpdate ? "Actualización fallida" : "Fallo en el pago"}
+        back={paymentErrorBack}
+      />
+      <div className="payment-error payment-error-body content-pad">
         <div className="error-icon"><AssetIcon name="payment-card-error.svg" size={48} /></div>
-        <h1>No pudimos procesar tu pago</h1>
-        <p>Tu donación no fue realizada. Puedes intentarlo nuevamente o usar otro método de pago.</p>
+        <h1>{isPaymentMethodUpdate ? "No pudimos actualizar tu método de pago" : "No pudimos procesar tu pago"}</h1>
+        <p>
+          {isPaymentMethodUpdate
+            ? "Tu tarjeta no quedó guardada. Revisa los datos o prueba con otro método e inténtalo de nuevo."
+            : "Tu aportación no se completó. Revisa tu método de pago e inténtalo de nuevo cuando quieras."}
+        </p>
         <article className="summary-card">
-          <span className="eyebrow">Resumen de la donación</span>
-          <div><span>Caso</span><strong>Luna</strong></div>
-          <div><span>Monto</span><strong>${amount} MXN</strong></div>
-          <div><span>Método de pago</span><strong>Visa •••• 4242</strong></div>
+          <span className="eyebrow">Resumen</span>
+          <div>
+            <span>{isPaymentMethodUpdate ? "Acción" : isGuardianCheckout ? "Concepto" : "Caso"}</span>
+            <strong>
+              {isPaymentMethodUpdate
+                ? "Actualización de método de pago"
+                : isGuardianCheckout
+                  ? "Suscripción mensual Guardián"
+                  : item.name}
+            </strong>
+          </div>
+          {isPaymentMethodUpdate ? null : (
+            <div>
+              <span>Monto</span>
+              <strong>{formatGuardianMoney(chargeAmount)} MXN</strong>
+            </div>
+          )}
           <div><span>Estado</span><strong className="failed-pill">Fallido</strong></div>
         </article>
-        <button className="primary-button" onClick={() => navigate(`/donate/${caseId}/${needId}`)}>Intentar de nuevo</button>
-        <button className="secondary-button" onClick={() => navigate(`/donate/${caseId}/${needId}`)}>Cambiar método de pago</button>
-        <button className="text-action" onClick={() => navigate(`/case/${caseId}`)}>Volver al caso</button>
+      </div>
+      <div className="payment-error-dock content-pad">
+        <button type="button" className="primary-button" onClick={retryDonation}>
+          Intentar de nuevo
+        </button>
+        <button type="button" className="text-action" onClick={paymentErrorBack}>
+          {isPaymentMethodUpdate ? "Volver a mi perfil" : isGuardianCheckout ? "Volver" : "Volver al caso"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PaymentMethodUpdateSuccess() {
+  const navigate = useNavigate();
+  const guardianActive = usePrototypeStore((state) => state.guardianActive);
+  useEffect(() => {
+    usePrototypeStore.getState().setGuardianSubscriptionPaymentFailed(false);
+  }, []);
+  const leaveSuccess = () => navigate(guardianActive ? "/donate" : "/profile");
+  return (
+    <div className="plain-screen guardian-success guardian-success-layout">
+      <div className="guardian-success-body content-pad">
+        <div className="donation-success-hero" aria-hidden="true">
+          <span className="donation-success-sparkle donation-success-sparkle--1" />
+          <span className="donation-success-sparkle donation-success-sparkle--2" />
+          <span className="donation-success-sparkle donation-success-sparkle--3" />
+          <span className="donation-success-sparkle donation-success-sparkle--4" />
+          <div className="donation-success-badge">
+            <AssetIcon name="check.svg" size={34} alt="" />
+          </div>
+        </div>
+        <h1>¡Método de pago actualizado!</h1>
+        <p>Tu nueva tarjeta quedó vinculada a tu cuenta. Los próximos cargos usarán este método.</p>
+      </div>
+      <div className="guardian-success-dock content-pad">
+        <button type="button" className="primary-button" onClick={leaveSuccess}>
+          {guardianActive ? "Ir a inicio" : "Ir a mi perfil"}
+        </button>
       </div>
     </div>
   );
@@ -3511,7 +4679,7 @@ function Impact() {
                   </div>
                 </article>
               ))}
-              <button className="secondary-button" onClick={() => navigate("/settings/billing")}>Administrar suscripción</button>
+              <button className="secondary-button" onClick={() => navigate("/profile/billing")}>Administrar suscripción</button>
             </>
           )}
         </div>
@@ -3570,6 +4738,11 @@ function formatGuardianMoney(value: number) {
   return `$${value.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function guardianMonthlyChargeTotal(amount: number, coverFees: boolean) {
+  const fee = coverFees ? estimatePaymentProcessorFee(amount) : 0;
+  return Math.round((amount + fee) * 100) / 100;
+}
+
 function guardianSupportBubbleEnter(left: string, top: string, size: number) {
   const leftN = Number.parseFloat(left);
   const topN = Number.parseFloat(top);
@@ -3614,7 +4787,6 @@ const GUARDIAN_SUPPORT_MIN_MXN = 20;
 
 function ImpactSupport() {
   const navigate = useNavigate();
-  const { paymentOutcome, setGuardian } = usePrototypeStore();
   const presets = [100, 200, 350] as const;
   const [amount, setAmount] = useState(200);
   const [custom, setCustom] = useState(false);
@@ -3650,13 +4822,10 @@ function ImpactSupport() {
 
   const confirm = () => {
     if (!supportValid) return;
-    const safeAmount = parsedSupport;
-    if (paymentOutcome === "error") {
-      navigate(`/impact/error?amount=${safeAmount}`);
-      return;
-    }
-    setGuardian(true, safeAmount);
-    navigate(`/impact/success?amount=${safeAmount}&method=card`);
+    const donationAmount = monthlySupport;
+    const chargeAmount = Math.round(displayTotal * 100) / 100;
+    usePrototypeStore.getState().startGuardianCheckout(donationAmount, chargeAmount, coverFees, "subscribe");
+    navigate(`/stripe/checkout/${GUARDIAN_CHECKOUT_CASE_ID}/guardian-monthly?amount=${chargeAmount}`);
   };
 
   return (
@@ -3767,18 +4936,31 @@ function ImpactSuccess() {
   const method = params.get("method") ?? "card";
   const [toast, setToast] = useState(method === "apple" ? "Procesando con Apple Pay…" : method === "google" ? "Procesando con Google Pay…" : "");
   return (
-    <div className="plain-screen guardian-success">
-      <div className="guardian-success-body">
-        <div className="success-icon big"><AssetIcon name="check.svg" size={36} /></div>
+    <div className="plain-screen guardian-success guardian-success-layout">
+      <div className="guardian-success-body content-pad">
+        <div className="donation-success-hero" aria-hidden="true">
+          <span className="donation-success-sparkle donation-success-sparkle--1" />
+          <span className="donation-success-sparkle donation-success-sparkle--2" />
+          <span className="donation-success-sparkle donation-success-sparkle--3" />
+          <span className="donation-success-sparkle donation-success-sparkle--4" />
+          <div className="donation-success-badge">
+            <AssetIcon name="check.svg" size={34} alt="" />
+          </div>
+        </div>
         <h1>¡Ya eres Guardián!</h1>
-        <p>Gracias por formar parte de DopMi, la manada ya sabe que estás aquí. Desde hoy, tu aportación mensual nos ayuda a que más mascotas tengan una vida digna.</p>
+        <p>Gracias por formar parte de DopMi, la manada ya sabe que estás aquí.</p>
         <article className="membership-card">
-          <small>Membresía activa</small>
+          <small>Suscripción activa</small>
           <strong>Guardián</strong>
           <b>${amount.toFixed(2)} <small>MXN / mes</small></b>
           <span>Próximo cargo: {nextChargeDate()}</span>
         </article>
-        <button className="primary-button" onClick={() => navigate("/donate")}>Volver a Apoyar</button>
+        <p>Desde hoy, tu aportación mensual nos ayuda a que más mascotas tengan una vida digna.</p>
+      </div>
+      <div className="guardian-success-dock content-pad">
+        <button type="button" className="primary-button" onClick={() => navigate("/donate")}>
+          Ir a inicio
+        </button>
       </div>
       {toast ? <Toast text={toast} onDone={() => setToast("")} /> : null}
     </div>
@@ -4235,6 +5417,22 @@ function isGuardianNotification(item: { title: string; body: string }) {
   return /guardián/i.test(`${item.title} ${item.body}`);
 }
 
+function isGuardianBillingFailureNotification(item: { id: string; title: string; body: string }) {
+  return (
+    item.id === "n-g4" ||
+    item.title === "Problema con tu aportación mensual" ||
+    /no pudimos cobrar guardián/i.test(item.body)
+  );
+}
+
+function isStaticNotification(item: { id: string; title: string }) {
+  return item.id === "n-g9" || item.title === "Próximo cargo Guardián";
+}
+
+function isGuardianContributionReceivedNotification(item: { id: string; title: string }) {
+  return item.id === "n-g3" || item.title === "Aportación Guardián recibida";
+}
+
 function isPaymentNotification(item: { kind: NotificationKind; title: string; body: string }) {
   return item.kind === "donation" || isGuardianNotification(item);
 }
@@ -4298,31 +5496,69 @@ function NotificationVisual({
 
 function NotificationList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { notifications, markNotificationRead, accountMode } = usePrototypeStore();
+  const visibleNotifications = useMemo(
+    () => filterPrototypeNotifications(notifications),
+    [notifications],
+  );
   return (
     <div className={`plain-screen${accountMode === "rescuer" ? " rescuer-theme" : ""}`}>
-      <TopBar title="Notificaciones" back={accountMode === "rescuer" ? "/rescuer/messages" : "/profile"} />
+      <TopBar title="Notificaciones" back={profileHomePath(accountMode)} />
       <div className="content-pad notification-stack">
-        {notifications.map((item) => {
+        {visibleNotifications.map((item) => {
           const chipKind = notificationChipKind(item);
-          return (
-          <button
-            key={item.id}
-            className={`notification-card ${item.read ? "" : "unread"}`}
-            onClick={() => {
-              markNotificationRead(item.id);
-              navigate(item.target);
-            }}
-          >
-            <NotificationVisual item={item} chipKind={chipKind} />
-            <span className="notif-body">
-              <span className="notif-head">
-                <strong>{item.title}</strong>
-                <time>{item.time}</time>
+          const staticCard = isStaticNotification(item);
+          const cardClass = `notification-card ${item.read ? "" : "unread"}${staticCard ? " notification-card--static" : ""}`.trim();
+          const cardBody = (
+            <>
+              <NotificationVisual item={item} chipKind={chipKind} />
+              <span className="notif-body">
+                <span className="notif-head">
+                  <strong>{item.title}</strong>
+                  <time>{item.time}</time>
+                </span>
+                <p>{item.body}</p>
               </span>
-              <p>{item.body}</p>
-            </span>
-          </button>
+            </>
+          );
+          if (staticCard) {
+            return (
+              <article key={item.id} className={cardClass}>
+                {cardBody}
+              </article>
+            );
+          }
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={cardClass}
+              onClick={() => {
+                markNotificationRead(item.id);
+                if (isGuardianBillingFailureNotification(item)) {
+                  usePrototypeStore.getState().setGuardianSubscriptionPaymentFailed(true);
+                  navigate("/profile/billing");
+                  return;
+                }
+                if (isGuardianContributionReceivedNotification(item)) {
+                  const store = usePrototypeStore.getState();
+                  if (!store.guardianActive || store.guardianNoSupportCases) {
+                    store.setGuardianSubscription("subscribed");
+                  }
+                  store.setGuardianSubscriptionPaymentFailed(false);
+                  navigate("/donate");
+                  return;
+                }
+                if (/^\/(terms|privacy)(\/|$)/.test(item.target)) {
+                  navigateToLegalDoc(navigate, item.target, location.pathname);
+                  return;
+                }
+                navigate(item.target);
+              }}
+            >
+              {cardBody}
+            </button>
           );
         })}
       </div>
@@ -4783,7 +6019,7 @@ function DonorProfile() {
             <button
               type="button"
               className="profile-intro-edit"
-              onClick={() => navigate("/settings/basic-info")}
+              onClick={() => navigate("/profile/basic-info", { state: { from: "/profile" } })}
               aria-label="Editar información básica"
             >
               <Icon name="icon-edit.svg" size={18} />
@@ -4795,7 +6031,7 @@ function DonorProfile() {
           <button
             type="button"
             className="profile-feature is-active"
-            onClick={() => navigate("/settings/billing")}
+            onClick={() => navigate("/donate")}
           >
             <span className="profile-feature-copy">
               <strong>¡Ya eres Guardián!</strong>
@@ -4829,7 +6065,12 @@ function DonorProfile() {
             <button
               type="button"
               className="profile-access-item"
-              onClick={() => navigate("/settings/payment-methods")}
+              onClick={() => {
+                usePrototypeStore.getState().startPaymentMethodUpdateCheckout();
+                navigate(
+                  `/stripe/checkout/${PAYMENT_METHOD_CHECKOUT_CASE_ID}/${PAYMENT_METHOD_CHECKOUT_NEED_ID}`,
+                );
+              }}
             >
               <span className="profile-access-icon" aria-hidden="true">
                 <Icon name="icon-card.svg" size={22} />
@@ -4839,12 +6080,12 @@ function DonorProfile() {
             <button
               type="button"
               className="profile-access-item"
-              onClick={() => navigate("/settings/billing")}
+              onClick={() => navigate("/profile/billing", { state: { from: "/profile" } })}
             >
               <span className="profile-access-icon" aria-hidden="true">
                 <Icon name="icon-billing.svg" size={22} />
               </span>
-              <span>Suscripción y pagos</span>
+              <span>Suscripción Guardián</span>
             </button>
             <button
               type="button"
@@ -4854,7 +6095,7 @@ function DonorProfile() {
               <span className="profile-access-icon" aria-hidden="true">
                 <Icon name="icon-clock.svg" size={22} />
               </span>
-              <span>Mi historial</span>
+              <span>Mi historial de pagos</span>
             </button>
           </div>
         </section>
@@ -4961,61 +6202,14 @@ function SavedPets() {
   );
 }
 
-function SettingsRow({ icon, title, subtitle, onClick }: { icon: string; title: string; subtitle?: string; onClick: () => void }) {
-  return (
-    <button className="nav-row" onClick={onClick}>
-      <span className="nav-row-main">
-        <span className="row-tile">
-          <Icon name={icon} size={20} />
-        </span>
-        <span className="nav-row-text">
-          <strong>{title}</strong>
-          {subtitle ? <small>{subtitle}</small> : null}
-        </span>
-      </span>
-      <Chevron />
-    </button>
-  );
-}
-
-function Settings() {
-  const navigate = useNavigate();
-  const { accountMode, setAccountMode } = usePrototypeStore();
-  const switchMode = () => {
-    const next = accountMode === "donor" ? "rescuer" : "donor";
-    setAccountMode(next);
-    navigate(next === "donor" ? "/adoption" : "/rescuer");
-  };
-  return (
-    <div className="plain-screen">
-      <TopBar title="Configuración" back={accountMode === "donor" ? "/profile" : "/rescuer/profile"} />
-      <div className="content-pad settings-menu">
-        <SettingsRow icon="icon-user.svg" title="Información básica" subtitle="Edita tu perfil y datos personales" onClick={() => navigate("/settings/basic-info")} />
-        <SettingsRow icon="icon-card.svg" title="Métodos de pago" subtitle="Administra tus tarjetas y métodos de pago" onClick={() => navigate("/settings/payment-methods")} />
-        <SettingsRow icon="icon-billing.svg" title="Suscripción y pagos" subtitle="Consulta tu suscripción, pagos y facturación" onClick={() => navigate("/settings/billing")} />
-        <h2 className="settings-heading">Ayuda</h2>
-        <SettingsRow icon="icon-help.svg" title="Centro de ayuda" onClick={() => navigate("/help")} />
-        <h2 className="settings-heading">Cuenta</h2>
-        <SettingsRow
-          icon={accountMode === "donor" ? "icon-shield.svg" : "icon-user.svg"}
-          title="Cambiar tipo de cuenta"
-          subtitle={accountMode === "donor" ? "Ir a cuenta Rescatista" : "Ir a cuenta Donante"}
-          onClick={switchMode}
-        />
-      </div>
-      <BottomNav mode={accountMode} />
-    </div>
-  );
-}
-
 function BasicInfo() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { donorProfile, updateDonorProfile } = usePrototypeStore();
+  const returnBack = useScreenReturnBack("/profile");
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({
     firstName: donorProfile.firstName,
     lastName: donorProfile.lastName,
-    email: donorProfile.email,
     phone: donorProfile.phone,
     city: donorProfile.city,
     avatar: donorProfile.avatar ?? "",
@@ -5030,19 +6224,18 @@ function BasicInfo() {
     reader.readAsDataURL(file);
   };
 
+  const accountEmail = donorProfile.email.trim();
   const requiredFilled =
-    Boolean(form.firstName.trim()) && Boolean(form.lastName.trim()) && Boolean(form.email.trim());
+    Boolean(form.firstName.trim()) && Boolean(form.lastName.trim()) && Boolean(accountEmail);
 
   const save = () => {
     const firstName = form.firstName.trim();
     const lastName = form.lastName.trim();
-    const email = form.email.trim();
-    if (!firstName || !lastName || !email) return;
+    if (!firstName || !lastName || !accountEmail) return;
     const city = form.city.trim() || "Monterrey, NL";
     updateDonorProfile({
       firstName,
       lastName,
-      email,
       phone: form.phone.trim(),
       city,
       avatar: form.avatar || undefined,
@@ -5055,7 +6248,7 @@ function BasicInfo() {
 
   return (
     <div className="plain-screen">
-      <TopBar title="Información básica" back="/settings" />
+      <TopBar title="Información básica" back={returnBack} />
       <div className="content-pad form-stack">
         <input
           ref={fileRef}
@@ -5108,10 +6301,13 @@ function BasicInfo() {
           <input
             type="email"
             required
+            readOnly
+            aria-readonly="true"
             autoComplete="email"
-            value={form.email}
-            onChange={(event) => setForm({ ...form, email: event.target.value })}
+            value={accountEmail}
+            title="El correo es el de tu cuenta y no se puede cambiar aquí"
           />
+          <small className="field-hint">Correo vinculado a tu cuenta registrada.</small>
         </label>
         <label>
           Teléfono
@@ -5142,6 +6338,8 @@ function BasicInfo() {
 }
 
 function PaymentMethods() {
+  const navigate = useNavigate();
+  const returnBack = useScreenReturnBack("/profile");
   const [cards, setCards] = useState(savedCards);
   const [toast, setToast] = useState("");
   const makeDefault = (id: string) => {
@@ -5150,7 +6348,7 @@ function PaymentMethods() {
   };
   return (
     <div className="plain-screen">
-      <TopBar title="Métodos de pago" back="/settings" />
+      <TopBar title="Métodos de pago" back={returnBack} />
       <div className="content-pad list-stack">
         <h2 className="settings-heading first">Tarjetas guardadas</h2>
         {cards.map((card) => (
@@ -5172,7 +6370,15 @@ function PaymentMethods() {
             )}
           </article>
         ))}
-        <button className="dashed-button" onClick={() => setToast("Alta de tarjeta simulada")}>
+        <button
+          className="dashed-button"
+          onClick={() => {
+            usePrototypeStore.getState().startPaymentMethodUpdateCheckout();
+            navigate(
+              `/stripe/checkout/${PAYMENT_METHOD_CHECKOUT_CASE_ID}/${PAYMENT_METHOD_CHECKOUT_NEED_ID}`,
+            );
+          }}
+        >
           <Icon name="icon-plus.svg" size={18} />
           Agregar tarjeta
         </button>
@@ -5206,17 +6412,92 @@ function Toast({ text, onDone }: { text: string; onDone: () => void }) {
   );
 }
 
+function guardianBillingChargeFailed(emptyStates: boolean, subscriptionPaymentFailed: boolean) {
+  if (emptyStates) return false;
+  if (subscriptionPaymentFailed) return true;
+  const latest = guardianPaymentHistory[0];
+  return latest?.status === "fallado";
+}
+
 function Billing() {
   const navigate = useNavigate();
-  const { guardianActive, guardianAmount, setGuardian, emptyStates, cases } = usePrototypeStore();
+  const location = useLocation();
+  const returnBack = useScreenReturnBack("/profile");
+  const {
+    guardianActive,
+    guardianAmount,
+    guardianCoverFees,
+    guardianSubscriptionPaymentFailed,
+    setGuardian,
+    emptyStates,
+    cases,
+  } = usePrototypeStore();
+  const guardianBillingChargeTotal = guardianMonthlyChargeTotal(guardianAmount, guardianCoverFees);
+  const guardianAmountPresets = [100, 200, 350] as const;
   const [dialog, setDialog] = useState<"none" | "amount" | "cancel">("none");
   const [choice, setChoice] = useState(guardianAmount);
+  const [amountDialogCustom, setAmountDialogCustom] = useState(false);
+  const [amountDialogCustomInput, setAmountDialogCustomInput] = useState("");
+  const [amountDialogCoverFees, setAmountDialogCoverFees] = useState(true);
   const [toast, setToast] = useState("");
   const [justChanged, setJustChanged] = useState(false);
   const paymentRows = emptyStates ? [] : guardianPaymentHistory;
+  const showFailedPaymentAlert =
+    guardianActive &&
+    guardianBillingChargeFailed(emptyStates, guardianSubscriptionPaymentFailed);
+
+  const goToUpdatePaymentMethod = () => {
+    usePrototypeStore.getState().startPaymentMethodUpdateCheckout();
+    navigate(`/stripe/checkout/${PAYMENT_METHOD_CHECKOUT_CASE_ID}/${PAYMENT_METHOD_CHECKOUT_NEED_ID}`);
+  };
+
+  const openAmountDialog = () => {
+    setChoice(guardianAmount);
+    if (guardianAmountPresets.includes(guardianAmount as (typeof guardianAmountPresets)[number])) {
+      setAmountDialogCustom(false);
+      setAmountDialogCustomInput("");
+    } else {
+      setAmountDialogCustom(true);
+      setAmountDialogCustomInput(String(guardianAmount));
+    }
+    setAmountDialogCoverFees(guardianCoverFees);
+    setDialog("amount");
+  };
+
+  useEffect(() => {
+    const routeState = location.state as ScreenReturnState & { openAmountDialog?: boolean } | null;
+    const openFromRetry = Boolean(routeState?.openAmountDialog);
+    if (!openFromRetry) return;
+    openAmountDialog();
+    const from = routeState?.from;
+    navigate(location.pathname, { replace: true, state: from ? { from } : null });
+  }, [location.pathname, location.state, navigate]);
+
+  const parsedDialogAmount = amountDialogCustom ? Number.parseFloat(amountDialogCustomInput) : choice;
+  const dialogAmountValid =
+    Number.isFinite(parsedDialogAmount) && parsedDialogAmount >= GUARDIAN_SUPPORT_MIN_MXN;
+  const dialogFeeBase =
+    Number.isFinite(parsedDialogAmount) && parsedDialogAmount > 0 ? parsedDialogAmount : choice;
+  const dialogTransactionFee = estimatePaymentProcessorFee(dialogFeeBase);
+  const dialogDisplaySupport =
+    amountDialogCustom && Number.isFinite(parsedDialogAmount) ? parsedDialogAmount : choice;
+  const dialogDisplayTotal =
+    Math.round(
+      ((Number.isFinite(dialogDisplaySupport) ? dialogDisplaySupport : 0) +
+        (amountDialogCoverFees
+          ? estimatePaymentProcessorFee(
+              Number.isFinite(dialogDisplaySupport) ? Math.max(0, dialogDisplaySupport) : 0,
+            )
+          : 0)) *
+        100,
+    ) / 100;
+  const showBillingCustomMinError =
+    amountDialogCustom &&
+    amountDialogCustomInput.trim() !== "" &&
+    (!Number.isFinite(parsedDialogAmount) || parsedDialogAmount < GUARDIAN_SUPPORT_MIN_MXN);
   return (
     <div className="plain-screen">
-      <TopBar title="Suscripción y pagos" back="/settings" />
+      <TopBar title="Suscripción y pagos" back={returnBack} />
       <div className="content-pad list-stack">
         <h2 className="settings-heading first">Suscripción Guardián</h2>
         {guardianActive ? (
@@ -5227,13 +6508,8 @@ function Billing() {
                 <Icon name="icon-star.svg" size={18} />
               </span>
             </div>
-            <strong className="billing-plan">
-              Pequeño gesto, gran diferencia:
-              <br />
-              gracias por ser parte
-            </strong>
             <p className="billing-amount">
-              ${guardianAmount.toFixed(2)} <small>MXN / mes</small>
+              {formatGuardianMoney(guardianBillingChargeTotal)} <small>MXN / mes</small>
             </p>
             <div className="billing-meta">
               <span>Próximo cobro</span>
@@ -5251,12 +6527,33 @@ function Billing() {
             </button>
           </article>
         )}
+        {showFailedPaymentAlert ? (
+          <article className="billing-payment-alert">
+            <strong>No pudimos procesar tu último cobro</strong>
+            <p>Actualiza tu método de pago para seguir con tu suscripción Guardián.</p>
+          </article>
+        ) : null}
         {justChanged ? (
           <p className="notice-card">✓ Tu nueva cantidad se aplicará a partir del próximo ciclo de facturación.</p>
         ) : null}
         {guardianActive ? (
           <>
-            <button className="primary-button" onClick={() => { setChoice(guardianAmount); setDialog("amount"); }}>Cambiar cantidad</button>
+            {showFailedPaymentAlert ? (
+              <button type="button" className="primary-button" onClick={goToUpdatePaymentMethod}>
+                Cambiar método de pago
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={
+                showFailedPaymentAlert
+                  ? "secondary-button billing-change-amount-button"
+                  : "primary-button"
+              }
+              onClick={openAmountDialog}
+            >
+              Cambiar cantidad
+            </button>
             <button className="secondary-button" onClick={() => setDialog("cancel")}>Cancelar suscripción</button>
           </>
         ) : null}
@@ -5283,40 +6580,121 @@ function Billing() {
       </div>
       {dialog === "amount" ? (
         <div className="modal-backdrop center">
-          <div className="dialog-card">
-            <button className="dialog-close" onClick={() => setDialog("none")} aria-label="Cerrar">×</button>
+          <div className="dialog-card billing-amount-dialog">
+            <button type="button" className="dialog-close" onClick={() => setDialog("none")} aria-label="Cerrar">
+              ×
+            </button>
             <h2>Cambiar cantidad</h2>
             <p>Tu nueva cantidad se aplicará a partir del próximo ciclo de facturación.</p>
-            <div className="plan-list">
-              {subscriptionPlans.map((item) => (
+            <div className="guardian-support-stack billing-amount-dialog-stack">
+              <div className="amount-grid guardian-support-amounts" role="group" aria-label="Monto mensual">
+                {guardianAmountPresets.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={!amountDialogCustom && choice === value ? "selected" : ""}
+                    aria-pressed={!amountDialogCustom && choice === value}
+                    onClick={() => {
+                      setChoice(value);
+                      setAmountDialogCustom(false);
+                      setAmountDialogCustomInput("");
+                    }}
+                  >
+                    <strong>${value}</strong>
+                    <small>MXN / mes</small>
+                  </button>
+                ))}
+              </div>
+
+              {amountDialogCustom ? (
+                <div className="guardian-support-custom">
+                  <label
+                    className={`amount-input guardian-support-custom-input${showBillingCustomMinError ? " is-invalid" : ""}`}
+                  >
+                    <span>$</span>
+                    <input
+                      type="number"
+                      min={GUARDIAN_SUPPORT_MIN_MXN}
+                      step={10}
+                      inputMode="decimal"
+                      autoFocus
+                      value={amountDialogCustomInput}
+                      onChange={(event) => setAmountDialogCustomInput(event.target.value)}
+                      aria-invalid={showBillingCustomMinError}
+                      aria-describedby={showBillingCustomMinError ? "billing-amount-min-error" : undefined}
+                    />
+                    <span>MXN / mes</span>
+                  </label>
+                  {showBillingCustomMinError ? (
+                    <p id="billing-amount-min-error" className="guardian-support-custom-error" role="alert">
+                      No puede ser menor a ${GUARDIAN_SUPPORT_MIN_MXN}.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="guardian-support-alt">
+                  ¿Prefieres otro monto?{" "}
+                  <button
+                    type="button"
+                    className="inline-link guardian-support-inline"
+                    onClick={() => {
+                      setAmountDialogCustomInput(String(choice));
+                      setAmountDialogCustom(true);
+                    }}
+                  >
+                    Elige desde $20
+                  </button>
+                </p>
+              )}
+
+              <div className="guardian-support-fee">
+                <span id="billing-amount-fee-label" className="guardian-support-alt">
+                  Suma {formatGuardianMoney(dialogTransactionFee)} para apoyar al rescatista a cubrir los costos de
+                  transacción.
+                </span>
                 <button
-                  key={item.id}
-                  className={`plan-option ${choice === item.amount ? "selected" : ""}`}
-                  onClick={() => setChoice(item.amount)}
+                  type="button"
+                  className={`switch ${amountDialogCoverFees ? "on" : ""}`}
+                  role="switch"
+                  aria-checked={amountDialogCoverFees}
+                  aria-labelledby="billing-amount-fee-label"
+                  onClick={() => setAmountDialogCoverFees((value) => !value)}
                 >
-                  {item.recommended ? <span className="plan-flag"><Icon name="icon-star.svg" size={12} />Recomendado</span> : null}
-                  <span className="plan-text">
-                    <strong>{item.name}</strong>
-                    <span className="plan-amount">${item.amount} <small>MXN / mes</small></span>
-                  </span>
-                  {item.amount === guardianAmount ? <span className="plan-current">Actual</span> : null}
-                  <span className="plan-radio" />
+                  <i />
                 </button>
-              ))}
+              </div>
             </div>
-            <button
-              className="primary-button"
-              disabled={choice === guardianAmount}
-              onClick={() => {
-                setGuardian(true, choice);
-                setDialog("none");
-                setJustChanged(true);
-                setToast("Cantidad actualizada correctamente");
-              }}
-            >
-              Guardar nueva cantidad
-            </button>
-            <button className="secondary-button" onClick={() => setDialog("none")}>Cancelar</button>
+            <div className="guardian-support-dock billing-amount-dialog-dock">
+              <button
+                type="button"
+                className="primary-button guardian-support-cta"
+                disabled={
+                  !dialogAmountValid ||
+                  (parsedDialogAmount === guardianAmount && amountDialogCoverFees === guardianCoverFees)
+                }
+                aria-label={`Cambiar a ${formatGuardianMoney(dialogDisplayTotal)} al mes`}
+                onClick={() => {
+                  if (!dialogAmountValid) return;
+                  const donationAmount = parsedDialogAmount;
+                  const chargeAmount = dialogDisplayTotal;
+                  usePrototypeStore
+                    .getState()
+                    .startGuardianCheckout(
+                      donationAmount,
+                      chargeAmount,
+                      amountDialogCoverFees,
+                      "billing-amount",
+                    );
+                  setDialog("none");
+                  navigate(
+                    `/stripe/checkout/${GUARDIAN_CHECKOUT_CASE_ID}/guardian-monthly?amount=${chargeAmount}`,
+                  );
+                }}
+              >
+                Cambiar a {formatGuardianMoney(dialogDisplayTotal)}/mes
+              </button>
+              <p className="guardian-support-dock-note">Serás redirigido para completar la transacción.</p>
+            </div>
           </div>
         </div>
       ) : null}
@@ -5434,7 +6812,7 @@ const RESCUER_HOME_QUICK_ACTIONS: {
   { id: "adoption", label: "Adopción", icon: "rtab-home.svg", target: "/rescuer/cases?program=adoption" },
   { id: "support", label: "Apoyo", icon: "tab-donate.svg", target: "/rescuer/cases?program=support" },
   { id: "messages", label: "Mensajes", icon: "icon-messages.svg", target: "/rescuer/messages" },
-  { id: "payments", label: "Pagos", icon: "icon-billing.svg", target: "/settings/billing" },
+  { id: "payments", label: "Pagos", icon: "icon-billing.svg", target: "/profile/billing" },
 ];
 
 type RescuerHomeActivityView = "none" | "payments" | "adoption" | "support" | "messages";
@@ -10595,7 +11973,7 @@ function RescuerProfile() {
   };
   const openMiCuenta = () => {
     if (hasSavedAccountData) {
-      navigate("/rescuer/settings");
+      navigate("/rescuer/account");
       return;
     }
     setVerifyIntroOpen(true);
@@ -10705,7 +12083,9 @@ function RescuerProfile() {
         <button
           type="button"
           className="profile-guardian-card is-active rescuer"
-          onClick={() => navigate(`/rescuer-profile/${publicProfileCaseId}`)}
+          onClick={() =>
+            navigate(`/rescuer-profile/${publicProfileCaseId}`, { state: { from: "/rescuer/profile" } })
+          }
         >
           <span className="profile-guardian-icon" aria-hidden="true">
             <Icon name="icon-user.svg" size={20} />
@@ -11033,7 +12413,7 @@ function RescuerEditPublicProfile() {
       avatar: form.avatar || undefined,
       showPublicToAdopters: form.showPublicToAdopters,
     });
-    navigate(`/rescuer-profile/${previewCaseId}`);
+    navigate(`/rescuer-profile/${previewCaseId}`, { state: { from: "/rescuer/profile/edit" } });
   };
 
   const pickPhoto = (file: File | undefined) => {
@@ -11272,7 +12652,7 @@ function RescuerEditPublicProfile() {
   );
 }
 
-function RescuerSettings() {
+function RescuerAccount() {
   const navigate = useNavigate();
   const { verification, rescuerProfile, updateRescuerProfile } = usePrototypeStore();
   const verified = verification === "verified";
@@ -11315,7 +12695,7 @@ function RescuerSettings() {
 
   return (
     <ScreenShell mode="rescuer">
-      <TopBar title="Configuración" back="/rescuer/profile" />
+      <TopBar title="Mi cuenta" back="/rescuer/profile" />
       <div className="content-pad list-stack">
         <h2 className="settings-heading first">Estado de verificación</h2>
         <article className={`verify-card ${verification}`}>
@@ -11380,6 +12760,7 @@ function RescuerSettings() {
 
 function HelpCenter() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { accountMode, guardianActive, setGuardian, cases, emptyStates } = usePrototypeStore();
   const [topicId, setTopicId] = useState<string | null>(null);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
@@ -11493,7 +12874,7 @@ function HelpCenter() {
 
   return (
     <div className={`plain-screen${accountMode === "rescuer" ? " rescuer-theme" : ""}`}>
-      <TopBar title="Centro de ayuda" back={accountMode === "rescuer" ? "/rescuer/settings" : "/profile"} />
+      <TopBar title="Centro de ayuda" back={profileHomePath(accountMode)} />
       <div className="content-pad help-center">
         <header className="help-hero">
           <h1>¿En qué te ayudamos?</h1>
@@ -11588,11 +12969,11 @@ function HelpCenter() {
             Sobre nosotros
           </button>
           <span aria-hidden="true">·</span>
-          <button type="button" onClick={() => navigate("/terms/donor")}>
+          <button type="button" onClick={() => navigateToLegalDoc(navigate, "/terms/donor", location.pathname)}>
             Términos y Condiciones
           </button>
           <span aria-hidden="true">·</span>
-          <button type="button" onClick={() => navigate("/privacy/donor")}>
+          <button type="button" onClick={() => navigateToLegalDoc(navigate, "/privacy/donor", location.pathname)}>
             Aviso de privacidad
           </button>
         </footer>
@@ -11776,6 +13157,8 @@ function HelpCenter() {
 
 function AboutUs() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { accountMode } = usePrototypeStore();
   const [toast, setToast] = useState("");
 
   const whatWeDo = [
@@ -11813,7 +13196,7 @@ function AboutUs() {
 
   return (
     <div className="plain-screen">
-      <TopBar title="Sobre Nosotros" back="/profile" />
+      <TopBar title="Sobre Nosotros" back={profileHomePath(accountMode)} />
       <div className="content-pad about-section">
         <section className="about-block">
           <h2>Ayudar se siente bien.</h2>
@@ -11874,7 +13257,11 @@ function AboutUs() {
         </section>
 
         <div className="about-actions">
-          <button type="button" className="secondary-button" onClick={() => navigate("/transparency")}>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => navigate("/transparency", { state: { from: location.pathname } })}
+          >
             Transparencia
           </button>
         </div>
@@ -11884,15 +13271,13 @@ function AboutUs() {
             Centro de ayuda
           </button>
           <span aria-hidden="true">·</span>
-          <button type="button" onClick={() => navigate("/terms/donor")}>
+          <button type="button" onClick={() => navigateToLegalDoc(navigate, "/terms/donor", location.pathname)}>
             Términos y Condiciones
           </button>
           <span aria-hidden="true">·</span>
-          <button type="button" onClick={() => navigate("/privacy/donor")}>
+          <button type="button" onClick={() => navigateToLegalDoc(navigate, "/privacy/donor", location.pathname)}>
             Aviso de privacidad
           </button>
-          <span aria-hidden="true">·</span>
-          <a href="mailto:hola@dopmi.mx">Contacto</a>
           <span aria-hidden="true">·</span>
           <span className="about-footer-social">
             Síguenos en{" "}
@@ -11912,11 +13297,13 @@ function AboutUs() {
 }
 
 function Transparency() {
+  const { accountMode } = usePrototypeStore();
+  const returnBack = useScreenReturnBack(profileHomePath(accountMode));
   const [showCriteria, setShowCriteria] = useState(false);
 
   return (
     <div className="plain-screen">
-      <TopBar title="Transparencia" back="/about" />
+      <TopBar title="Transparencia" back={returnBack} />
       <div className="content-pad about-section transparency-section">
         <section className="about-block">
           <h2>Cuando apoyas un caso</h2>
@@ -12019,49 +13406,10 @@ function Transparency() {
   );
 }
 
-function SavedRescuers() {
-  const navigate = useNavigate();
-  const { savedRescuerIds, toggleSavedRescuer } = usePrototypeStore();
-  const saved = rescuers.filter((item) => savedRescuerIds.includes(item.name));
-  return (
-    <div className="plain-screen">
-      <TopBar title="Rescatistas guardados" back="/profile" icon="icon-bookmark.svg" />
-      <div className="content-pad list-stack">
-        {saved.length ? (
-          saved.map((item) => (
-            <article className="card-row" key={item.name}>
-              <button className="card-row-main" onClick={() => navigate(`/rescuer-profile/${encodeURIComponent(item.name)}`)}>
-                <span className="avatar">{item.name.charAt(0)}</span>
-                <span className="nav-row-text">
-                  <strong>
-                    {item.name}
-                    {item.verified ? <AssetIcon name="icon-verified.svg" size={14} alt="Verificado" /> : null}
-                  </strong>
-                  <small>
-                    <Icon name="location.svg" size={12} /> {item.city}
-                  </small>
-                  <small>{item.publishedCases} casos publicados</small>
-                </span>
-              </button>
-              <button className="icon-button" onClick={() => toggleSavedRescuer(item.name)} aria-label={`Quitar a ${item.name}`}>
-                ×
-              </button>
-            </article>
-          ))
-        ) : (
-          <div className="empty-state">
-            <span className="empty-chip yellow">
-              <Icon name="icon-bookmark.svg" size={28} />
-            </span>
-            <h2>Aún no guardas rescatistas</h2>
-            <p>Guarda perfiles desde el detalle de un caso.</p>
-            <button className="primary-button" onClick={() => navigate("/donate")}>Explorar casos</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+type DonateAmountConfirmPayload = {
+  donationAmount: number;
+  chargeAmount: number;
+};
 
 function DonateAmountDialog({
   remaining,
@@ -12070,14 +13418,17 @@ function DonateAmountDialog({
 }: {
   remaining: number;
   onClose: () => void;
-  onConfirm: (amount: number) => void;
+  onConfirm: (payload: DonateAmountConfirmPayload) => void;
 }) {
   const presets = [50, 100] as const;
   const remainingAmount = Math.max(0, Math.round(remaining));
-  const [mode, setMode] = useState<"preset" | "remaining" | "custom">("preset");
-  const [preset, setPreset] = useState<number>(100);
+  const showRemainingPreset = remainingAmount >= DONATE_REMAINING_PRESET_MIN_MXN;
+  const initialSelection = initialDonateAmountDialogState(remainingAmount);
+  const [mode, setMode] = useState<"preset" | "remaining" | "custom">(initialSelection.mode);
+  const [preset, setPreset] = useState<number>(initialSelection.preset);
   const [custom, setCustom] = useState("");
   const [coverFees, setCoverFees] = useState(true);
+  const customAmountInputRef = useRef<HTMLInputElement>(null);
   const parsedCustom = Number(custom);
   const amount =
     mode === "custom"
@@ -12085,8 +13436,45 @@ function DonateAmountDialog({
       : mode === "remaining"
         ? remainingAmount
         : preset;
-  const valid = Number.isFinite(amount) && amount >= 50;
-  const feeLabel = coverFees ? "$0.00" : "$0.00";
+  const showCustomMaxError =
+    mode === "custom" &&
+    custom.trim() !== "" &&
+    Number.isFinite(parsedCustom) &&
+    remainingAmount > 0 &&
+    parsedCustom > remainingAmount;
+  const showCustomMinError =
+    mode === "custom" &&
+    custom.trim() !== "" &&
+    !showCustomMaxError &&
+    (!Number.isFinite(parsedCustom) || parsedCustom < DONATE_AMOUNT_CUSTOM_MIN_MXN);
+  const showCustomError = showCustomMinError || showCustomMaxError;
+  const valid =
+    mode === "custom"
+      ? Number.isFinite(parsedCustom) &&
+        parsedCustom >= DONATE_AMOUNT_CUSTOM_MIN_MXN &&
+        (remainingAmount <= 0 || parsedCustom <= remainingAmount)
+      : Number.isFinite(amount) && amount >= DONATE_AMOUNT_CUSTOM_MIN_MXN;
+  const feeBase = Number.isFinite(amount) && amount > 0 ? amount : preset;
+  const transactionFee = estimatePaymentProcessorFee(feeBase);
+  const chargeAmount =
+    (Number.isFinite(amount) && amount > 0 ? amount : 0) + (coverFees ? transactionFee : 0);
+  const totalCharge = Math.round(chargeAmount * 100) / 100;
+  const ctaTotalLabel = formatGuardianMoney(
+    Number.isFinite(amount) && amount > 0
+      ? totalCharge
+      : Math.round((preset + (coverFees ? estimatePaymentProcessorFee(preset) : 0)) * 100) / 100,
+  );
+
+  useEffect(() => {
+    if (mode !== "custom") return;
+    customAmountInputRef.current?.focus({ preventScroll: true });
+  }, [mode]);
+
+  useEffect(() => {
+    if (showRemainingPreset || mode !== "remaining") return;
+    setMode("preset");
+    setPreset(100);
+  }, [mode, showRemainingPreset]);
 
   return (
     <div className="modal-backdrop center" onClick={onClose}>
@@ -12106,72 +13494,147 @@ function DonateAmountDialog({
           </button>
         </div>
 
-        <h2 id="donate-amount-title">Elige un monto a donar:</h2>
+        <h2 id="donate-amount-title">Elige tu apoyo:</h2>
 
-        <div className="donate-amount-presets" role="group" aria-label="Montos sugeridos">
-          {presets.map((value) => (
+        <div
+          className={`donate-amount-presets${showRemainingPreset ? "" : " donate-amount-presets--two"}`}
+          role="group"
+          aria-label="Montos sugeridos"
+        >
+          {presets.map((value) => {
+            const presetDisabled = donateAmountPresetDisabled(remainingAmount, value);
+            return (
+              <button
+                key={value}
+                type="button"
+                className={`donate-amount-preset${mode === "preset" && preset === value ? " is-selected" : ""}`}
+                disabled={presetDisabled}
+                aria-disabled={presetDisabled}
+                onClick={() => {
+                  setMode("preset");
+                  setPreset(value);
+                  setCustom("");
+                }}
+              >
+                <strong>${value}</strong>
+                <small>MXN</small>
+              </button>
+            );
+          })}
+          {showRemainingPreset ? (
             <button
-              key={value}
               type="button"
-              className={mode === "preset" && preset === value ? "is-selected" : ""}
+              className={`donate-amount-remaining${mode === "remaining" ? " is-selected" : ""}`}
               onClick={() => {
-                setMode("preset");
-                setPreset(value);
+                setMode("remaining");
                 setCustom("");
               }}
             >
-              ${value}
+              <strong>${remainingAmount.toLocaleString("es-MX")}</strong>
+              <small>Total faltante</small>
             </button>
-          ))}
-          <button
-            type="button"
-            className={`donate-amount-remaining${mode === "remaining" ? " is-selected" : ""}`}
-            onClick={() => {
-              setMode("remaining");
-              setCustom("");
-            }}
-          >
-            <strong>${remainingAmount.toLocaleString("es-MX")}</strong>
-            <small>Total faltante</small>
-          </button>
+          ) : null}
         </div>
 
-        <label className="donate-amount-custom">
-          <span>Otra cantidad:</span>
-          <span className={`donate-amount-input${mode === "custom" ? " is-active" : ""}`}>
-            <em aria-hidden="true">$</em>
-            <input
-              type="number"
-              min={50}
-              inputMode="numeric"
-              placeholder=""
-              value={custom}
-              onChange={(event) => {
-                setCustom(event.target.value);
-                setMode("custom");
-              }}
-              onFocus={() => setMode("custom")}
-            />
-          </span>
-          <small>No podrá ser menor a $50</small>
-        </label>
+        <div
+          className={`donate-amount-custom-slot${mode === "custom" ? " is-custom" : ""}${showCustomError ? " has-error" : ""}`}
+        >
+          {mode === "custom" ? (
+            <div className="guardian-support-custom donate-amount-custom-field">
+              <label
+                className={`amount-input guardian-support-custom-input donate-amount-custom-input${showCustomError ? " is-invalid" : ""}`}
+              >
+                <span>$</span>
+                <input
+                  ref={customAmountInputRef}
+                  type="number"
+                  min={DONATE_AMOUNT_CUSTOM_MIN_MXN}
+                  max={remainingAmount > 0 ? remainingAmount : undefined}
+                  step={10}
+                  inputMode="decimal"
+                  aria-invalid={showCustomError}
+                  aria-describedby={
+                    showCustomMaxError
+                      ? "donate-amount-max-error"
+                      : showCustomMinError
+                        ? "donate-amount-min-error"
+                        : undefined
+                  }
+                  value={custom}
+                  onChange={(event) => setCustom(event.target.value)}
+                />
+                <span>MXN</span>
+              </label>
+              {showCustomMaxError ? (
+                <p id="donate-amount-max-error" className="guardian-support-custom-error" role="alert">
+                  ¡Gracias! Pero solo faltan ${remainingAmount.toLocaleString("es-MX")} para completar el caso.
+                </p>
+              ) : showCustomMinError ? (
+                <p id="donate-amount-min-error" className="guardian-support-custom-error" role="alert">
+                  No podrá ser menor a ${DONATE_AMOUNT_CUSTOM_MIN_MXN}.
+                </p>
+              ) : (
+                <p className="guardian-support-alt donate-amount-alt">
+                  <button
+                    type="button"
+                    className="inline-link guardian-support-inline"
+                    onClick={() => {
+                      setMode("preset");
+                      setPreset(100);
+                      setCustom("");
+                    }}
+                  >
+                    Volver a montos sugeridos
+                  </button>
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="guardian-support-alt donate-amount-alt">
+              ¿Prefieres otro monto?{" "}
+              <button
+                type="button"
+                className="inline-link guardian-support-inline"
+                onClick={() => {
+                  setCustom(String(DONATE_AMOUNT_CUSTOM_MIN_MXN));
+                  setMode("custom");
+                }}
+              >
+                Elegir desde $20
+              </button>
+            </p>
+          )}
+        </div>
 
-        <label className="donate-amount-fee">
-          <input
-            type="checkbox"
-            checked={coverFees}
-            onChange={(event) => setCoverFees(event.target.checked)}
-          />
-          <span>Suma {feeLabel} para apoyar al rescatista a cubrir los costos de transacción.</span>
-        </label>
+        <div className="guardian-support-fee donate-amount-fee-row">
+          <span id="donate-amount-fee-label" className="guardian-support-alt">
+            Suma {formatGuardianMoney(transactionFee)} para apoyar al rescatista a cubrir los costos de transacción.
+          </span>
+          <button
+            type="button"
+            className={`switch ${coverFees ? "on" : ""}`}
+            role="switch"
+            aria-checked={coverFees}
+            aria-labelledby="donate-amount-fee-label"
+            onClick={() => setCoverFees((value) => !value)}
+          >
+            <i />
+          </button>
+        </div>
 
         <button
           type="button"
           className="donate-amount-cta"
           disabled={!valid}
-          onClick={() => onConfirm(amount)}
+          aria-label={`Quiero apoyar con ${ctaTotalLabel}`}
+          onClick={() =>
+            onConfirm({
+              donationAmount: amount,
+              chargeAmount: totalCharge,
+            })
+          }
         >
-          Dona ahora
+          Quiero apoyar con {ctaTotalLabel}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
               d="M7 17 17 7M9 7h8v8"
@@ -12182,7 +13645,7 @@ function DonateAmountDialog({
             />
           </svg>
         </button>
-        <p className="donate-amount-note">Serás redirigido para completar la transacción</p>
+        <p className="donate-amount-note">Serás redirigido a Stripe para completar la transacción.</p>
       </div>
     </div>
   );
@@ -12344,7 +13807,7 @@ type RescuerPublicMediaItem = {
 function PublicRescuerProfile() {
   const navigate = useNavigate();
   const { caseId = "" } = useParams();
-  const { cases, rescuerProfile } = usePrototypeStore();
+  const { cases, rescuerProfile, accountMode } = usePrototypeStore();
   const fromCase = cases.find((item) => item.id === caseId);
   const name = fromCase?.rescuer ?? decodeURIComponent(caseId);
   const rescuer = rescuers.find((item) => item.name === name) ?? rescuers[0];
@@ -12587,10 +14050,21 @@ function PublicRescuerProfile() {
     },
   ];
 
+  const isOwnPublicProfile =
+    accountMode === "rescuer" && rescuerCaseBelongsToProfile(rescuer.name, rescuerProfile.name);
+  const publicProfileBack = isOwnPublicProfile
+    ? "/rescuer/profile"
+    : fromCase
+      ? `/case/${fromCase.id}`
+      : accountMode === "donor"
+        ? "/donate"
+        : "/adoption";
+  const returnFromPublicProfile = useScreenReturnBack(publicProfileBack);
+
   return (
     <div className="plain-screen">
       <TopBar
-        back={fromCase ? `/case/${fromCase.id}` : "/saved-rescuers"}
+        back={returnFromPublicProfile}
         actions={
           <button className="icon-button" onClick={() => setToast("Enlace del perfil copiado")} aria-label="Compartir">
             <Icon name="icon-share.svg" size={20} />
@@ -12823,6 +14297,8 @@ export default function App() {
           <Route path="/donate" element={<DonationHome />} />
           <Route path="/case/:caseId" element={<CaseDetail />} />
           <Route path="/donate/:caseId/:needId" element={<DonationFlow />} />
+          <Route path="/stripe/checkout/:caseId/:needId" element={<DonationStripeCheckout />} />
+          <Route path="/payment/processing/:caseId/:needId" element={<DonationPaymentProcessing />} />
           <Route path="/donation-success/:caseId" element={<DonationSuccess />} />
           <Route path="/payment-error/:caseId/:needId" element={<PaymentError />} />
           <Route path="/impact" element={<Impact />} />
@@ -12837,11 +14313,16 @@ export default function App() {
           <Route path="/apoya-causa" element={<SupportCause shellMode="donor" />} />
           <Route path="/rescuer/apoya-causa" element={<SupportCause shellMode="rescuer" />} />
           <Route path="/saved" element={<SavedPets />} />
-          <Route path="/saved-rescuers" element={<SavedRescuers />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/settings/basic-info" element={<BasicInfo />} />
-          <Route path="/settings/payment-methods" element={<PaymentMethods />} />
-          <Route path="/settings/billing" element={<Billing />} />
+          <Route path="/saved-rescuers" element={<Navigate to="/profile" replace />} />
+          <Route path="/settings" element={<Navigate to="/profile" replace />} />
+          <Route path="/profile/basic-info" element={<BasicInfo />} />
+          <Route path="/profile/payment-methods" element={<PaymentMethods />} />
+          <Route path="/profile/payment-method/success" element={<PaymentMethodUpdateSuccess />} />
+          <Route path="/profile/billing" element={<Billing />} />
+          <Route path="/settings/basic-info" element={<Navigate to="/profile/basic-info" replace />} />
+          <Route path="/settings/payment-methods" element={<Navigate to="/profile/payment-methods" replace />} />
+          <Route path="/settings/payment-method/success" element={<Navigate to="/profile/payment-method/success" replace />} />
+          <Route path="/settings/billing" element={<Navigate to="/profile/billing" replace />} />
           <Route path="/help" element={<HelpCenter />} />
           <Route path="/about" element={<AboutUs />} />
           <Route path="/transparency" element={<Transparency />} />
@@ -12857,7 +14338,8 @@ export default function App() {
           <Route path="/rescuer/messages/:threadId" element={<Messages />} />
           <Route path="/rescuer/profile" element={<RescuerProfile />} />
           <Route path="/rescuer/profile/edit" element={<RescuerEditPublicProfile />} />
-          <Route path="/rescuer/settings" element={<RescuerSettings />} />
+          <Route path="/rescuer/settings" element={<Navigate to="/rescuer/account" replace />} />
+          <Route path="/rescuer/account" element={<RescuerAccount />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

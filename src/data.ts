@@ -678,8 +678,19 @@ export type Notification = {
   tone?: NotificationTone;
 };
 
+/** Retirada de producto: no mostrar en bandeja ni contadores del mockup. */
+export function isRetiredPrototypeNotification(item: { id: string; title: string }): boolean {
+  return item.id === "n-g5" || item.title === "Tu reporte de impacto está listo";
+}
+
+export function filterPrototypeNotifications<T extends { id: string; title: string }>(
+  notifications: T[],
+): T[] {
+  return notifications.filter((item) => !isRetiredPrototypeNotification(item));
+}
+
 /** Bandeja demo adoptante/donante: un ejemplo por tipo acordado en producto. */
-export const initialNotifications: Notification[] = [
+export const initialNotifications: Notification[] = filterPrototypeNotifications([
   {
     id: "n-a1",
     kind: "message",
@@ -695,7 +706,7 @@ export const initialNotifications: Notification[] = [
     title: "No pudimos procesar tu apoyo",
     body: "Tu donación a Milo no se completó. Intenta de nuevo o cambia tu método de pago.",
     time: "Hace 20 min",
-    target: "/payment-error/milo/milo-med",
+    target: "/case/milo",
     read: false,
     tone: "negative",
   },
@@ -705,7 +716,7 @@ export const initialNotifications: Notification[] = [
     title: "Problema con tu aportación mensual",
     body: "No pudimos cobrar Guardián. Actualiza tu tarjeta para seguir apoyando.",
     time: "Hace 1 h",
-    target: "/settings/payment-methods",
+    target: "/profile/billing",
     read: false,
     tone: "negative",
   },
@@ -725,7 +736,7 @@ export const initialNotifications: Notification[] = [
     title: "Aportación Guardián recibida",
     body: "Cobramos $200 MXN. Gracias por sostener el fondo comunitario.",
     time: "Ayer",
-    target: "/history",
+    target: "/donate",
     read: false,
     tone: "positive",
   },
@@ -735,7 +746,7 @@ export const initialNotifications: Notification[] = [
     title: "Próximo cargo Guardián",
     body: "El 3 de julio cobraremos $200 MXN a Visa *4242.",
     time: "Ayer",
-    target: "/settings/billing",
+    target: "/profile/billing",
     read: true,
     tone: "pending",
   },
@@ -749,16 +760,6 @@ export const initialNotifications: Notification[] = [
     read: true,
     thumb: "/assets/rocky.png",
     thumbStyle: "photo",
-  },
-  {
-    id: "n-g5",
-    kind: "pet",
-    title: "Tu reporte de impacto está listo",
-    body: "Mira qué casos atendió el fondo Guardián este mes.",
-    time: "Hace 3 días",
-    target: "/impact",
-    read: true,
-    tone: "pending",
   },
   {
     id: "n-a5",
@@ -788,7 +789,7 @@ export const initialNotifications: Notification[] = [
     title: "Cantidad Guardián actualizada",
     body: "Tu nueva aportación de $50 MXN aplicará a partir del próximo ciclo.",
     time: "Hace 1 semana",
-    target: "/settings/billing",
+    target: "/profile/billing",
     read: true,
     tone: "pending",
   },
@@ -798,7 +799,7 @@ export const initialNotifications: Notification[] = [
     title: "Ya eres Guardián",
     body: "Tu aportación mensual es de $200 MXN.",
     time: "Hace 2 semanas",
-    target: "/impact",
+    target: "/donate",
     read: true,
     tone: "positive",
   },
@@ -818,7 +819,7 @@ export const initialNotifications: Notification[] = [
     title: "Suscripción Guardián cancelada",
     body: "Seguirás viendo tu historial; puedes volver a unirte cuando quieras.",
     time: "Hace 3 semanas",
-    target: "/settings/billing",
+    target: "/profile/billing",
     read: true,
     tone: "negative",
   },
@@ -832,7 +833,7 @@ export const initialNotifications: Notification[] = [
     read: true,
     thumbStyle: "brand",
   },
-];
+]);
 
 export type PaymentStatus = "pagado" | "cancelado" | "enproceso" | "fallado";
 
@@ -1233,12 +1234,12 @@ export const helpTopics: HelpTopic[] = [
       {
         type: "faq",
         q: "¿Cómo cambio entre cuenta de Donante y de Rescatista?",
-        a: 'En Configuración, toca "Cambiar tipo de cuenta". Tu información se conserva en ambas.',
+        a: 'En Mi perfil, usa la opción para cambiar a modo Rescatista o Adoptante. Tu información se conserva en ambas.',
       },
       {
         type: "faq",
         q: "¿Cómo edito mis datos?",
-        a: "En Configuración puedes cambiar tu foto, nombre, correo y teléfono.",
+        a: "En Mi perfil, toca el ícono de editar junto a tu nombre para actualizar foto, nombre y teléfono.",
       },
       {
         type: "faq",

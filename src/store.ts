@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import {
   defaultRescuerVerificationRejection,
   initialCases,
+  filterPrototypeNotifications,
   initialNotifications,
   rescuerAccount,
   type RescuerVerificationFeedback,
@@ -15,7 +16,28 @@ import {
 export type AccountMode = "donor" | "rescuer";
 export type DonorIntent = "adopt";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
-export type PaymentOutcome = "success" | "error";
+export type PaymentOutcome = "success" | "error" | "pending";
+
+/** De dónde inició el checkout Guardián (reintento en pantalla de error). */
+export type GuardianCheckoutOrigin = "billing-amount" | "subscribe";
+
+export type PendingDonationCheckout = {
+  type: "case" | "guardian" | "payment-method";
+  caseId: string;
+  needId: string;
+  /** Monto base (donación al caso o cuota mensual Guardián). */
+  donationAmount: number;
+  /** Total cobrado (donación + comisión opcional). */
+  chargeAmount: number;
+  coverFees?: boolean;
+  guardianOrigin?: GuardianCheckoutOrigin;
+  startedAt: number;
+};
+
+export const GUARDIAN_CHECKOUT_CASE_ID = "guardian";
+export const GUARDIAN_CHECKOUT_NEED_ID = "guardian-monthly";
+export const PAYMENT_METHOD_CHECKOUT_CASE_ID = "payment-method";
+export const PAYMENT_METHOD_CHECKOUT_NEED_ID = "update";
 
 export function adoptionChatIntroText(pet: { name: string; sex?: "Macho" | "Hembra" }) {
   const pronoun = pet.sex === "Hembra" ? "ella" : "él";
@@ -80,11 +102,16 @@ type PrototypeState = {
   donorIntent: DonorIntent;
   verification: Verification;
   paymentOutcome: PaymentOutcome;
+  pendingDonationCheckout: PendingDonationCheckout | null;
   guardianAmount: number;
+  guardianCoverFees: boolean;
   guardianActive: boolean;
+  /** Modo prueba: suscrito pero sin casos en el rail de Apoyar. */
+  guardianNoSupportCases: boolean;
+  /** Último cobro recurrente Guardián no se pudo procesar (modo prueba / estado de cuenta). */
+  guardianSubscriptionPaymentFailed: boolean;
   guardianImpactReady: boolean;
   savedPetIds: string[];
-  savedRescuerIds: string[];
   cases: PetCase[];
   donations: Donation[];
   notifications: Notification[];
@@ -101,13 +128,28 @@ type PrototypeState = {
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
   setPaymentOutcome: (outcome: PaymentOutcome) => void;
+  startDonationCheckout: (
+    caseId: string,
+    needId: string,
+    donationAmount: number,
+    chargeAmount: number,
+  ) => void;
+  startGuardianCheckout: (
+    donationAmount: number,
+    chargeAmount: number,
+    coverFees?: boolean,
+    guardianOrigin?: GuardianCheckoutOrigin,
+  ) => void;
+  startPaymentMethodUpdateCheckout: () => void;
+  clearPendingDonationCheckout: () => void;
   setEmptyStates: (value: boolean) => void;
   updateDonorProfile: (values: Partial<DonorProfile>) => void;
   updateRescuerProfile: (values: Partial<RescuerProfile>) => void;
   toggleSavedPet: (id: string) => void;
-  toggleSavedRescuer: (id: string) => void;
   donate: (caseId: string, needId: string, amount: number) => void;
-  setGuardian: (active: boolean, amount?: number) => void;
+  setGuardian: (active: boolean, amount?: number, coverFees?: boolean) => void;
+  setGuardianSubscription: (mode: "none" | "subscribed" | "subscribed-no-cases") => void;
+  setGuardianSubscriptionPaymentFailed: (failed: boolean) => void;
   sendMessage: (author: "donor" | "rescuer", text: string, threadId?: string, image?: string) => void;
   startAdoptionChat: (pet: { id: string; name: string; image: string; sex?: "Macho" | "Hembra" }) => void;
   markNotificationRead: (id: string) => void;
@@ -202,11 +244,14 @@ const initialState = {
   donorIntent: "adopt" as const,
   verification: "verified" as const,
   paymentOutcome: "success" as const,
+  pendingDonationCheckout: null as PendingDonationCheckout | null,
   guardianAmount: 200,
+  guardianCoverFees: true,
   guardianActive: false,
+  guardianNoSupportCases: false,
+  guardianSubscriptionPaymentFailed: false,
   guardianImpactReady: false,
   savedPetIds: [] as string[],
-  savedRescuerIds: [] as string[],
   cases: initialCases,
   donations: [] as Donation[],
   notifications: initialNotifications,
@@ -239,6 +284,45 @@ export const usePrototypeStore = create<PrototypeState>()(
             verification === "rejected" ? { ...defaultRescuerVerificationRejection } : null,
         }),
       setPaymentOutcome: (paymentOutcome) => set({ paymentOutcome }),
+      startDonationCheckout: (caseId, needId, donationAmount, chargeAmount) =>
+        set({
+          paymentOutcome: "pending",
+          pendingDonationCheckout: {
+            type: "case",
+            caseId,
+            needId,
+            donationAmount,
+            chargeAmount,
+            startedAt: Date.now(),
+          },
+        }),
+      startGuardianCheckout: (donationAmount, chargeAmount, coverFees = true, guardianOrigin) =>
+        set({
+          paymentOutcome: "pending",
+          pendingDonationCheckout: {
+            type: "guardian",
+            caseId: GUARDIAN_CHECKOUT_CASE_ID,
+            needId: GUARDIAN_CHECKOUT_NEED_ID,
+            donationAmount,
+            chargeAmount,
+            coverFees,
+            guardianOrigin,
+            startedAt: Date.now(),
+          },
+        }),
+      startPaymentMethodUpdateCheckout: () =>
+        set({
+          paymentOutcome: "pending",
+          pendingDonationCheckout: {
+            type: "payment-method",
+            caseId: PAYMENT_METHOD_CHECKOUT_CASE_ID,
+            needId: PAYMENT_METHOD_CHECKOUT_NEED_ID,
+            donationAmount: 0,
+            chargeAmount: 0,
+            startedAt: Date.now(),
+          },
+        }),
+      clearPendingDonationCheckout: () => set({ pendingDonationCheckout: null }),
       setEmptyStates: (emptyStates) =>
         set((state) => ({
           emptyStates,
@@ -258,12 +342,6 @@ export const usePrototypeStore = create<PrototypeState>()(
           savedPetIds: state.savedPetIds.includes(id)
             ? state.savedPetIds.filter((petId) => petId !== id)
             : [...state.savedPetIds, id],
-        })),
-      toggleSavedRescuer: (id) =>
-        set((state) => ({
-          savedRescuerIds: state.savedRescuerIds.includes(id)
-            ? state.savedRescuerIds.filter((rescuerId) => rescuerId !== id)
-            : [...state.savedRescuerIds, id],
         })),
       donate: (caseId, needId, amount) =>
         set((state) => {
@@ -327,28 +405,69 @@ export const usePrototypeStore = create<PrototypeState>()(
             ],
           };
         }),
-      setGuardian: (guardianActive, guardianAmount) =>
-        set((state) => ({
-          guardianActive,
-          guardianAmount: guardianAmount ?? state.guardianAmount,
-          // Recién activado: feed vacío hasta que haya impacto registrado.
-          guardianImpactReady: guardianActive ? false : false,
-          notifications: guardianActive
-            ? [
-                {
-                  id: `guardian-${Date.now()}`,
-                  kind: "pet" as const,
-                  title: "Ya eres Guardián",
-                  body: `Tu aportación mensual es de $${guardianAmount ?? state.guardianAmount} MXN.`,
-                  time: "Ahora",
-                  target: "/impact",
-                  read: false,
-                  tone: "positive" as const,
-                },
-                ...state.notifications,
-              ]
-            : state.notifications,
-        })),
+      setGuardian: (guardianActive, guardianAmount, guardianCoverFees) =>
+        set((state) => {
+          const amount = guardianAmount ?? state.guardianAmount;
+          const coverFees = guardianCoverFees ?? state.guardianCoverFees;
+          return {
+            guardianActive,
+            guardianNoSupportCases: guardianActive ? state.guardianNoSupportCases : false,
+            guardianAmount: amount,
+            guardianCoverFees: coverFees,
+            // Recién activado: feed vacío hasta que haya impacto registrado.
+            guardianImpactReady: guardianActive ? false : false,
+            notifications: guardianActive
+              ? [
+                  {
+                    id: `guardian-${Date.now()}`,
+                    kind: "pet" as const,
+                    title: "Ya eres Guardián",
+                    body: `Tu aportación mensual es de $${amount} MXN.`,
+                    time: "Ahora",
+                    target: "/donate",
+                    read: false,
+                    tone: "positive" as const,
+                  },
+                  ...state.notifications,
+                ]
+              : state.notifications,
+          };
+        }),
+      setGuardianSubscriptionPaymentFailed: (guardianSubscriptionPaymentFailed) =>
+        set({ guardianSubscriptionPaymentFailed }),
+      setGuardianSubscription: (mode) =>
+        set((state) => {
+          if (mode === "none") {
+            return {
+              guardianActive: false,
+              guardianNoSupportCases: false,
+              guardianSubscriptionPaymentFailed: false,
+              guardianImpactReady: false,
+            };
+          }
+          const becomingActive = !state.guardianActive;
+          return {
+            guardianActive: true,
+            guardianNoSupportCases: mode === "subscribed-no-cases",
+            guardianImpactReady: false,
+            notifications:
+              becomingActive
+                ? [
+                    {
+                      id: `guardian-${Date.now()}`,
+                      kind: "pet" as const,
+                      title: "Ya eres Guardián",
+                      body: `Tu aportación mensual es de $${state.guardianAmount} MXN.`,
+                      time: "Ahora",
+                      target: "/donate",
+                      read: false,
+                      tone: "positive" as const,
+                    },
+                    ...state.notifications,
+                  ]
+                : state.notifications,
+          };
+        }),
       sendMessage: (author, text, threadId, image) =>
         set((state) => {
           const preview = text.trim() || (image ? "Envió una foto" : "");
@@ -551,7 +670,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 30,
+      version: 42,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
         if (version < 19) {
@@ -652,6 +771,127 @@ export const usePrototypeStore = create<PrototypeState>()(
             ...state,
             notifications: initialNotifications,
           };
+        }
+        if (version < 31) {
+          return {
+            ...state,
+            pendingDonationCheckout: state.pendingDonationCheckout ?? null,
+          };
+        }
+        if (version < 32) {
+          type LegacyPending = {
+            caseId: string;
+            needId: string;
+            startedAt: number;
+            amount?: number;
+            donationAmount?: number;
+            chargeAmount?: number;
+          };
+          const pending = state.pendingDonationCheckout as LegacyPending | null;
+          if (!pending) {
+            return { ...state, pendingDonationCheckout: null };
+          }
+          const withType = pending as LegacyPending & { type?: "case" | "guardian" };
+          const checkoutType =
+            withType.type ??
+            (withType.caseId === GUARDIAN_CHECKOUT_CASE_ID ? "guardian" : "case");
+          if (typeof pending.donationAmount === "number" && typeof pending.chargeAmount === "number") {
+            return {
+              ...state,
+              pendingDonationCheckout: {
+                type: checkoutType,
+                caseId: pending.caseId,
+                needId: pending.needId,
+                donationAmount: pending.donationAmount,
+                chargeAmount: pending.chargeAmount,
+                startedAt: pending.startedAt,
+              },
+            };
+          }
+          const legacyAmount = pending.amount ?? pending.donationAmount ?? 0;
+          return {
+            ...state,
+            pendingDonationCheckout: {
+              type: checkoutType,
+              caseId: pending.caseId,
+              needId: pending.needId,
+              donationAmount: legacyAmount,
+              chargeAmount: legacyAmount,
+              startedAt: pending.startedAt,
+            },
+          };
+        }
+        if (version < 33) {
+          const pending = state.pendingDonationCheckout;
+          if (!pending) return { ...state, pendingDonationCheckout: null };
+          return {
+            ...state,
+            pendingDonationCheckout: {
+              ...pending,
+              type:
+                pending.type ??
+                (pending.caseId === GUARDIAN_CHECKOUT_CASE_ID ? "guardian" : "case"),
+            },
+          };
+        }
+        if (version < 34) {
+          return {
+            ...state,
+            guardianCoverFees: state.guardianCoverFees ?? true,
+          };
+        }
+        if (version < 35) {
+          return {
+            ...state,
+            guardianNoSupportCases: state.guardianNoSupportCases ?? false,
+          };
+        }
+        if (version < 36) {
+          return {
+            ...state,
+            guardianSubscriptionPaymentFailed: state.guardianSubscriptionPaymentFailed ?? false,
+          };
+        }
+        if (version < 37) {
+          const notifications = (state.notifications ?? []).map((row) => {
+            if (row.id === "n-g4") return { ...row, target: "/profile/billing" };
+            if (row.id === "n-d2") return { ...row, target: "/case/milo" };
+            if (row.id === "n-g1" || (row.title === "Ya eres Guardián" && row.target === "/impact")) {
+              return { ...row, target: "/donate" };
+            }
+            return row;
+          });
+          return { ...state, notifications };
+        }
+        if (version < 38) {
+          const notifications = (state.notifications ?? []).map((row) => {
+            if (row.id === "n-g3" || row.title === "Aportación Guardián recibida") {
+              return { ...row, target: "/donate" };
+            }
+            return row;
+          });
+          return { ...state, notifications };
+        }
+        if (version < 39) {
+          const notifications = filterPrototypeNotifications(state.notifications ?? []);
+          return { ...state, notifications };
+        }
+        if (version < 40) {
+          const notifications = filterPrototypeNotifications(state.notifications ?? []);
+          return { ...state, notifications };
+        }
+        if (version < 41) {
+          const notifications = (state.notifications ?? []).map((row) => {
+            if (typeof row.target !== "string" || !row.target.startsWith("/settings")) return row;
+            return { ...row, target: row.target.replace(/^\/settings/, "/profile") };
+          });
+          return { ...state, notifications };
+        }
+        if (version < 42) {
+          const { savedRescuerIds: _removed, ...rest } = state as typeof state & {
+            savedRescuerIds?: string[];
+          };
+          return rest;
         }
         return state;
       },
