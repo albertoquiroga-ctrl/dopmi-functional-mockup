@@ -1,0 +1,12 @@
+[
+  {"name": "Historial", "path": "/history", "captureId": "e15a4f4d-bcb5-4a61-bdff-d1c03fd7f70a"},
+  {"name": "Perfil", "path": "/profile", "captureId": "500e4ed4-a1b2-4341-aa67-fcebe0f2c4f9"},
+  {"name": "Tienda Apoya causa", "path": "/apoya-causa", "captureId": "c27ddec4-6a5e-4303-894c-220f143641ee"},
+  {"name": "Guardados", "path": "/saved", "captureId": "36bbbfef-12ce-4729-afcb-4e14511667af"},
+  {"name": "Info básica", "path": "/profile/basic-info", "captureId": "2a6c6282-6218-45c7-87ff-83fbd27f3330"},
+  {"name": "Métodos de pago", "path": "/profile/payment-methods", "captureId": "1c21e378-4970-4cb6-ae46-a6b5e6d26d3f"},
+  {"name": "Pago actualizado", "path": "/profile/payment-method/success", "captureId": "f46e1daa-6c2a-404b-8b2a-a260e2fc1b9f"},
+  {"name": "Facturación", "path": "/profile/billing", "captureId": "ef0fc860-5eb6-49b2-af8e-249495ef15dc"},
+  {"name": "Centro de ayuda", "path": "/help", "captureId": "86332f2a-d51b-4e44-a6a2-1d4c2dba3ca3"},
+  {"name": "Sobre nosotros", "path": "/about", "captureId": "77d0b2a9-15a1-4e69-a625-bd29bc0b4e8a"}
+]

@@ -1,0 +1,7 @@
+[
+  {"name": "Chat Luna", "path": "/rescuer/messages/luna", "captureId": "8b7c2157-3c76-43bb-a909-6490ecebe7b8"},
+  {"name": "Perfil", "path": "/rescuer/profile", "captureId": "c3f60fa5-9b00-41fa-a58e-b15f46fec076"},
+  {"name": "Editar perfil público", "path": "/rescuer/profile/edit", "captureId": "c6142d70-b6a8-4ff4-9980-d64350812bbb"},
+  {"name": "Mi cuenta", "path": "/rescuer/account", "captureId": "e594f622-3e29-493a-936b-a34c6aee2039"},
+  {"name": "Apoya causa", "path": "/rescuer/apoya-causa", "captureId": "2f36f10a-0ae3-4a00-978d-c2fc8a0d2906"}
+]

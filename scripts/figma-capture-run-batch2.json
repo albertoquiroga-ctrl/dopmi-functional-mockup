@@ -1,0 +1,12 @@
+[
+  {"name": "Registro rescatista", "path": "/signup/rescuer", "captureId": "584fa92a-d3a1-47f2-bbd4-c327a76452dc"},
+  {"name": "Recuperar contraseña", "path": "/forgot-password", "captureId": "0c7c995b-dbc8-4325-a813-35414a000c38"},
+  {"name": "Términos donante", "path": "/terms/donor", "captureId": "4d1491fe-2eb9-46e3-a753-06b3283f0ffd"},
+  {"name": "Privacidad donante", "path": "/privacy/donor", "captureId": "95e3deeb-fb8c-4d79-a216-3bcc27bb90b0"},
+  {"name": "Adoptar — inicio", "path": "/adoption", "captureId": "b27bb90d-d43b-4a29-9e45-63aa1ce493eb"},
+  {"name": "Adoptar — detalle Toby", "path": "/adoption/toby", "captureId": "8a575533-8a53-4802-b1a3-708332e04725"},
+  {"name": "Apoyar — inicio", "path": "/donate", "captureId": "eae208c1-4274-4faf-a6c3-201ef140046d"},
+  {"name": "Caso Luna", "path": "/case/luna", "captureId": "6f7a6257-0ce1-435d-b549-ee5bdeeced78"},
+  {"name": "Flujo donación", "path": "/donate/luna/luna-food", "captureId": "dec346de-e7e9-44f3-9adc-c999e2d28845"},
+  {"name": "Checkout Stripe", "path": "/stripe/checkout/luna/luna-food", "captureId": "b9561614-d0b4-4ece-8793-597d7279cfc4"}
+]

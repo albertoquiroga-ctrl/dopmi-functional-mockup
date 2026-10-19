@@ -1,0 +1,4 @@
+[
+  {"name": "Ciclo alimento", "path": "/rescuer/food/luna/luna-food", "captureId": "3aec4d78-29b6-42b4-86c0-570683158a65", "persist": {"accountMode": "rescuer"}},
+  {"name": "Mensajes", "path": "/rescuer/messages", "captureId": "a8e2b6da-bb37-4c5c-9326-ddf44fd40d6a", "persist": {"accountMode": "rescuer"}}
+]

@@ -1,6 +1,8 @@
 # DopMi Functional Prototype V2
 
-Prototipo navegable para pruebas de UX basado en los frames vigentes de Figma y en `DopMi_Fuente_de_la_Verdad.md`.
+Prototipo navegable para pruebas de UX basado en los frames vigentes de Figma y en [`docs/DopMi_Fuente_de_la_Verdad.md`](docs/DopMi_Fuente_de_la_Verdad.md).
+
+Contexto de trabajo para agentes (Cursor, Codex): [`AGENTS.md`](AGENTS.md).
 
 ## Reglas de producto (permanentes)
 
@@ -9,12 +11,18 @@ Prototipo navegable para pruebas de UX basado en los frames vigentes de Figma y 
 
 ## Ejecutar
 
+Requiere Node 24.
+
 ```bash
-export PATH="$PWD/.tools/node/bin:$PATH"
+npm install
 npm run dev
 ```
 
+Si usas el Node portátil de `.tools/` (macOS/Linux), antes ejecuta `export PATH="$PWD/.tools/node/bin:$PATH"`.
+
 La app abre en `http://127.0.0.1:5173`.
+
+**Mapa de wireframes:** [http://127.0.0.1:5173/mapa](http://127.0.0.1:5173/mapa) — catálogo de ~86 pantallas (Acceso, Donante, Rescatista) con enlaces directos y estados simulados. El botón **Modo prueba** (esquina) permite cambiar pagos, verificación y empty states.
 
 ## Alcance
 

@@ -1,0 +1,12 @@
+[
+  {"name": "Transparencia", "path": "/transparency", "captureId": "5c1886f8-5596-4c8a-87d0-a2d8c4e8cfae"},
+  {"name": "Perfil público rescatista", "path": "/rescuer-profile/luna", "captureId": "ae8ab053-7647-4607-98f0-f527d053dcf4"},
+  {"name": "Inicio", "path": "/rescuer", "captureId": "bdd566ae-ebe5-440e-8516-733cb0fca481"},
+  {"name": "Verificación", "path": "/rescuer/verification", "captureId": "64d6fb91-8f3d-447f-bf05-cb9b36a0699e"},
+  {"name": "Casos", "path": "/rescuer/cases", "captureId": "a6ca6c01-afed-4980-80b9-a4a6aed33b79"},
+  {"name": "Detalle caso Luna", "path": "/rescuer/cases/luna", "captureId": "9d7837d0-0ebe-42ee-b0c6-40d686fc30fc"},
+  {"name": "Publicar", "path": "/rescuer/publish", "captureId": "143ddbd7-5307-40ac-bacd-29dfff06cf5c"},
+  {"name": "Evidencia", "path": "/rescuer/evidence/luna/luna-meds", "captureId": "9b5c327b-9f12-4f11-b26f-6d69ddbecdf8"},
+  {"name": "Ciclo alimento", "path": "/rescuer/food/luna/luna-food", "captureId": "bd61f3d1-7497-40bb-a998-82109b1c26ac"},
+  {"name": "Mensajes", "path": "/rescuer/messages", "captureId": "f2e10ce5-bf76-4da7-bb38-69538dd82b3b"}
+]

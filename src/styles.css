@@ -13643,6 +13643,70 @@ div.profile-activity-row {
 .test-shortcuts button, .link-danger { border: 1px solid rgba(255,255,255,.18); border-radius: 99px; background: transparent; color: white; padding: 7px 10px; font-size: 10px; cursor: pointer; }
 .test-panel .link-danger { color: #ff9aa4; }
 
+.wireframe-map {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 120px;
+  color: var(--ink);
+}
+.wireframe-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.wireframe-map-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+.wireframe-map h1 { font-size: 28px; margin: 0 0 8px; }
+.wireframe-map-lead { margin: 0; max-width: 52ch; color: var(--muted); line-height: 1.5; }
+.wireframe-map-start {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--purple);
+  color: var(--on-brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+.wireframe-map-section { margin-bottom: 36px; }
+.wireframe-map-section h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--purple);
+}
+.wireframe-map-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.wireframe-map-link {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(21, 17, 13, 0.12);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px 14px;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+}
+.wireframe-map-link:hover { border-color: var(--purple); }
+.wireframe-map-name { font-weight: 700; color: var(--ink); }
+.wireframe-map-path { font-size: 13px; font-family: ui-monospace, monospace; color: var(--muted); }
+.wireframe-map-hint { font-size: 12px; color: var(--amount); }
+
 @media (max-width: 860px) {
   .prototype-stage { display: block; padding: 0; min-height: 100dvh; background: var(--surface); }
   .phone-frame { width: 100%; max-width: none; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }

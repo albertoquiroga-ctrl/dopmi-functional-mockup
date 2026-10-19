@@ -23,6 +23,7 @@ import {
   useParams,
   type NavigateFunction,
 } from "react-router-dom";
+import WireframeMap from "./WireframeMap";
 import {
   adoptionPets,
   donationLog,
@@ -1114,7 +1115,11 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
             </span>
           </label>
         ) : (
-          <button type="button" className="auth-text-link auth-text-link--end" onClick={() => navigate("/forgot-password")}>
+          <button
+            type="button"
+            className="auth-text-link auth-text-link--end"
+            onClick={() => navigate("/forgot-password", { state: { mode } })}
+          >
             Olvidé mi contraseña
           </button>
         )}
@@ -1138,6 +1143,77 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
             {signup ? "Inicia sesión" : "Crear cuenta"}
           </button>
         </p>
+      </form>
+    </div>
+  );
+}
+
+function ForgotPassword() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const mode: AccountMode = (location.state as { mode?: AccountMode } | null)?.mode ?? "donor";
+  const loginPath = `/login/${mode}`;
+  const sentFromQuery = new URLSearchParams(location.search).get("sent") === "1";
+  const [sent, setSent] = useState(sentFromQuery);
+  const bgImage = mode === "rescuer" ? `${A}publish-sample-pet.jpg` : `${A}welcome-pets.png`;
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setSent(true);
+  };
+
+  return (
+    <div className={`auth-gate auth-gate--form auth-gate--sheet${mode === "rescuer" ? " is-rescuer" : ""}`}>
+      <div className="auth-gate-media" aria-hidden="true">
+        <img src={bgImage} alt="" />
+        <div className="auth-gate-scrim auth-gate-scrim--form" />
+      </div>
+
+      <div className="auth-gate-top">
+        <button type="button" className="auth-gate-back" onClick={() => navigate(loginPath)} aria-label="Atrás">
+          <Icon name="back.svg" size={24} />
+        </button>
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+      </div>
+
+      <form className="auth-gate-form" onSubmit={sent ? (event) => event.preventDefault() : submit}>
+        {sent ? (
+          <>
+            <div className="auth-gate-form-head">
+              <h1>Revisa tu correo</h1>
+              <p>
+                Si hay una cuenta con ese correo, recibirás un enlace para restablecer tu contraseña. Revisa también
+                spam.
+              </p>
+            </div>
+            <button type="button" className="auth-gate-primary" onClick={() => navigate(loginPath)}>
+              Volver a iniciar sesión
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="auth-gate-form-head">
+              <h1>¿Olvidaste tu contraseña?</h1>
+              <p>Ingresa tu correo y te enviaremos un enlace para crear una nueva contraseña.</p>
+            </div>
+
+            <label className="auth-field">
+              Correo electrónico
+              <input required type="email" placeholder="tu@email.com" autoComplete="email" />
+            </label>
+
+            <button type="submit" className="auth-gate-primary">
+              Enviar enlace
+            </button>
+
+            <p className="auth-gate-switch">
+              ¿Ya la recuerdas?{" "}
+              <button type="button" className="auth-text-link" onClick={() => navigate(loginPath)}>
+                Inicia sesión
+              </button>
+            </p>
+          </>
+        )}
       </form>
     </div>
   );
@@ -3975,10 +4051,13 @@ function DonationFlow() {
   const { cases, paymentOutcome, donate } = usePrototypeStore();
   const item = cases.find((entry) => entry.id === caseId) ?? cases[0];
   const need = item.needs.find((entry) => entry.id === needId) ?? item.needs[0];
+  const queryStep = new URLSearchParams(location.search).get("step");
   const seedAmount = typeof location.state === "object" && location.state && "amount" in location.state
     ? Number((location.state as { amount?: number }).amount)
     : NaN;
-  const [step, setStep] = useState<"amount" | "review">(Number.isFinite(seedAmount) && seedAmount > 0 ? "review" : "amount");
+  const initialReview =
+    queryStep === "review" || (Number.isFinite(seedAmount) && seedAmount > 0);
+  const [step, setStep] = useState<"amount" | "review">(initialReview ? "review" : "amount");
   const [amount, setAmount] = useState(Number.isFinite(seedAmount) && seedAmount > 0 ? seedAmount : 150);
   const remaining = Math.max(1, need.requested - need.funded);
   const confirm = () => {
@@ -7911,7 +7990,8 @@ function VerificationIntro({ onContinue, onLater }: { onContinue: () => void; on
 function VerificationFlow() {
   const navigate = useNavigate();
   const { verification, setVerification } = usePrototypeStore();
-  const [intro, setIntro] = useState(verification === "unverified");
+  const forceForm = new URLSearchParams(useLocation().search).get("step") === "form";
+  const [intro, setIntro] = useState(verification === "unverified" && !forceForm);
   const [form, setForm] = useState({ name: "", phone: "", location: "", experience: "" });
   const [socials, setSocials] = useState({ instagram: false, facebook: false });
   const [docs, setDocs] = useState({ id: false, address: false, bank: false });
@@ -14273,7 +14353,24 @@ function PublicRescuerProfile() {
 export default function App() {
   return (
     <div className="prototype-stage">
-      <div className="phone-frame">
+      <Routes>
+        <Route path="/mapa" element={<WireframeMap />} />
+        <Route
+          path="*"
+          element={
+            <div className="phone-frame">
+              <PrototypeRoutes />
+            </div>
+          }
+        />
+      </Routes>
+      <TestPanel />
+    </div>
+  );
+}
+
+function PrototypeRoutes() {
+  return (
         <Routes>
           <Route path="/" element={<Splash />} />
           <Route path="/choose-account" element={<ChooseAccount />} />
@@ -14287,7 +14384,7 @@ export default function App() {
           <Route path="/login/rescuer" element={<Login mode="rescuer" />} />
           <Route path="/signup/donor" element={<Login mode="donor" signup />} />
           <Route path="/signup/rescuer" element={<Login mode="rescuer" signup />} />
-          <Route path="/forgot-password" element={<StaticSimulated title="Recuperar contraseña" back="/login/donor"><div className="form-stack"><h1>Recupera el acceso</h1><p>Te enviaremos un enlace simulado a tu correo.</p><label>Correo<input type="email" placeholder="nombre@correo.com" /></label><button className="primary-button">Enviar enlace</button></div></StaticSimulated>} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/terms/:mode" element={<LegalDoc kind="terms" />} />
           <Route path="/privacy/:mode" element={<LegalDoc kind="privacy" />} />
           <Route path="/terms" element={<Navigate to="/terms/donor" replace />} />
@@ -14342,8 +14439,5 @@ export default function App() {
           <Route path="/rescuer/account" element={<RescuerAccount />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-      </div>
-      <TestPanel />
-    </div>
   );
 }

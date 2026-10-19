@@ -1,0 +1,10 @@
+[
+  {"name": "Recuperar contraseña — enlace enviado", "path": "/forgot-password?sent=1", "captureId": "16d1964e-a3c1-49ed-82ed-dbbc2bc9ba7e"},
+  {"name": "Recuperar contraseña", "path": "/forgot-password", "captureId": "04d10ca0-d873-4687-8284-18d7f69b343a"},
+  {"name": "Términos rescatista", "path": "/terms/rescuer", "captureId": "cc346da4-7a86-4c3b-bf6d-98b9ce89850e"},
+  {"name": "Privacidad rescatista", "path": "/privacy/rescuer", "captureId": "733d4549-2e35-41af-aab4-a6104dc04ea4"},
+  {"name": "Donación — revisar monto", "path": "/donate/luna/luna-food?step=review", "captureId": "a098f16f-7c7c-4592-9adf-528fd435d3d1"},
+  {"name": "Checkout Guardián", "path": "/stripe/checkout/guardian/guardian-monthly?amount=207.2", "captureId": "31d49da3-ccc4-4f1f-9fd3-e3d327c62f96"},
+  {"name": "Caso Rocky", "path": "/case/rocky", "captureId": "f5224775-8e59-4970-8e0b-426d6c12497d"},
+  {"name": "Adoptar — detalle Rocky", "path": "/adoption/rocky", "captureId": "c698a68f-78b1-4f43-9481-ae629084e2b7"}
+]

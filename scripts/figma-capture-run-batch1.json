@@ -1,0 +1,12 @@
+[
+  {"name": "Splash", "path": "/", "captureId": "fedc1e57-6044-46c1-9c4e-e34237706e1f"},
+  {"name": "Elegir cuenta", "path": "/choose-account", "captureId": "36f23b0c-ee4c-4f5b-be8f-8cd369d5a9ad"},
+  {"name": "Elegir intención", "path": "/choose-intent", "captureId": "55852f36-79bc-43d7-bdcc-e16bb55e4e51"},
+  {"name": "Onboarding donante", "path": "/onboarding/donor", "captureId": "52c5f315-bf17-4e16-a4fa-343e55aac7f0"},
+  {"name": "Onboarding rescatista", "path": "/onboarding/rescuer", "captureId": "d2f8b840-5879-4ffa-8c83-f8115af82d7f"},
+  {"name": "Bienvenida donante", "path": "/welcome/donor", "captureId": "c1f21e70-c53a-4ef3-bfde-1c3e71c148ff"},
+  {"name": "Bienvenida rescatista", "path": "/welcome/rescuer", "captureId": "97a1ee5b-c90f-4101-99dc-c0f1a5f71166"},
+  {"name": "Iniciar sesión donante", "path": "/login/donor", "captureId": "3e318ac7-73a6-4425-81ae-b9de35ddfa91"},
+  {"name": "Iniciar sesión rescatista", "path": "/login/rescuer", "captureId": "bc1055c7-f9b7-4030-99eb-bce6eff5131d"},
+  {"name": "Registro donante", "path": "/signup/donor", "captureId": "fc73453d-11f2-42d5-933d-861aded07746"}
+]

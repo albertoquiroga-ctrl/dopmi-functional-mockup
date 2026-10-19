@@ -1,0 +1,12 @@
+[
+  {"name": "Procesando pago", "path": "/payment/processing/luna/luna-food", "captureId": "c09b4686-e84b-484f-a253-973acc6e6094"},
+  {"name": "Donación exitosa", "path": "/donation-success/luna", "captureId": "28f6ec6c-22cb-48ad-bc72-c9b025a3570b"},
+  {"name": "Error de pago", "path": "/payment-error/luna/luna-food", "captureId": "315e3130-f409-42d1-842f-1a9b762f959d"},
+  {"name": "Impacto", "path": "/impact", "captureId": "7ecab829-e03f-483a-962d-dc9c6a928452"},
+  {"name": "Impacto — apoyo", "path": "/impact/support", "captureId": "0a9dd2d7-1235-4ab9-8481-02783aa93607"},
+  {"name": "Impacto — éxito", "path": "/impact/success", "captureId": "d87c338c-4f82-4e51-90e1-f1d8b5c1d6e3"},
+  {"name": "Impacto — error", "path": "/impact/error", "captureId": "c8afc0d1-d763-4cba-a028-9cdd27ae1860"},
+  {"name": "Mis match", "path": "/messages", "captureId": "1e023ace-feed-4a9c-9231-717157872994"},
+  {"name": "Chat Luna", "path": "/messages/luna", "captureId": "e38dbce8-6e7e-4b55-992f-1d0a93a00bbe"},
+  {"name": "Notificaciones", "path": "/notifications", "captureId": "478fce01-b5aa-4868-8cc6-caa26812065d"}
+]
