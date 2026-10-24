@@ -670,7 +670,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 42,
+      version: 43,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
         if (version < 19) {
@@ -892,6 +892,19 @@ export const usePrototypeStore = create<PrototypeState>()(
             savedRescuerIds?: string[];
           };
           return rest;
+        }
+        if (version < 43) {
+          const thumbById: Record<string, { thumb: string; thumbStyle: "photo" }> = {
+            "n-a1": { thumb: "/assets/rocky.png", thumbStyle: "photo" },
+            "n-d1": { thumb: "/assets/luna-card.png", thumbStyle: "photo" },
+            "n-d2": { thumb: "/assets/milo-card.png", thumbStyle: "photo" },
+          };
+          const notifications = (state.notifications ?? []).map((row) => {
+            const patch = thumbById[row.id];
+            if (!patch || row.thumbStyle === "brand" || row.thumb) return row;
+            return { ...row, ...patch };
+          });
+          return { ...state, notifications };
         }
         return state;
       },

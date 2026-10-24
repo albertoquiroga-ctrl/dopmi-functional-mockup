@@ -699,6 +699,8 @@ export const initialNotifications: Notification[] = filterPrototypeNotifications
     time: "Hace 5 min",
     target: "/messages/rocky",
     read: false,
+    thumb: "/assets/rocky.png",
+    thumbStyle: "photo",
   },
   {
     id: "n-d2",
@@ -709,6 +711,8 @@ export const initialNotifications: Notification[] = filterPrototypeNotifications
     target: "/case/milo",
     read: false,
     tone: "negative",
+    thumb: "/assets/milo-card.png",
+    thumbStyle: "photo",
   },
   {
     id: "n-g4",
@@ -729,6 +733,8 @@ export const initialNotifications: Notification[] = filterPrototypeNotifications
     target: "/case/luna",
     read: false,
     tone: "positive",
+    thumb: "/assets/luna-card.png",
+    thumbStyle: "photo",
   },
   {
     id: "n-g3",

@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type Ref,
   type RefObject,
@@ -24,6 +25,13 @@ import {
   type NavigateFunction,
 } from "react-router-dom";
 import WireframeMap from "./WireframeMap";
+import {
+  applyPalettePreview,
+  donorPawLogoFile,
+  verifiedBadgeIconFile,
+  subscribePalettePreview,
+  type PalettePreviewId,
+} from "./palettePreview";
 import {
   adoptionPets,
   donationLog,
@@ -219,12 +227,20 @@ function TopBar({
   );
 }
 
-const donorTabs = [
-  { path: "/adoption", label: "Adoptar", icon: "rtab-home.svg", size: 22 },
-  { path: "/messages", label: "Mis match", icon: "icon-heart.svg", size: 20 },
-  { path: "/donate", label: "Apoyar", icon: "tab-donate.svg", size: 22 },
-  { path: "/apoya-causa", label: "Tienda", icon: "icon-shop.svg", size: 20 },
-  { path: "/profile", label: "Perfil", icon: "tab-profile.svg", size: 20 },
+type DonorNavTab = {
+  path: string;
+  label: string;
+  icon: string;
+  activeIcon: string;
+  size: number;
+};
+
+const donorTabs: DonorNavTab[] = [
+  { path: "/adoption", label: "Adoptar", icon: "rtab-home.svg", activeIcon: "nav-home-solid.svg", size: 22 },
+  { path: "/messages", label: "Mis match", icon: "icon-heart.svg", activeIcon: "nav-heart-solid.svg", size: 20 },
+  { path: "/donate", label: "Apoyar", icon: "tab-donate.svg", activeIcon: "nav-donate-solid.svg", size: 22 },
+  { path: "/apoya-causa", label: "Tienda", icon: "icon-shop.svg", activeIcon: "nav-shop-solid.svg", size: 20 },
+  { path: "/profile", label: "Perfil", icon: "tab-profile.svg", activeIcon: "nav-profile-solid.svg", size: 20 },
 ];
 
 const rescuerTabs = [
@@ -246,7 +262,7 @@ function BottomNav({ mode }: { mode: AccountMode }) {
   if (mode === "donor") {
     return (
       <nav className="bottom-nav donor-pill" aria-label="Navegación principal">
-        {items.map((item) => {
+        {donorTabs.map((item) => {
           const active = isNavActive(item.path);
           return (
             <button
@@ -258,7 +274,7 @@ function BottomNav({ mode }: { mode: AccountMode }) {
               aria-current={active ? "page" : undefined}
             >
               <span className="nav-icon-wrap" aria-hidden="true">
-                <Icon name={item.icon} size={item.size} />
+                <Icon name={active ? item.activeIcon : item.icon} size={item.size} />
               </span>
             </button>
           );
@@ -340,6 +356,24 @@ function ScreenShell({
   );
 }
 
+function DonorPawLogo({ alt = "DopMi" }: { alt?: string }) {
+  const src = useSyncExternalStore(
+    subscribePalettePreview,
+    () => `${A}${donorPawLogoFile()}`,
+    () => `${A}logo-paw.svg`,
+  );
+  return <img className="discover-logo" src={src} alt={alt} width={40} height={40} />;
+}
+
+function VerifiedBadgeIcon({ size = 20, alt = "Verificado" }: { size?: number; alt?: string }) {
+  const src = useSyncExternalStore(
+    subscribePalettePreview,
+    () => `${A}${verifiedBadgeIconFile()}`,
+    () => `${A}icon-verified.svg`,
+  );
+  return <img className="asset-icon" src={src} alt={alt} width={size} height={size} />;
+}
+
 /** Logo + notificaciones: misma posición en Adoptar, Apoyar, Mis match, etc. */
 function DonorChromeTop({
   leading,
@@ -356,9 +390,7 @@ function DonorChromeTop({
   return (
     <header className="discover-top">
       <div className="discover-brand">
-        {brand ?? (
-          <img className="discover-logo" src={`${A}logo-paw.svg`} alt="DopMi" width={40} height={40} />
-        )}
+        {brand ?? <DonorPawLogo />}
         {leading}
       </div>
       <div className="discover-actions">
@@ -400,6 +432,12 @@ function TestPanel() {
     resetPrototype,
   } = usePrototypeStore();
   const [open, setOpen] = useState(false);
+  const [palettePreview, setPalettePreviewState] = useState(() => {
+    const p = document.documentElement.dataset.palette;
+    if (p === "warm-trust") return "warm-trust";
+    if (p === "warm") return "warm";
+    return "classic";
+  });
 
   return (
     <aside className={`test-panel ${open ? "open" : ""}`}>
@@ -497,6 +535,21 @@ function TestPanel() {
             >
               <i />
             </button>
+          </label>
+          <label>
+            Paleta (preview)
+            <select
+              value={palettePreview}
+              onChange={(event) => {
+                const id = event.target.value as PalettePreviewId;
+                applyPalettePreview(id);
+                setPalettePreviewState(id);
+              }}
+            >
+              <option value="classic">Clásica (amarillo / morado)</option>
+              <option value="warm-trust">Cálida — café primario (recomendada)</option>
+              <option value="warm">Cálida — naranja en CTA (comparar)</option>
+            </select>
           </label>
           <div className="test-shortcuts">
             <button onClick={() => navigate("/donate")}>Donación</button>
@@ -1439,19 +1492,25 @@ type SupportCauseKibble = {
   age: PetAgeBand;
   size: PetSize;
   marcaKey: PetPersonality;
+  image: string;
 };
 
+const SUPPORT_CAUSE_KIBBLE_IMAGES = {
+  bowl: `${A}support-cause-kibble-dog.jpg`,
+  pile: `${A}support-cause-kibble-pile.jpg`,
+} as const;
+
 const SUPPORT_CAUSE_KIBBLE: SupportCauseKibble[] = [
-  { id: "k1", species: "Perro", brand: "PawNutri", kilos: "3 kg", age: "Adulto", size: "Mediano", marcaKey: "obediente" },
-  { id: "k2", species: "Perro", brand: "Royal Bark", kilos: "15 kg", age: "Adulto", size: "Grande", marcaKey: "protector" },
-  { id: "k3", species: "Perro", brand: "LittlePaws", kilos: "1.5 kg", age: "Cachorro", size: "Chico", marcaKey: "jugueton" },
-  { id: "k4", species: "Perro", brand: "NutriCan", kilos: "8 kg", age: "Senior", size: "Mediano", marcaKey: "tranquilo" },
-  { id: "k5", species: "Perro", brand: "HappyTail", kilos: "2 kg", age: "Cachorro", size: "Chico", marcaKey: "alegre" },
-  { id: "k6", species: "Gato", brand: "MeowChef", kilos: "1 kg", age: "Adulto", size: "Chico", marcaKey: "cariñoso" },
-  { id: "k7", species: "Gato", brand: "WhiskerPro", kilos: "3 kg", age: "Cachorro", size: "Chico", marcaKey: "timido" },
-  { id: "k8", species: "Gato", brand: "FelineGold", kilos: "5 kg", age: "Senior", size: "Mediano", marcaKey: "dormilon" },
-  { id: "k9", species: "Gato", brand: "MiauPlus", kilos: "2.5 kg", age: "Adulto", size: "Mediano", marcaKey: "nervioso" },
-  { id: "k10", species: "Perro", brand: "CampoVital", kilos: "20 kg", age: "Adulto", size: "Grande", marcaKey: "obediente" },
+  { id: "k1", species: "Perro", brand: "PawNutri", kilos: "3 kg", age: "Adulto", size: "Mediano", marcaKey: "obediente", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
+  { id: "k2", species: "Perro", brand: "Royal Bark", kilos: "15 kg", age: "Adulto", size: "Grande", marcaKey: "protector", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
+  { id: "k3", species: "Perro", brand: "LittlePaws", kilos: "1.5 kg", age: "Cachorro", size: "Chico", marcaKey: "jugueton", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
+  { id: "k4", species: "Perro", brand: "NutriCan", kilos: "8 kg", age: "Senior", size: "Mediano", marcaKey: "tranquilo", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
+  { id: "k5", species: "Perro", brand: "HappyTail", kilos: "2 kg", age: "Cachorro", size: "Chico", marcaKey: "alegre", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
+  { id: "k6", species: "Gato", brand: "MeowChef", kilos: "1 kg", age: "Adulto", size: "Chico", marcaKey: "cariñoso", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
+  { id: "k7", species: "Gato", brand: "WhiskerPro", kilos: "3 kg", age: "Cachorro", size: "Chico", marcaKey: "timido", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
+  { id: "k8", species: "Gato", brand: "FelineGold", kilos: "5 kg", age: "Senior", size: "Mediano", marcaKey: "dormilon", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
+  { id: "k9", species: "Gato", brand: "MiauPlus", kilos: "2.5 kg", age: "Adulto", size: "Mediano", marcaKey: "nervioso", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
+  { id: "k10", species: "Perro", brand: "CampoVital", kilos: "20 kg", age: "Adulto", size: "Grande", marcaKey: "obediente", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
 ];
 
 function supportCauseKilosValue(kilos: string) {
@@ -1695,28 +1754,33 @@ function AdoptionFilterModal({
 
           <section className="adoption-filter-personality">
             <h3>{isSupportCause ? "Marca" : "Personalidad"}</h3>
-            <div
-              className="publish-chip-grid adoption-filter-personality-grid"
+            <ul
+              className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
               role="group"
               aria-label={isSupportCause ? "Marca" : "Personalidad"}
             >
               {PERSONALITY_FILTERS.map((trait) => {
                 const active = draftPersonality.includes(trait.id);
                 return (
-                  <button
-                    type="button"
-                    key={trait.id}
-                    className={`publish-chip publish-chip--personality tone-${trait.tone}${active ? " selected" : ""}`}
-                    aria-pressed={active}
-                    onClick={() =>
-                      setDraftPersonality((current) => (current.includes(trait.id) ? [] : [trait.id]))
-                    }
-                  >
-                    {trait.label}
-                  </button>
+                  <li key={trait.id}>
+                    <button
+                      type="button"
+                      className={`publish-chip publish-chip--personality tone-${trait.tone}${active ? " selected" : ""}`}
+                      aria-pressed={active}
+                      onClick={() =>
+                        setDraftPersonality((current) =>
+                          current.includes(trait.id)
+                            ? current.filter((id) => id !== trait.id)
+                            : [...current, trait.id],
+                        )
+                      }
+                    >
+                      {trait.label}
+                    </button>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </section>
         </div>
         <div className="adoption-filter-actions">
@@ -2126,7 +2190,10 @@ function AdoptionHome() {
                       aria-label="Me gusta"
                       disabled={!!exiting}
                     >
-                      <Icon name="icon-heart.svg" size={24} />
+                      <Icon
+                        name={dragX > 12 || exiting === "right" ? "nav-heart-solid.svg" : "icon-heart.svg"}
+                        size={24}
+                      />
                     </button>
                   </div>
                 </article>
@@ -2337,16 +2404,16 @@ function AdoptionDetail() {
             </section>
 
             <PetDetailPersonalityBlock personality={pet.personality} />
-          </div>
 
-          <PetDetailCharacteristics
-            health={{
-              vaccinated: pet.health.vaccinated,
-              sterilized: pet.health.sterilized,
-              specialCare: Boolean(pet.health.specialCare),
-            }}
-            convivencia={pet.convivencia}
-          />
+            <PetDetailCharacteristics
+              health={{
+                vaccinated: pet.health.vaccinated,
+                sterilized: pet.health.sterilized,
+                specialCare: Boolean(pet.health.specialCare),
+              }}
+              convivencia={pet.convivencia}
+            />
+          </div>
 
           <button type="button" className="pet-detail-report pet-detail-report--footer" onClick={() => setReport(true)}>
             <Icon name="icon-alert-circle.svg" size={16} />
@@ -2828,6 +2895,7 @@ function DonateCaseRing({
             strokeWidth={stroke}
           />
           <circle
+            className="donate-case-ring-arc"
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -3269,7 +3337,7 @@ function DonateGuardianImpactFeed({ cases }: { cases: PetCase[] }) {
       <article className="donate-guardian-feed-card donate-guardian-feed-card--quote">
         <p>Un pequeño gesto. Una gran diferencia.</p>
         <span className="donate-guardian-feed-quote-mark" aria-hidden="true">
-          <img src={`${A}logo-paw.svg`} alt="" width={28} height={28} />
+          <DonorPawLogo alt="" />
         </span>
       </article>
       <article className="donate-guardian-feed-card donate-guardian-feed-card--media">
@@ -5337,7 +5405,7 @@ function DonorMessages() {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="M7.9 20c1.91.98 4.1 1.24 6.19.75 2.09-.5 3.93-1.72 5.19-3.45 1.26-1.73 1.86-3.86 1.7-6-.17-2.14-1.09-4.15-2.61-5.66C16.85 4.11 14.84 3.19 12.7 3.02c-2.14-.17-4.27.44-6 1.7C5 6 3.75 7.82 3.25 9.91c-.5 2.09-.23 4.28.75 6.19L2 22l5.9-2z"
-            stroke="#15110d"
+            stroke="currentColor"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -5443,9 +5511,14 @@ function DonorMessages() {
             <section className="match-chats">
               <h2>Chats</h2>
               {!hasChats ? (
-                <p className="match-chats-empty">
-                  Aún no tienes chats. Ponte en contacto con el rescatista de tu compañero favorito.
-                </p>
+                <div className="match-chats-empty-card">
+                  <p className="match-chats-empty">
+                    Aún no tienes chats. Ponte en contacto con el rescatista de tu compañero favorito.
+                  </p>
+                  <button type="button" className="primary-button match-chats-empty-cta" onClick={() => navigate("/adoption")}>
+                    Descubrir
+                  </button>
+                </div>
               ) : (
                 <div className="thread-list donor-thread-list match-thread-list">
                   {threads.map((thread) => (
@@ -5548,7 +5621,7 @@ function NotificationVisual({
   if (item.thumbStyle === "brand") {
     return (
       <span className="notif-thumb notif-thumb--brand" aria-hidden="true">
-        <img className="discover-logo" src={`${A}logo-paw.svg`} alt="" width={40} height={40} />
+        <DonorPawLogo alt="" />
       </span>
     );
   }
@@ -5956,13 +6029,13 @@ function SupportCause({ shellMode = "donor" }: { shellMode?: AccountMode }) {
     });
   }, [species, ageFilter, sizeFilter, personalityFilter, kiloSort]);
 
+  const sortAscending = kiloSort === "asc";
+  const sortHint = sortAscending ? "Menor a mayor kg" : "Mayor a menor kg";
+
   return (
     <ScreenShell mode={shellMode}>
       <div className="donate-home donor-chrome support-cause-screen">
         <DonorChromeTop />
-        <header className="match-top">
-          <h1>Tienda Dopmi</h1>
-        </header>
         <AdoptionFilterModal
           variant="supportCause"
           open={filterOpen}
@@ -5979,54 +6052,81 @@ function SupportCause({ shellMode = "donor" }: { shellMode?: AccountMode }) {
           onClear={clearFilters}
         />
         <div className="support-cause-body">
-        <div className="publish-needs-note support-cause-intro-note">
-          Busca las croquetas de tu preferencia y compra con nuestro enlace de referidos que te dará un{" "}
-          <strong>5% de descuento.</strong> Al seleccionar una, te llevará a la tienda correspondiente, donde podrás
-          pagar. ¡Gracias por tu apoyo!
-        </div>
-        <DiscoverSpeciesFilterBar
-          species={species}
-          onSpeciesChange={setSpecies}
-          filtersActive={filtersActive}
-          onOpenFilters={openFilters}
-        />
-        <button
-          type="button"
-          className="match-sort-btn"
-          onClick={() => setKiloSort((value) => (value === "asc" ? "desc" : "asc"))}
-          aria-label={
-            kiloSort === "asc" ? "Ordenar de mayor a menor kg" : "Ordenar de menor a mayor kg"
-          }
-        >
-          Ordenar
-          <small>{kiloSort === "asc" ? "Menor a mayor kg" : "Mayor a menor kg"}</small>
-        </button>
-        {visibleKibble.length ? (
-          <div className="support-cause-grid">
-            {visibleKibble.map((item) => (
-              <article key={item.id} className="support-cause-card">
-                <div className="support-cause-card-media" aria-hidden="true">
-                  <span>🥣</span>
-                </div>
-                <div className="support-cause-card-body">
-                  <strong className="support-cause-card-brand">{item.brand}</strong>
-                  <div className="support-cause-card-meta">
-                    <span className="support-cause-card-value">{item.kilos}</span>
-                    <span
-                      className={`support-cause-age-tag support-cause-age-tag--${item.age.toLowerCase()}`}
-                    >
-                      {item.age}
-                    </span>
-                  </div>
-                </div>
-              </article>
-            ))}
+          <header className="support-cause-shop-header">
+            <h1>Tienda Dopmi</h1>
+          </header>
+
+          <div className="support-cause-species-row">
+            <div className="discover-species support-cause-species" role="tablist" aria-label="Tipo de mascota">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={species === "Perro"}
+              className={`discover-species-tab${species === "Perro" ? " is-active" : ""}`}
+              onClick={() => setSpecies("Perro")}
+            >
+              Perros
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={species === "Gato"}
+              className={`discover-species-tab${species === "Gato" ? " is-active" : ""}`}
+              onClick={() => setSpecies("Gato")}
+            >
+              Gatos
+            </button>
+            </div>
+            <div className="support-cause-toolbar-actions">
+              <button
+                type="button"
+                className="support-cause-tool-btn"
+                onClick={() => setKiloSort((value) => (value === "asc" ? "desc" : "asc"))}
+                aria-label={sortAscending ? "Ordenar de mayor a menor kg" : "Ordenar de menor a mayor kg"}
+                title={sortHint}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className={`support-cause-tool-btn${filtersActive ? " is-active" : ""}`}
+                onClick={openFilters}
+                aria-label="Filtros"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+                  <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
           </div>
-        ) : (
-          <p className="support-cause-empty">
-            No hay croquetas con estos filtros. Prueba otra combinación o limpia los filtros.
-          </p>
-        )}
+
+          {visibleKibble.length ? (
+            <div className="support-cause-grid">
+              {visibleKibble.map((item) => (
+                <article key={item.id} className="support-cause-card">
+                  <div className="support-cause-card-media" aria-hidden="true">
+                    <img src={item.image} alt="" loading="lazy" />
+                  </div>
+                  <div className="support-cause-card-footer">
+                    <div className="support-cause-card-copy">
+                      <strong className="support-cause-card-brand">{item.brand}</strong>
+                      <span className="support-cause-card-detail">{item.age}</span>
+                    </div>
+                    <span className="support-cause-card-value">{item.kilos}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="support-cause-empty">
+              No hay croquetas con estos filtros. Prueba otra combinación o limpia los filtros.
+            </p>
+          )}
         </div>
       </div>
     </ScreenShell>
@@ -6046,8 +6146,8 @@ function CroquetasConCausaCard({ onClick }: { onClick: () => void }) {
           <Icon name="icon-chevron-right.svg" size={16} />
         </span>
       </span>
-      <span className="profile-feature-banner-media" aria-hidden="true">
-        <img src={`${A}croquetas-banner-pet.svg`} alt="" width={120} height={138} />
+      <span className="profile-feature-banner-media profile-feature-banner-media--photo" aria-hidden="true">
+        <img src={`${A}welcome-pets.png`} alt="" width={120} height={138} loading="lazy" />
       </span>
     </button>
   );
@@ -9590,9 +9690,9 @@ function PublishAdoptionDetailPreview({
             </section>
 
             <PetDetailPersonalityBlock personality={personality} />
-          </div>
 
-          <PetDetailCharacteristics health={health} convivencia={convivencia} />
+            <PetDetailCharacteristics health={health} convivencia={convivencia} />
+          </div>
 
           <PetDetailReportPreviewStatic />
         </div>
@@ -14159,7 +14259,7 @@ function PublicRescuerProfile() {
             </div>
             <h1 className="rescuer-public-name">
               {rescuer.name}
-              {rescuer.verified ? <AssetIcon name="icon-verified.svg" size={20} alt="Verificado" /> : null}
+              {rescuer.verified ? <VerifiedBadgeIcon size={20} alt="Verificado" /> : null}
             </h1>
             <p className="rescuer-public-location">
               <Icon name="location.svg" size={14} />

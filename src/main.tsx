@@ -2,7 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { initPalettePreview } from "./palettePreview";
 import "./styles.css";
+
+initPalettePreview();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
