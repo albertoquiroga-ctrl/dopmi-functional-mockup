@@ -26,6 +26,13 @@ export function verifiedBadgeIconFile(): string {
   return document.documentElement.dataset.palette === "warm-trust" ? "icon-verified-celeste.svg" : "icon-verified.svg";
 }
 
+export function rescuerHomeVerificationIconFile(verified: boolean): string {
+  if (document.documentElement.dataset.palette === "warm-trust") {
+    return verified ? "icon-verified-celeste.svg" : "verify-shield-naranja-filled.svg";
+  }
+  return verified ? "icon-verified-purple.svg" : "verify-shield-purple.svg";
+}
+
 export function readPalettePreview(): PalettePreviewId {
   const stored = localStorage.getItem(PALETTE_STORAGE_KEY);
   if (stored === "warm" || stored === "warm-trust") return stored;

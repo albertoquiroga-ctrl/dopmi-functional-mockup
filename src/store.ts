@@ -18,6 +18,9 @@ export type DonorIntent = "adopt";
 export type Verification = "unverified" | "review" | "verified" | "rejected";
 export type PaymentOutcome = "success" | "error" | "pending";
 
+/** Alta / verificación de cuenta Stripe Connect (modo prueba). */
+export type StripeConnectStatus = "none" | "review" | "correction" | "approved";
+
 /** De dónde inició el checkout Guardián (reintento en pantalla de error). */
 export type GuardianCheckoutOrigin = "billing-amount" | "subscribe";
 
@@ -124,9 +127,11 @@ type PrototypeState = {
   donorProfile: DonorProfile;
   rescuerProfile: RescuerProfile;
   rescuerVerificationFeedback: RescuerVerificationFeedback | null;
+  stripeConnectStatus: StripeConnectStatus;
   setAccountMode: (mode: AccountMode) => void;
   setDonorIntent: (intent: DonorIntent) => void;
   setVerification: (status: Verification) => void;
+  setStripeConnectStatus: (status: StripeConnectStatus) => void;
   setPaymentOutcome: (outcome: PaymentOutcome) => void;
   startDonationCheckout: (
     caseId: string,
@@ -154,6 +159,7 @@ type PrototypeState = {
   startAdoptionChat: (pet: { id: string; name: string; image: string; sex?: "Macho" | "Hembra" }) => void;
   markNotificationRead: (id: string) => void;
   updateDraft: (values: Record<string, string | boolean | string[]>) => void;
+  resetPublishDraft: (publishMode: "adoption" | "donation", location: string) => void;
   publishDraft: (status?: PetCase["caseStatus"]) => void;
   updateCaseStatus: (
     id: string,
@@ -269,6 +275,7 @@ const initialState = {
   },
   rescuerProfile: { ...rescuerAccount },
   rescuerVerificationFeedback: null as RescuerVerificationFeedback | null,
+  stripeConnectStatus: "none" as StripeConnectStatus,
 };
 
 export const usePrototypeStore = create<PrototypeState>()(
@@ -282,6 +289,18 @@ export const usePrototypeStore = create<PrototypeState>()(
           verification,
           rescuerVerificationFeedback:
             verification === "rejected" ? { ...defaultRescuerVerificationRejection } : null,
+        }),
+      setStripeConnectStatus: (stripeConnectStatus) =>
+        set((state) => {
+          const promotePendingStripeCases =
+            stripeConnectStatus === "approved"
+              ? state.cases.map((item) =>
+                  !item.adoption && item.caseStatus === "pending_stripe"
+                    ? { ...item, caseStatus: "review" as const }
+                    : item,
+                )
+              : state.cases;
+          return { stripeConnectStatus, cases: promotePendingStripeCases };
         }),
       setPaymentOutcome: (paymentOutcome) => set({ paymentOutcome }),
       startDonationCheckout: (caseId, needId, donationAmount, chargeAmount) =>
@@ -523,6 +542,31 @@ export const usePrototypeStore = create<PrototypeState>()(
           notifications: state.notifications.map((item) => (item.id === id ? { ...item, read: true } : item)),
         })),
       updateDraft: (values) => set((state) => ({ draft: { ...state.draft, ...values } })),
+      resetPublishDraft: (publishMode, location) =>
+        set(() => ({
+          draft: {
+            publishMode,
+            location,
+            photos: [],
+            petName: "",
+            species: "",
+            sex: "",
+            petSize: "",
+            age: "",
+            story: "",
+            mainPetPhoto: "",
+            needItemsJson: "[]",
+            convivenciaJson: "[]",
+            personalityJson: "[]",
+            thankYouVideo: "",
+            vaccinated: false,
+            sterilized: false,
+            specialCare: false,
+            socialDogs: false,
+            socialCats: false,
+            socialChildren: false,
+          },
+        })),
       publishDraft: (status = "review") =>
         set((state) => {
           const name = String(state.draft.petName || "Nuevo caso");
@@ -670,9 +714,15 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: "dopmi-functional-prototype-v2",
-      version: 43,
+      version: 45,
       migrate: (persisted, version) => {
         const state = persisted as PrototypeState;
+        if (version < 44) {
+          return {
+            ...state,
+            stripeConnectStatus: state.stripeConnectStatus ?? "none",
+          };
+        }
         if (version < 19) {
           return {
             ...state,

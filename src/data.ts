@@ -22,7 +22,7 @@ export type PetCase = {
   rescuer: string;
   distance: string;
   adoption: boolean;
-  caseStatus: "draft" | "review" | "active" | "rejected" | "closed";
+  caseStatus: "draft" | "pending_stripe" | "review" | "active" | "rejected" | "closed";
   /** Motivo de cierre (casos de adopción archivados). */
   closeReason?: "adoptada" | "otro";
   /** Solo si closeReason es adoptada. */
@@ -925,7 +925,7 @@ export type RescuerReceivedPaymentRow = {
   status: StripePaymentStatus;
 };
 
-/** Historial de pagos recibidos por la rescatista (casos de apoyo). */
+/** Historial de pagos recibidos por quien publica el caso de apoyo. */
 export const rescuerReceivedPaymentHistory: RescuerReceivedPaymentRow[] = [
   {
     id: "recv-1",
@@ -1000,8 +1000,9 @@ export const rescuerReceivedPaymentHistory: RescuerReceivedPaymentRow[] = [
 ];
 
 export const savedCards = [
-  { id: "visa", brand: "Visa", digits: "4242", default: true },
-  { id: "mastercard", brand: "Mastercard", digits: "1881", default: false },
+  { id: "visa-default", brand: "Visa", digits: "4242", expiry: "12/2034", default: true },
+  { id: "visa-alt", brand: "Visa", digits: "3178", expiry: "12/2034", default: false },
+  { id: "visa-backup", brand: "Visa", digits: "4242", expiry: "12/2034", default: false },
 ];
 
 export type FaqItem = { q: string; a: string };
@@ -1028,34 +1029,35 @@ export const helpTopics: HelpTopic[] = [
     label: "Cómo funcionan los apoyos",
     audience: "both",
     blocks: [
-      { type: "heading", text: "Cuando apoyas a un caso" },
+      { type: "heading", text: "Apoyo puntual a un caso" },
       {
         type: "paragraph",
-        text: "Tu apoyo va a una necesidad concreta de esa mascota: comida, medicina o una consulta.",
+        text: "Desde la pestaña Apoyar eliges un caso y aportas a una necesidad concreta: alimento, medicina o veterinario. No existe suscripción a una mascota en específico.",
       },
       {
         type: "bullets",
         items: [
-          "La mayor parte llega a la rescatista.",
+          "El pago lo procesa Stripe de forma segura.",
           "Una parte cubre la comisión del procesador de pago.",
-          "Una parte pequeña (alrededor del 2%) mantiene funcionando DopMi.",
+          "Una parte pequeña (alrededor del 2 %) mantiene funcionando DopMi.",
+          "Lo demás queda para quien publicó el caso cuando cumple el proceso de evidencia.",
         ],
       },
       {
         type: "paragraph",
-        text: "La rescatista recibe los fondos cuando sube la evidencia de en qué los usó, y tú puedes ver esa evidencia en el caso.",
+        text: "En el detalle del caso puedes ver el avance de la meta y la actividad.",
       },
-      { type: "heading", text: "Cuando eres Guardián" },
+      { type: "heading", text: "Suscripción Guardián" },
       {
         type: "paragraph",
-        text: "Tu aportación mensual es un pago por el servicio de DopMi, que mantiene listo un fondo para responder a las urgencias de rescate. No va a una mascota en específico.",
+        text: "Guardián es un pago mensual a DopMi que se asigna en automático principalmente a casos con urgencias de rescate. DopMi asigna ese fondo según reglas internas; tú no eliges la mascota.",
       },
       {
         type: "bullets",
         items: [
-          "Urgencias primero. El fondo siempre atiende primero las urgencias: operaciones, hospitalizaciones o traslados.",
-          "Con criterio, no a dedo. Cuando hay excedente, se usa para completar casos que llevan tiempo esperando, siguiendo criterios claros.",
-          "Te contamos a dónde fue. Cada mes recibes un reporte con los casos que atendió el fondo, con nombre, foto y desenlace.",
+          "Urgencias primero: operaciones, hospitalizaciones o traslados.",
+          "Si hay excedente, se completa casos que llevan tiempo en espera, con criterios claros.",
+          "Con la suscripción activa, en Apoyar ves tu impacto y los reportes del fondo.",
         ],
       },
     ],
@@ -1067,33 +1069,38 @@ export const helpTopics: HelpTopic[] = [
     blocks: [
       {
         type: "faq",
-        q: "¿Cómo sé que mi apoyo llega a un caso real?",
-        a: "Cada caso que pide apoyo lo publica una rescatista verificada por DopMi, y revisamos cada mascota antes de que aparezca en la app.",
+        q: "¿Cómo apoyo a un caso?",
+        a: "Entra a la pestaña Apoyar, abre el caso que te interese. Confirma el monto y completa el pago con Stripe.",
       },
       {
         type: "faq",
-        q: "¿Dónde veo en qué se usó mi apoyo?",
-        a: "En el caso que apoyaste, en la sección de actividad. También te avisamos con una notificación cuando la rescatista sube evidencia nueva.",
+        q: "¿Cómo sé que mi apoyo es a un caso real?",
+        a: "Todos los casos de apoyo económico pasan por un proceso de revisión por el equipo de DopMi previo a su publicación en la app.",
+      },
+      {
+        type: "faq",
+        q: "¿Dónde veo en qué se usó mi aportación?",
+        a: "En el detalle del caso, en la sección de actividad y evidencia. También recibes una notificación cuando hay una actualización nueva.",
       },
       {
         type: "faq",
         q: "¿Qué pasa cuando una necesidad se completa?",
-        a: "Deja de recibir apoyos. La rescatista usa los fondos, sube la evidencia y tú recibes la actualización.",
+        a: "Deja de recibir apoyos. La publicación desaparece del feed y los rescatistas reciben su último pago de la publicación.",
       },
       {
         type: "faq",
         q: "Mi pago no se completó, ¿se me cobró?",
-        a: 'Si viste la pantalla "Pago no completado", tu apoyo no se registró. Si ves un cargo en tu estado de cuenta, escríbenos con la fecha y el monto.',
+        a: 'Si viste la pantalla "Pago no completado", el apoyo no se registró en DopMi. Si aparece un cargo en tu banco, contáctanos desde Centro de ayuda con la fecha y el monto.',
       },
       {
         type: "faq",
         q: "¿Puedo apoyar a la misma mascota cada mes?",
-        a: "Puedes hacer donaciones puntuales cuando quieras desde el caso. Si prefieres un aporte mensual sin elegir mascota, Guardián asigna tu aporte según urgencia y las reglas del fondo.",
+        a: "Sí, con aportaciones puntuales cuando quieras desde el caso. Si buscas un aporte mensual sin elegir mascota, revisa la suscripción Guardián en tu perfil.",
       },
       {
         type: "faq",
         q: "¿Dónde veo todos mis apoyos?",
-        a: "En tu perfil, en Historial de apoyos.",
+        a: 'En Perfil, sección "Pagos y suscripciones", toca "Mi historial de pagos". Ahí ves donaciones puntuales y cargos de Guardián.',
       },
     ],
   },
@@ -1105,22 +1112,27 @@ export const helpTopics: HelpTopic[] = [
       {
         type: "faq",
         q: "¿Qué es ser Guardián?",
-        a: "Es una suscripción mensual que mantiene listo un fondo para responder a las urgencias de rescate. Cada mes te contamos qué se logró.",
+        a: "Es una suscripción mensual que se destina a los casos publicados que necesitan apoyo económico. Cada mes puedes ver en Apoyar qué caso recibió tu aportación.",
       },
       {
         type: "faq",
         q: "¿Puedo elegir a qué mascota va mi aportación?",
-        a: "No. El fondo se asigna con criterios claros, siempre urgencias primero. Lo que sí hacemos es mostrarte después, con detalle, a dónde fue.",
+        a: "No. El fondo se asigna con criterios de DopMi (urgencias primero). Después te mostramos el detalle de los casos atendidos.",
+      },
+      {
+        type: "faq",
+        q: "¿Cómo me suscribo?",
+        a: 'Desde Apoyar, en la sección de Guardián, o desde Perfil > "Suscripción Guardián". Eliges el monto mensual y pagas con Stripe.',
       },
       {
         type: "faq",
         q: "¿Cómo cambio mi monto o cancelo?",
-        a: "Desde Tu impacto, en la sección de suscripción. Puedes cambiar el monto o cancelar cuando quieras, sin penalizaciones.",
+        a: 'En Perfil, abre "Suscripción Guardián". Ahí puedes cambiar la cantidad (aplica en el siguiente ciclo) o cancelar la suscripción.',
       },
       {
         type: "faq",
-        q: "¿Cuándo recibo mi reporte?",
-        a: "Cada mes, en la sección Tu impacto. Te avisamos con una notificación.",
+        q: "Falló un cobro de Guardián, ¿qué hago?",
+        a: 'En "Suscripción Guardián" verás el aviso. Actualiza tu método de pago en "Métodos de pago" para reactivar el cobro.',
       },
     ],
   },
@@ -1131,18 +1143,23 @@ export const helpTopics: HelpTopic[] = [
     blocks: [
       {
         type: "faq",
-        q: "¿Cómo contacto a una rescatista?",
-        a: "En la mascota que te interesa, toca el botón de mensajes. Hablas directo con quien la cuida.",
+        q: "¿Cómo contacto a quien publicó la mascota?",
+        a: "En la ficha de la mascota, en Adoptar, usa el acceso a mensajes para iniciar la conversación.",
       },
       {
         type: "faq",
-        q: "La rescatista no me ha respondido, ¿qué hago?",
-        a: "Muchas rescatistas cuidan a varios animales a la vez y a veces tardan en contestar. Mientras tanto, guarda tus mascotas favoritas y escríbele también a otras rescatistas.",
+        q: "¿Cómo guardo mascotas que me interesan?",
+        a: 'Toca el ícono de corazón para guardarlas en "Mis match". Desde ahí retomas la conversación cuando quieras.',
+      },
+      {
+        type: "faq",
+        q: "El / la rescatista no me ha respondido, ¿qué hago?",
+        a: "Los rescatistas suelen atender varios animales y pueden tardar en contestar. Guarda favoritos en Mis match y considera escribir a otras publicaciones.",
       },
       {
         type: "faq",
         q: "¿DopMi participa en la adopción?",
-        a: "DopMi te conecta con la rescatista y verifica que la mascota sea real. El cierre de adopción (entrevista, visita y entrega) lo acuerdas directamente con ella.",
+        a: "DopMi te conecta con quien publicó la mascota y revisa que la publicación sea confiable. La entrevista, visita y entrega las acuerdas directamente con esa persona.",
       },
     ],
   },
@@ -1153,23 +1170,28 @@ export const helpTopics: HelpTopic[] = [
     blocks: [
       {
         type: "faq",
-        q: "¿Por qué necesito verificarme?",
-        a: "Para pedir apoyo económico. La verificación les da confianza a quienes apoyan tus casos.",
+        q: "¿Qué es la verificación de DopMi?",
+        a: "Es el proceso para confirmar tu identidad y experiencia como rescatista. Aparece en tu perfil como tarjeta de verificación y da confianza a adoptantes y personas que apoyan.",
       },
       {
         type: "faq",
-        q: "¿Necesito verificarme si solo quiero dar en adopción?",
-        a: "No. Puedes publicar mascotas en adopción sin la verificación completa. Solo la necesitas cuando pides apoyo económico.",
+        q: "¿En qué se diferencia de Stripe?",
+        a: "DopMi verifica quién eres dentro de la app. Stripe es la plataforma donde registras la cuenta bancaria para recibir depósitos de tus apoyos publicados. Son dos pasos distintos.",
       },
       {
         type: "faq",
-        q: "Mi verificación tiene observaciones, ¿cómo la corrijo?",
-        a: 'Desde tu inicio, toca "Corregir información". Te marcamos exactamente qué hay que ajustar para que puedas reenviarla.',
+        q: "¿Cómo completo la verificación de DopMi?",
+        a: 'En tu perfil de rescatista, toca la tarjeta "Verifica tu cuenta". Completa tu perfil público si falta información y envía el formulario de verificación.',
       },
       {
         type: "faq",
-        q: "¿Cuánto tarda la revisión?",
-        a: "La revisamos lo antes posible y te avisamos con una notificación en cuanto esté lista.",
+        q: "¿Necesito verificarme para publicar casos?",
+        a: "Puedes publicar casos de adopción o de solicitud de apoyo sin completar la verificación de DopMi.",
+      },
+      {
+        type: "faq",
+        q: "Mi verificación tiene observaciones, ¿qué hago?",
+        a: 'Si el estado es "Revisa tu información", entra a editar tu perfil o al formulario de verificación. Corrige lo indicado y vuelve a enviar.',
       },
     ],
   },
@@ -1181,54 +1203,69 @@ export const helpTopics: HelpTopic[] = [
       {
         type: "faq",
         q: "¿Cómo publico un caso?",
-        a: 'Desde tu inicio o desde Mis casos, toca "Publicar caso". Puedes guardar un borrador y seguir después.',
+        a: 'Desde tu inicio de rescatista o en Mis casos, toca "Publicar caso". Puedes guardar borrador y continuar después.',
       },
       {
         type: "faq",
         q: "¿Tengo que pedir apoyo económico?",
-        a: "No. Las necesidades son opcionales. Puedes publicar una mascota solo para adopción.",
+        a: "No. Las necesidades son opcionales. Puedes publicar solo para adopción.",
+      },
+      {
+        type: "faq",
+        q: "¿Qué necesito para recibir apoyos?",
+        a: "Debes tener aprobada tu cuenta Stripe en Mi cuenta. Si publicas con apoyo y aún no terminas Stripe, el caso puede quedar en estado Pendiente Stripe hasta completar el registro.",
       },
       {
         type: "faq",
         q: "¿Qué cuenta como necesidad urgente?",
-        a: "Una necesidad médica o veterinaria que no puede esperar. Para marcarla como urgente, sube un video donde aparezcan tú y la mascota. DopMi lo revisa.",
+        a: "Una necesidad médica o veterinaria que no puede esperar. Para marcarla como urgente, sube un video donde aparezcan tú y la mascota; DopMi lo revisa.",
       },
       {
         type: "faq",
         q: "¿Por qué no se aprobó mi caso?",
-        a: 'En Mis casos verás las observaciones. Toca "Corregir", ajusta lo necesario y vuelve a enviarlo.',
+        a: 'En Mis casos verás el estado y las observaciones. Usa "Corregir", ajusta lo necesario y vuelve a enviar a revisión.',
+      },
+      {
+        type: "faq",
+        q: "¿Qué evidencia debo subir?",
+        a: "Según la necesidad: ticket o recibo, fotos o video con la mascota y una nota breve de en qué se usó el apoyo.",
       },
       {
         type: "faq",
         q: "¿Cómo cierro un caso?",
-        a: 'Edita el caso y toca "Cerrar caso". Si la mascota fue adoptada, puedes compartir un video de despedida con quienes la apoyaron.',
+        a: "Ve a Casos y elige el icono X para cerrar el caso. Elige el motivo y confirma el cierre.",
       },
     ],
   },
   {
     id: "fondos",
-    label: "Fondos y evidencia",
+    label: "Recepción de pagos",
     audience: "rescuer",
     blocks: [
       {
         type: "faq",
-        q: "¿Cuándo recibo los fondos?",
-        a: "Cuando la necesidad se completa y subes la evidencia de su uso. Después de revisarla, liberamos los fondos.",
+        q: "¿Qué es Stripe y cómo se usa en DopMi?",
+        a: "Stripe es la plataforma de pagos con la que DopMi procesa cobros y depósitos de forma segura. Las personas que apoyan pagan con Stripe; tú, como rescatista, vinculas tu cuenta en Stripe para recibir en tu banco los apoyos de tus publicaciones.",
       },
       {
         type: "faq",
-        q: "¿Qué evidencia tengo que subir?",
-        a: "Depende de la necesidad: ticket o recibo, fotos o video con la mascota y una breve descripción.",
+        q: "¿Cuándo recibo el dinero en mi cuenta?",
+        a: "Cada que una persona realice el pago de un apoyo a tus publicaciones o que sea asignado por parte de la suscripción Guardián, entonces recibirás el monto aportado. No es necesario completar el monto del caso para recibir el pago.",
       },
       {
         type: "faq",
-        q: "Ya pagué algo con mi dinero, ¿puedo pedir reembolso?",
-        a: "Sí. En la necesidad, solicita el reembolso y sube el ticket y la evidencia. Te avisamos cuando esté aprobado.",
+        q: "¿Cómo registro mi cuenta en Stripe?",
+        a: 'En Perfil > Pagos y transacciones, abre "Mi cuenta". Ahí inicias el registro en Stripe para poder recibir aportaciones de tus publicaciones con apoyo.',
       },
       {
         type: "faq",
-        q: "¿Cómo vuelvo a pedir comida?",
-        a: 'Al terminar la evidencia de comida, toca "Solicitar comida". Puedes elegir otro producto o pedir la misma comida.',
+        q: "Stripe está en revisión o pide un dato, ¿puedo usar DopMi?",
+        a: "Sí, puedes seguir navegando. Hasta que Stripe apruebe tu cuenta no se liberan depósitos de apoyos nuevos; el estado lo ves en Mi cuenta.",
+      },
+      {
+        type: "faq",
+        q: "¿Dónde veo los pagos que me hicieron?",
+        a: 'En Perfil > "Mi historial" ves los apoyos recibidos por caso. Para detalle bancario y estados de transferencia, usa el enlace a tu cuenta Stripe en esa misma pantalla.',
       },
     ],
   },
@@ -1239,18 +1276,28 @@ export const helpTopics: HelpTopic[] = [
     blocks: [
       {
         type: "faq",
-        q: "¿Cómo cambio entre cuenta de Donante y de Rescatista?",
-        a: 'En Mi perfil, usa la opción para cambiar a modo Rescatista o Adoptante. Tu información se conserva en ambas.',
+        q: "¿Cómo cambio entre cuenta de Adoptante y de Rescatista?",
+        a: 'En Perfil, usa "Publica un caso de adopción" para pasar a rescatista o "Consulta casos en adopción" para volver a adoptante. Es el mismo usuario; cambia la navegación (Adoptar, Mis match, Apoyar, Tienda, Perfil).',
       },
       {
         type: "faq",
         q: "¿Cómo edito mis datos?",
-        a: "En Mi perfil, toca el ícono de editar junto a tu nombre para actualizar foto, nombre y teléfono.",
+        a: "En Perfil, toca el ícono de editar junto a tu nombre para actualizar foto, nombre, teléfono y datos de tu perfil público.",
+      },
+      {
+        type: "faq",
+        q: "¿Dónde administro pagos como adoptante?",
+        a: 'En Perfil > "Pagos y suscripciones": Métodos de pago, Suscripción Guardián y Mi historial de pagos.',
+      },
+      {
+        type: "faq",
+        q: "¿Dónde administro cobros como rescatista?",
+        a: 'En Perfil > "Pagos y transacciones": Mi cuenta (Stripe) y Mi historial de apoyos recibidos.',
       },
       {
         type: "faq",
         q: "¿Cómo elimino mi cuenta?",
-        a: 'En Centro de ayuda, toca "Eliminar mi cuenta". Te explicamos qué se borra y qué se conserva antes de confirmar.',
+        a: 'En este Centro de ayuda, en Mi cuenta, toca "Eliminar mi cuenta". Te explicamos qué se borra, qué se conserva y los pendientes antes de confirmar.',
       },
       { type: "action", label: "Eliminar mi cuenta", action: "delete-account" },
     ],
@@ -1262,13 +1309,18 @@ export const helpTopics: HelpTopic[] = [
     blocks: [
       {
         type: "faq",
-        q: "¿Cómo reporto un caso o un perfil?",
-        a: 'En el caso o en el perfil de la rescatista, toca "Reportar". Revisamos cada reporte.',
+        q: "¿Cómo reporto una publicación o un caso?",
+        a: 'En la ficha de adopción o en el detalle del caso de apoyo, toca "Reportar" o "Reportar publicación". Revisamos cada reporte.',
       },
       {
         type: "faq",
         q: "¿Cómo protegen mis datos de pago?",
-        a: "DopMi no guarda los datos de tu tarjeta. Los pagos se procesan con un proveedor de pagos certificado.",
+        a: "DopMi no almacena los datos completos de tu tarjeta. Los cobros y depósitos se procesan con Stripe, bajo sus estándares de seguridad.",
+      },
+      {
+        type: "faq",
+        q: "¿DopMi guarda mis datos?",
+        a: "Solo usamos la información necesaria para validar rescatistas y operar el servicio, según nuestro Aviso de privacidad. Puedes consultarlo desde Perfil o Sobre Nosotros.",
       },
     ],
   },
