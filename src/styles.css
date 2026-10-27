@@ -16647,7 +16647,7 @@ html[data-palette="warm-trust"] .rescuer-profile-page .profile-hero.rescuer .pro
 }
 
 html[data-palette="warm-trust"] .splash {
-  background: #ffffff;
+  background: var(--cafe, #46281d);
 }
 
 html[data-palette="warm-trust"] .topbar {
