@@ -203,7 +203,7 @@ function BrandHeader({ back, action }: { back?: string | (() => void); action?: 
       ) : (
         <span className="header-slot" />
       )}
-      <img className="header-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={144} height={48} />
+      <img className="header-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={144} height={48} />
       {action ? <span className="header-slot">{action}</span> : <span className="header-slot" />}
     </header>
   );
@@ -256,7 +256,7 @@ const donorTabs: DonorNavTab[] = [
   { path: "/adoption", label: "Adoptar", icon: "rtab-home.svg", activeIcon: "nav-home-solid.svg", size: 22 },
   { path: "/messages", label: "Mis match", icon: "icon-heart.svg", activeIcon: "nav-heart-solid.svg", size: 20 },
   { path: "/donate", label: "Apoyar", icon: "tab-donate.svg", activeIcon: "nav-donate-solid.svg", size: 22 },
-  { path: "/apoya-causa", label: "Tienda", icon: "icon-shop.svg", activeIcon: "nav-shop-solid.svg", size: 20 },
+  { path: "/apoya-causa", label: "Tienda", icon: "icon-shop.svg", activeIcon: "icon-shop.svg", size: 20 },
   { path: "/profile", label: "Perfil", icon: "tab-profile.svg", activeIcon: "nav-profile-solid.svg", size: 20 },
 ];
 
@@ -613,7 +613,7 @@ function Splash() {
     <button className="splash" onClick={() => navigate("/choose-account")} aria-label="Continuar a DopMi">
       <img
         className="splash-wordmark"
-        src={`${A}splash-wordmark.png`}
+        src={`${A}splash-wordmark.png?v=7`}
         alt="DopMi"
         width={258}
         height={86}
@@ -689,7 +689,7 @@ function ChooseAccount() {
   return (
     <div className={`account-screen account-screen--choice${selected ? " has-selection" : " is-empty"}`}>
       <div className="account-body account-body--choice">
-        <img className="account-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={120} height={40} />
+        <img className="account-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={120} height={40} />
 
         <header className="account-empty-header" aria-hidden={selected ? true : undefined}>
           <h1 className="account-empty-title">Bienvenido a DopMi</h1>
@@ -995,7 +995,7 @@ function Onboarding({ mode }: { mode: AccountMode }) {
         <button type="button" className="auth-gate-back" onClick={goBack} aria-label="Atrás">
           <AssetIcon name="back.svg" size={24} />
         </button>
-        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={108} height={36} />
         {slide.accountLink ? (
           <button type="button" className="onb-account-link" onClick={() => navigate(`/login/${mode}`)}>
             Ya tengo cuenta
@@ -1094,7 +1094,7 @@ function Welcome({ mode }: { mode: AccountMode }) {
         >
           <Icon name="back.svg" size={24} />
         </button>
-        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={108} height={36} />
       </div>
 
       <div className="auth-gate-hero">
@@ -1147,7 +1147,7 @@ function Login({ mode, signup = false }: { mode: AccountMode; signup?: boolean }
         >
           <Icon name="back.svg" size={24} />
         </button>
-        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={108} height={36} />
       </div>
 
       <form className="auth-gate-form" onSubmit={submit}>
@@ -1279,7 +1279,7 @@ function ForgotPassword() {
         <button type="button" className="auth-gate-back" onClick={() => navigate(loginPath)} aria-label="Atrás">
           <Icon name="back.svg" size={24} />
         </button>
-        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={108} height={36} />
       </div>
 
       <form className="auth-gate-form" onSubmit={sent ? (event) => event.preventDefault() : submit}>
@@ -1426,7 +1426,7 @@ function LegalDoc({ kind }: { kind: "terms" | "privacy" }) {
         <button type="button" className="auth-gate-back" onClick={returnFromLegal} aria-label="Atrás">
           <AssetIcon name="back.svg" size={24} />
         </button>
-        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png`} alt="DopMi" width={108} height={36} />
+        <img className="auth-gate-logo" src={`${A}dopmi-wordmark.png?v=7`} alt="DopMi" width={108} height={36} />
       </div>
 
       <div className="legal-doc">
@@ -1581,38 +1581,397 @@ function PetDetailCharacteristics({
   );
 }
 
-type SupportCauseKibble = {
-  id: string;
-  species: "Perro" | "Gato";
-  brand: string;
-  kilos: string;
-  age: PetAgeBand;
-  size: PetSize;
-  marcaKey: PetPersonality;
-  image: string;
-};
-
 const SUPPORT_CAUSE_KIBBLE_IMAGES = {
   bowl: `${A}support-cause-kibble-dog.jpg`,
   pile: `${A}support-cause-kibble-pile.jpg`,
 } as const;
 
-const SUPPORT_CAUSE_KIBBLE: SupportCauseKibble[] = [
-  { id: "k1", species: "Perro", brand: "PawNutri", kilos: "3 kg", age: "Adulto", size: "Mediano", marcaKey: "obediente", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
-  { id: "k2", species: "Perro", brand: "Royal Bark", kilos: "15 kg", age: "Adulto", size: "Grande", marcaKey: "protector", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
-  { id: "k3", species: "Perro", brand: "LittlePaws", kilos: "1.5 kg", age: "Cachorro", size: "Chico", marcaKey: "jugueton", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
-  { id: "k4", species: "Perro", brand: "NutriCan", kilos: "8 kg", age: "Senior", size: "Mediano", marcaKey: "tranquilo", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
-  { id: "k5", species: "Perro", brand: "HappyTail", kilos: "2 kg", age: "Cachorro", size: "Chico", marcaKey: "alegre", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
-  { id: "k6", species: "Gato", brand: "MeowChef", kilos: "1 kg", age: "Adulto", size: "Chico", marcaKey: "cariñoso", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
-  { id: "k7", species: "Gato", brand: "WhiskerPro", kilos: "3 kg", age: "Cachorro", size: "Chico", marcaKey: "timido", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
-  { id: "k8", species: "Gato", brand: "FelineGold", kilos: "5 kg", age: "Senior", size: "Mediano", marcaKey: "dormilon", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
-  { id: "k9", species: "Gato", brand: "MiauPlus", kilos: "2.5 kg", age: "Adulto", size: "Mediano", marcaKey: "nervioso", image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl },
-  { id: "k10", species: "Perro", brand: "CampoVital", kilos: "20 kg", age: "Adulto", size: "Grande", marcaKey: "obediente", image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile },
+const SHOP_BRAND_OPTIONS = [
+  { id: "dog-chow", label: "Dog Chow" },
+  { id: "nupec", label: "Nupec" },
+  { id: "pedigree", label: "Pedigree" },
+  { id: "pro-plan", label: "Pro Plan" },
+  { id: "purina-excellent", label: "Purina Excellent" },
+  { id: "purina-one", label: "Purina ONE" },
+] as const;
+
+type ShopBrandId = (typeof SHOP_BRAND_OPTIONS)[number]["id"];
+
+const SHOP_FLAVOR_OPTIONS = [
+  "Pollo",
+  "Pollo y arroz",
+  "Pollo y carne",
+  "Res y pollo",
+  "Res y vegetales",
+  "Salmón",
+] as const;
+
+const SHOP_WEIGHT_OPTIONS = [
+  "1 kg",
+  "1.5 kg",
+  "2 kg",
+  "3 kg",
+  "3.5 kg",
+  "4 kg",
+  "7.5 kg",
+  "8 kg",
+  "9.5 kg",
+  "10 kg",
+  "15 kg",
+  "17.5 kg",
+  "20 kg",
+  "25 kg",
+] as const;
+
+type SupportCauseProduct = {
+  id: string;
+  species: "Perro" | "Gato";
+  brandKey: ShopBrandId;
+  brand: string;
+  title: string;
+  flavor: string;
+  age: PetAgeBand;
+  size: PetSize;
+  image: string;
+  weights: string[];
+};
+
+const SUPPORT_CAUSE_PRODUCTS: SupportCauseProduct[] = [
+  {
+    id: "pp-small-adult",
+    species: "Perro",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Adulto razas pequeñas",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["1 kg", "3.5 kg", "7.5 kg", "9.5 kg"],
+  },
+  {
+    id: "pp-medium-adult",
+    species: "Perro",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Adulto razas medianas",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["3 kg", "7.5 kg", "15 kg"],
+  },
+  {
+    id: "pp-large-adult",
+    species: "Perro",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Adulto razas grandes",
+    flavor: "Res y pollo",
+    age: "Adulto",
+    size: "Grande",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["7.5 kg", "15 kg", "20 kg"],
+  },
+  {
+    id: "pp-puppy",
+    species: "Perro",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Cachorro",
+    flavor: "Pollo",
+    age: "Cachorro",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["1 kg", "3 kg", "7.5 kg"],
+  },
+  {
+    id: "dc-adult",
+    species: "Perro",
+    brandKey: "dog-chow",
+    brand: "Dog Chow",
+    title: "Adulto",
+    flavor: "Pollo y carne",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["2 kg", "4 kg", "9.5 kg", "20 kg"],
+  },
+  {
+    id: "dc-puppy",
+    species: "Perro",
+    brandKey: "dog-chow",
+    brand: "Dog Chow",
+    title: "Cachorro",
+    flavor: "Pollo",
+    age: "Cachorro",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["1.5 kg", "4 kg", "7.5 kg"],
+  },
+  {
+    id: "nupec-adult",
+    species: "Perro",
+    brandKey: "nupec",
+    brand: "Nupec",
+    title: "Adulto",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Grande",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["8 kg", "15 kg", "20 kg", "25 kg"],
+  },
+  {
+    id: "nupec-senior",
+    species: "Perro",
+    brandKey: "nupec",
+    brand: "Nupec",
+    title: "Senior",
+    flavor: "Pollo y arroz",
+    age: "Senior",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["3 kg", "8 kg", "15 kg"],
+  },
+  {
+    id: "pedigree-adult",
+    species: "Perro",
+    brandKey: "pedigree",
+    brand: "Pedigree",
+    title: "Adulto",
+    flavor: "Res y vegetales",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["3 kg", "10 kg", "17.5 kg"],
+  },
+  {
+    id: "pedigree-puppy",
+    species: "Perro",
+    brandKey: "pedigree",
+    brand: "Pedigree",
+    title: "Cachorro",
+    flavor: "Pollo y carne",
+    age: "Cachorro",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["2 kg", "4 kg", "8 kg"],
+  },
+  {
+    id: "pex-adult",
+    species: "Perro",
+    brandKey: "purina-excellent",
+    brand: "Purina Excellent",
+    title: "Adulto",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["4 kg", "10 kg", "20 kg"],
+  },
+  {
+    id: "pone-small",
+    species: "Perro",
+    brandKey: "purina-one",
+    brand: "Purina ONE",
+    title: "Razas pequeñas",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["1.5 kg", "3 kg", "7.5 kg"],
+  },
+  {
+    id: "pone-sensitive",
+    species: "Perro",
+    brandKey: "purina-one",
+    brand: "Purina ONE",
+    title: "Piel sensible",
+    flavor: "Salmón",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["3 kg", "7.5 kg", "15 kg"],
+  },
+  {
+    id: "pp-cat-adult",
+    species: "Perro",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Raza mediana activa",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["3 kg", "7.5 kg"],
+  },
+  {
+    id: "dc-cat-adult",
+    species: "Perro",
+    brandKey: "dog-chow",
+    brand: "Dog Chow",
+    title: "Adulto mini razas",
+    flavor: "Pollo y arroz",
+    age: "Adulto",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["1 kg", "3 kg"],
+  },
+  {
+    id: "cat-pp-indoor",
+    species: "Gato",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Adulto interior",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["1.5 kg", "3 kg", "7.5 kg"],
+  },
+  {
+    id: "cat-pp-kitten",
+    species: "Gato",
+    brandKey: "pro-plan",
+    brand: "Pro Plan",
+    title: "Gatito",
+    flavor: "Pollo",
+    age: "Cachorro",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["1 kg", "3 kg"],
+  },
+  {
+    id: "cat-pone",
+    species: "Gato",
+    brandKey: "purina-one",
+    brand: "Purina ONE",
+    title: "Adulto",
+    flavor: "Pollo",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["1.5 kg", "3 kg", "7.5 kg"],
+  },
+  {
+    id: "cat-pone-salmon",
+    species: "Gato",
+    brandKey: "purina-one",
+    brand: "Purina ONE",
+    title: "Control de peso",
+    flavor: "Salmón",
+    age: "Adulto",
+    size: "Mediano",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+    weights: ["1.5 kg", "3 kg"],
+  },
+  {
+    id: "cat-pedigree",
+    species: "Gato",
+    brandKey: "pedigree",
+    brand: "Pedigree",
+    title: "Adulto",
+    flavor: "Pollo y carne",
+    age: "Adulto",
+    size: "Chico",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+    weights: ["1 kg", "3 kg", "8 kg"],
+  },
 ];
 
-function supportCauseKilosValue(kilos: string) {
+type SupportCauseKitItem = {
+  id: string;
+  species: "Perro" | "Gato";
+  brand: string;
+  title: string;
+  spec: string;
+  image: string;
+};
+
+const SUPPORT_CAUSE_KIT: SupportCauseKitItem[] = [
+  {
+    id: "kit-collar",
+    species: "Perro",
+    brand: "Fancy Pets",
+    title: "Collar ajustable",
+    spec: "Talla XCH",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+  },
+  {
+    id: "kit-leash",
+    species: "Perro",
+    brand: "Fancy Pets",
+    title: "Correa fija de cuerda",
+    spec: "1.60 m",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+  },
+  {
+    id: "kit-bowls",
+    species: "Perro",
+    brand: "LUANMA",
+    title: "Platos de acero inoxidable",
+    spec: "2 platos",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+  },
+  {
+    id: "kit-carrier",
+    species: "Perro",
+    brand: "Amazon Basics",
+    title: "Transportadora rígida de doble puerta",
+    spec: "Mediana",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+  },
+  {
+    id: "kit-cat-litter",
+    species: "Gato",
+    brand: "Amazon Basics",
+    title: "Arenero con borde alto",
+    spec: "Grande",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.bowl,
+  },
+  {
+    id: "kit-cat-carrier",
+    species: "Gato",
+    brand: "Fancy Pets",
+    title: "Transportadora para gato",
+    spec: "Compacta",
+    image: SUPPORT_CAUSE_KIBBLE_IMAGES.pile,
+  },
+];
+
+function supportCauseWeightValue(kilos: string) {
   const n = parseFloat(kilos.replace(/[^\d.]/g, ""));
   return Number.isFinite(n) ? n : 0;
+}
+
+function supportCauseProductMinWeight(product: SupportCauseProduct) {
+  return Math.min(...product.weights.map(supportCauseWeightValue));
+}
+
+function supportCauseAvailableBrands(products: SupportCauseProduct[]) {
+  const seen = new Map<ShopBrandId, string>();
+  for (const product of products) {
+    if (!seen.has(product.brandKey)) seen.set(product.brandKey, product.brand);
+  }
+  return [...seen.entries()]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es"));
+}
+
+function supportCauseAvailableFlavors(products: SupportCauseProduct[]) {
+  return [...new Set(products.map((product) => product.flavor))].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function supportCauseAvailableWeights(products: SupportCauseProduct[]) {
+  const weights = new Set<string>();
+  for (const product of products) {
+    for (const weight of product.weights) weights.add(weight);
+  }
+  return [...weights].sort((a, b) => supportCauseWeightValue(a) - supportCauseWeightValue(b));
+}
+
+function shopBasePath(shellMode: AccountMode) {
+  return shellMode === "rescuer" ? "/rescuer/apoya-causa" : "/apoya-causa";
 }
 
 type DiscoverPet = (typeof adoptionPets)[number];
@@ -1716,6 +2075,13 @@ type AdoptionFilterModalProps = {
   setDraftSize: (value: PetSize | null) => void;
   draftPersonality: PetPersonality[];
   setDraftPersonality: Dispatch<SetStateAction<PetPersonality[]>>;
+  draftBrands?: ShopBrandId[];
+  setDraftBrands?: Dispatch<SetStateAction<ShopBrandId[]>>;
+  draftFlavors?: string[];
+  setDraftFlavors?: Dispatch<SetStateAction<string[]>>;
+  draftWeights?: string[];
+  setDraftWeights?: Dispatch<SetStateAction<string[]>>;
+  supportCauseSpecies?: DiscoverSpeciesChoice;
   onApply: () => void;
   onClear: () => void;
 };
@@ -1735,10 +2101,52 @@ function AdoptionFilterModal({
   setDraftSize,
   draftPersonality,
   setDraftPersonality,
+  draftBrands = [],
+  setDraftBrands,
+  draftFlavors = [],
+  setDraftFlavors,
+  draftWeights = [],
+  setDraftWeights,
+  supportCauseSpecies,
   onApply,
   onClear,
 }: AdoptionFilterModalProps) {
   const isSupportCause = variant === "supportCause";
+  const supportCauseBaseProducts = useMemo(() => {
+    if (!isSupportCause || !supportCauseSpecies) return [];
+    return SUPPORT_CAUSE_PRODUCTS.filter((item) => {
+      if (item.species !== supportCauseSpecies) return false;
+      if (draftAge && item.age !== draftAge) return false;
+      if (draftSize && item.size !== draftSize) return false;
+      return true;
+    });
+  }, [isSupportCause, supportCauseSpecies, draftAge, draftSize]);
+
+  const supportCauseBrandOptions = useMemo(
+    () => supportCauseAvailableBrands(supportCauseBaseProducts),
+    [supportCauseBaseProducts],
+  );
+
+  const supportCauseFlavorProducts = useMemo(() => {
+    if (!draftBrands.length) return supportCauseBaseProducts;
+    return supportCauseBaseProducts.filter((item) => draftBrands.includes(item.brandKey));
+  }, [supportCauseBaseProducts, draftBrands]);
+
+  const supportCauseFlavorOptions = useMemo(
+    () => supportCauseAvailableFlavors(supportCauseFlavorProducts),
+    [supportCauseFlavorProducts],
+  );
+
+  const supportCauseWeightProducts = useMemo(() => {
+    if (!draftFlavors.length) return supportCauseFlavorProducts;
+    return supportCauseFlavorProducts.filter((item) => draftFlavors.includes(item.flavor));
+  }, [supportCauseFlavorProducts, draftFlavors]);
+
+  const supportCauseWeightOptions = useMemo(
+    () => supportCauseAvailableWeights(supportCauseWeightProducts),
+    [supportCauseWeightProducts],
+  );
+
   if (!open) return null;
   return (
     <div className="modal-backdrop center" onClick={onClose}>
@@ -1851,34 +2259,128 @@ function AdoptionFilterModal({
 
           <section className="adoption-filter-personality">
             <h3>{isSupportCause ? "Marca" : "Personalidad"}</h3>
-            <ul
-              className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
-              role="group"
-              aria-label={isSupportCause ? "Marca" : "Personalidad"}
-            >
-              {PERSONALITY_FILTERS.map((trait) => {
-                const active = draftPersonality.includes(trait.id);
-                return (
-                  <li key={trait.id}>
-                    <button
-                      type="button"
-                      className={`publish-chip publish-chip--personality tone-${trait.tone}${active ? " selected" : ""}`}
-                      aria-pressed={active}
-                      onClick={() =>
-                        setDraftPersonality((current) =>
-                          current.includes(trait.id)
-                            ? current.filter((id) => id !== trait.id)
-                            : [...current, trait.id],
-                        )
-                      }
-                    >
-                      {trait.label}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {isSupportCause && setDraftBrands ? (
+              <ul
+                className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
+                role="group"
+                aria-label="Marca"
+              >
+                {supportCauseBrandOptions.map((brand) => {
+                  const active = draftBrands.includes(brand.id);
+                  return (
+                    <li key={brand.id}>
+                      <button
+                        type="button"
+                        className={`publish-chip publish-chip--personality tone-neutral${active ? " selected" : ""}`}
+                        aria-pressed={active}
+                        onClick={() =>
+                          setDraftBrands((current) =>
+                            current.includes(brand.id)
+                              ? current.filter((id) => id !== brand.id)
+                              : [...current, brand.id],
+                          )
+                        }
+                      >
+                        {brand.label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <ul
+                className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
+                role="group"
+                aria-label={isSupportCause ? "Marca" : "Personalidad"}
+              >
+                {PERSONALITY_FILTERS.map((trait) => {
+                  const active = draftPersonality.includes(trait.id);
+                  return (
+                    <li key={trait.id}>
+                      <button
+                        type="button"
+                        className={`publish-chip publish-chip--personality tone-${trait.tone}${active ? " selected" : ""}`}
+                        aria-pressed={active}
+                        onClick={() =>
+                          setDraftPersonality((current) =>
+                            current.includes(trait.id)
+                              ? current.filter((id) => id !== trait.id)
+                              : [...current, trait.id],
+                          )
+                        }
+                      >
+                        {trait.label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
+          {isSupportCause && setDraftFlavors && setDraftWeights ? (
+            <>
+              <section>
+                <h3>Sabor</h3>
+                <ul
+                  className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
+                  role="group"
+                  aria-label="Sabor"
+                >
+                  {supportCauseFlavorOptions.map((flavor) => {
+                    const active = draftFlavors.includes(flavor);
+                    return (
+                      <li key={flavor}>
+                        <button
+                          type="button"
+                          className={`publish-chip publish-chip--personality tone-neutral${active ? " selected" : ""}`}
+                          aria-pressed={active}
+                          onClick={() =>
+                            setDraftFlavors((current) =>
+                              current.includes(flavor)
+                                ? current.filter((entry) => entry !== flavor)
+                                : [...current, flavor],
+                            )
+                          }
+                        >
+                          {flavor}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+              <section>
+                <h3>Presentación</h3>
+                <ul
+                  className="pet-detail-traits-list pet-detail-traits-list--wrap adoption-filter-personality-grid"
+                  role="group"
+                  aria-label="Presentación"
+                >
+                  {supportCauseWeightOptions.map((weight) => {
+                    const active = draftWeights.includes(weight);
+                    return (
+                      <li key={weight}>
+                        <button
+                          type="button"
+                          className={`publish-chip publish-chip--personality tone-neutral${active ? " selected" : ""}`}
+                          aria-pressed={active}
+                          onClick={() =>
+                            setDraftWeights((current) =>
+                              current.includes(weight)
+                                ? current.filter((entry) => entry !== weight)
+                                : [...current, weight],
+                            )
+                          }
+                        >
+                          {weight}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </>
+          ) : null}
         </div>
         <div className="adoption-filter-actions">
           <button type="button" className="primary-button" onClick={onApply}>Aplicar filtros</button>
@@ -2145,7 +2647,7 @@ function AdoptionHome() {
           brand={
             <img
               className="discover-wordmark"
-              src={`${A}dopmi-wordmark.png`}
+              src={`${A}dopmi-wordmark.png?v=7`}
               alt="DopMi"
               width={108}
               height={36}
@@ -6215,64 +6717,94 @@ function useDonationLogRows(limit?: number) {
 }
 
 function SupportCause({ shellMode = "donor" }: { shellMode?: AccountMode }) {
+  const navigate = useNavigate();
+  const base = shopBasePath(shellMode);
   const [species, setSpecies] = useState<DiscoverSpeciesChoice>("Perro");
+  const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [draftAge, setDraftAge] = useState<PetAgeBand | null>(null);
   const [ageFilter, setAgeFilter] = useState<PetAgeBand | null>(null);
   const [draftSize, setDraftSize] = useState<PetSize | null>(null);
   const [sizeFilter, setSizeFilter] = useState<PetSize | null>(null);
-  const [draftPersonality, setDraftPersonality] = useState<PetPersonality[]>([]);
-  const [personalityFilter, setPersonalityFilter] = useState<PetPersonality[]>([]);
+  const [draftBrands, setDraftBrands] = useState<ShopBrandId[]>([]);
+  const [brandFilter, setBrandFilter] = useState<ShopBrandId[]>([]);
+  const [draftFlavors, setDraftFlavors] = useState<string[]>([]);
+  const [flavorFilter, setFlavorFilter] = useState<string[]>([]);
+  const [draftWeights, setDraftWeights] = useState<string[]>([]);
+  const [weightFilter, setWeightFilter] = useState<string[]>([]);
   const [kiloSort, setKiloSort] = useState<"asc" | "desc">("asc");
-  const filtersActive = Boolean(ageFilter || sizeFilter || personalityFilter.length > 0);
+  const filtersActive = Boolean(
+    ageFilter || sizeFilter || brandFilter.length || flavorFilter.length || weightFilter.length,
+  );
 
   const openFilters = () => {
     setDraftAge(ageFilter);
     setDraftSize(sizeFilter);
-    setDraftPersonality(personalityFilter);
+    setDraftBrands(brandFilter);
+    setDraftFlavors(flavorFilter);
+    setDraftWeights(weightFilter);
     setFilterOpen(true);
   };
 
   const applyFilters = () => {
     setAgeFilter(draftAge);
     setSizeFilter(draftSize);
-    setPersonalityFilter(draftPersonality);
+    setBrandFilter(draftBrands);
+    setFlavorFilter(draftFlavors);
+    setWeightFilter(draftWeights);
     setFilterOpen(false);
   };
 
   const clearFilters = () => {
     setDraftAge(null);
     setDraftSize(null);
-    setDraftPersonality([]);
+    setDraftBrands([]);
+    setDraftFlavors([]);
+    setDraftWeights([]);
     setAgeFilter(null);
     setSizeFilter(null);
-    setPersonalityFilter([]);
+    setBrandFilter([]);
+    setFlavorFilter([]);
+    setWeightFilter([]);
     setFilterOpen(false);
   };
 
-  const visibleKibble = useMemo(() => {
-    const filtered = SUPPORT_CAUSE_KIBBLE.filter((item) => {
+  const visibleProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const filtered = SUPPORT_CAUSE_PRODUCTS.filter((item) => {
       if (item.species !== species) return false;
       if (ageFilter && item.age !== ageFilter) return false;
       if (sizeFilter && item.size !== sizeFilter) return false;
-      if (personalityFilter.length && !personalityFilter.includes(item.marcaKey)) return false;
+      if (brandFilter.length && !brandFilter.includes(item.brandKey)) return false;
+      if (flavorFilter.length && !flavorFilter.includes(item.flavor)) return false;
+      if (weightFilter.length && !item.weights.some((weight) => weightFilter.includes(weight))) return false;
+      if (query) {
+        const haystack = `${item.brand} ${item.title} ${item.flavor} ${item.weights.join(" ")}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
       return true;
     });
     return filtered.sort((a, b) => {
-      const diff = supportCauseKilosValue(a.kilos) - supportCauseKilosValue(b.kilos);
+      const diff = supportCauseProductMinWeight(a) - supportCauseProductMinWeight(b);
       return kiloSort === "asc" ? diff : -diff;
     });
-  }, [species, ageFilter, sizeFilter, personalityFilter, kiloSort]);
+  }, [species, ageFilter, sizeFilter, brandFilter, flavorFilter, weightFilter, search, kiloSort]);
 
   const sortAscending = kiloSort === "asc";
   const sortHint = sortAscending ? "Menor a mayor kg" : "Mayor a menor kg";
+  const speciesLabel = species === "Perro" ? "perros" : "gatos";
+  const kitSlug = species === "Perro" ? "perros" : "gatos";
 
   return (
     <ScreenShell mode={shellMode}>
       <div className="donate-home donor-chrome support-cause-screen">
         <DonorChromeTop />
+        <header className="match-top">
+          <h1>Tienda Dopmi</h1>
+        </header>
         <AdoptionFilterModal
           variant="supportCause"
+          supportCauseSpecies={species}
           open={filterOpen}
           onClose={() => setFilterOpen(false)}
           draftSex={null}
@@ -6281,86 +6813,291 @@ function SupportCause({ shellMode = "donor" }: { shellMode?: AccountMode }) {
           setDraftAge={setDraftAge}
           draftSize={draftSize}
           setDraftSize={setDraftSize}
-          draftPersonality={draftPersonality}
-          setDraftPersonality={setDraftPersonality}
+          draftPersonality={[]}
+          setDraftPersonality={() => {}}
+          draftBrands={draftBrands}
+          setDraftBrands={setDraftBrands}
+          draftFlavors={draftFlavors}
+          setDraftFlavors={setDraftFlavors}
+          draftWeights={draftWeights}
+          setDraftWeights={setDraftWeights}
           onApply={applyFilters}
           onClear={clearFilters}
         />
-        <header className="match-top">
-          <h1>Tienda Dopmi</h1>
-        </header>
         <div className="support-cause-body">
-          <div className="support-cause-species-row">
-            <div className="discover-species support-cause-species" role="tablist" aria-label="Tipo de mascota">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={species === "Perro"}
-              className={`discover-species-tab${species === "Perro" ? " is-active" : ""}`}
-              onClick={() => setSpecies("Perro")}
-            >
-              Perros
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={species === "Gato"}
-              className={`discover-species-tab${species === "Gato" ? " is-active" : ""}`}
-              onClick={() => setSpecies("Gato")}
-            >
-              Gatos
-            </button>
+          <section className="shop-mission-card shop-mission-card--lead" aria-labelledby="shop-mission-title">
+            <div className="shop-mission-banner" aria-label="Cómo apoya tu compra">
+              <div className="shop-mission-banner-copy">
+                <h2 id="shop-mission-title">Más hogares para más mascotas</h2>
+                <p className="shop-mission-banner-lead">Elige un producto y compra en Amazon MX.</p>
+                <p className="shop-mission-banner-body">
+                  Tus compras ayudan a que las mascotas en DopMi lleguen a más personas.
+                </p>
+              </div>
+              <div className="shop-mission-banner-media" aria-hidden="true">
+                <img src={`${A}welcome-pets.png`} alt="" loading="lazy" decoding="async" />
+              </div>
             </div>
-            <div className="support-cause-toolbar-actions">
+          </section>
+
+          <div className="support-cause-species-row support-cause-species-row--lead">
+            <div
+              className="discover-species support-cause-species support-cause-species--pills"
+              role="tablist"
+              aria-label="Tipo de mascota"
+            >
               <button
                 type="button"
-                className="support-cause-tool-btn"
-                onClick={() => setKiloSort((value) => (value === "asc" ? "desc" : "asc"))}
-                aria-label={sortAscending ? "Ordenar de mayor a menor kg" : "Ordenar de menor a mayor kg"}
-                title={sortHint}
+                role="tab"
+                aria-selected={species === "Perro"}
+                className={`discover-species-tab${species === "Perro" ? " is-active" : ""}`}
+                onClick={() => setSpecies("Perro")}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                Perros
               </button>
               <button
                 type="button"
-                className={`support-cause-tool-btn${filtersActive ? " is-active" : ""}`}
-                onClick={openFilters}
-                aria-label="Filtros"
+                role="tab"
+                aria-selected={species === "Gato"}
+                className={`discover-species-tab${species === "Gato" ? " is-active" : ""}`}
+                onClick={() => setSpecies("Gato")}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
-                  <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
-                </svg>
+                Gatos
               </button>
             </div>
           </div>
 
-          {visibleKibble.length ? (
+          <div className="shop-search-toolbar">
+            <label className="shop-search-sr" htmlFor="shop-search">
+              Buscar para {speciesLabel}
+            </label>
+            <div className="shop-search-field">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M16 16l4.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              <input
+                id="shop-search"
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={`Buscar para ${speciesLabel}`}
+                autoComplete="off"
+              />
+            </div>
+            <button
+              type="button"
+              className={`shop-search-filter-btn${filtersActive ? " is-active" : ""}`}
+              onClick={openFilters}
+              aria-label="Filtros de producto"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 7h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="16.5" cy="7" r="2.25" fill="currentColor" />
+                <path d="M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <circle cx="7.5" cy="17" r="2.25" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className="shop-kit-link"
+            onClick={() => navigate(`${base}/kit/${kitSlug}`)}
+          >
+            <span className="shop-kit-link-icon" aria-hidden="true">
+              <Icon name="icon-shop.svg" size={20} />
+            </span>
+            <strong>Kit de adopción para {speciesLabel}</strong>
+            <Chevron />
+          </button>
+
+          <header className="shop-section-head">
+            <h2>Alimento para {speciesLabel}</h2>
+            <button
+              type="button"
+              className="support-cause-tool-btn shop-section-sort-btn"
+              onClick={() => setKiloSort((value) => (value === "asc" ? "desc" : "asc"))}
+              aria-label={sortAscending ? "Ordenar de mayor a menor kg" : "Ordenar de menor a mayor kg"}
+              title={sortHint}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </header>
+
+          {visibleProducts.length ? (
             <div className="support-cause-grid">
-              {visibleKibble.map((item) => (
+              {visibleProducts.map((item) => (
                 <article key={item.id} className="support-cause-card">
-                  <div className="support-cause-card-media" aria-hidden="true">
-                    <img src={item.image} alt="" loading="lazy" />
-                  </div>
-                  <div className="support-cause-card-footer">
-                    <div className="support-cause-card-copy">
-                      <strong className="support-cause-card-brand">{item.brand}</strong>
-                      <span className="support-cause-card-detail">{item.age}</span>
+                  <button
+                    type="button"
+                    className="support-cause-card-hit"
+                    onClick={() => navigate(`${base}/producto/${item.id}`)}
+                  >
+                    <div className="support-cause-card-media" aria-hidden="true">
+                      <img src={item.image} alt="" loading="lazy" />
                     </div>
-                    <span className="support-cause-card-value">{item.kilos}</span>
-                  </div>
+                    <div className="support-cause-card-body">
+                      <span className="support-cause-card-brand">{item.brand}</span>
+                      <strong className="support-cause-card-title">{item.title}</strong>
+                      <span className="support-cause-card-flavor">{item.flavor}</span>
+                      <p className="support-cause-card-meta">
+                        <span className="support-cause-card-age">{item.age}</span>
+                        <strong className="support-cause-card-variants">
+                          {item.weights.length} variantes
+                        </strong>
+                      </p>
+                    </div>
+                    <span className="support-cause-card-action">
+                      <span>Ver opciones</span>
+                      <Icon name="icon-chevron-right.svg" size={16} />
+                    </span>
+                  </button>
                 </article>
               ))}
             </div>
           ) : (
             <p className="support-cause-empty">
-              No hay croquetas con estos filtros. Prueba otra combinación o limpia los filtros.
+              No hay productos con estos filtros. Prueba otra combinación o limpia los filtros.
             </p>
           )}
+        </div>
+      </div>
+    </ScreenShell>
+  );
+}
+
+function SupportCauseKit({ shellMode = "donor" }: { shellMode?: AccountMode }) {
+  const navigate = useNavigate();
+  const { speciesKey } = useParams();
+  const base = shopBasePath(shellMode);
+  const species: DiscoverSpeciesChoice = speciesKey === "gatos" ? "Gato" : "Perro";
+  const speciesLabel = species === "Perro" ? "perros" : "gatos";
+  const items = SUPPORT_CAUSE_KIT.filter((item) => item.species === species);
+
+  return (
+    <ScreenShell
+      mode={shellMode}
+      pinHeader={
+        <div className="shop-kit-pinned-top">
+          <TopBar title={`Kit de adopción para ${speciesLabel}`} back={() => navigate(base)} />
+        </div>
+      }
+    >
+      <div className="plain-screen donor-chrome shop-kit-screen">
+        <div className="content-pad shop-kit-body">
+          <p className="shop-kit-lead">
+            Cada artículo se compra por separado.
+            <br />
+            Tus compras ayudan a que las mascotas en DopMi lleguen a más personas.
+          </p>
+          <ul className="shop-kit-list">
+            {items.map((item) => (
+              <li key={item.id}>
+                <article className="shop-kit-card">
+                  <div className="shop-kit-card-media" aria-hidden="true">
+                    <img src={item.image} alt="" loading="lazy" />
+                  </div>
+                  <div className="shop-kit-card-copy">
+                    <span className="shop-kit-card-brand">{item.brand}</span>
+                    <strong>{item.title}</strong>
+                    <small>{item.spec}</small>
+                    <button type="button" className="secondary-button shop-kit-amazon">
+                      Comprar ahora →
+                    </button>
+                    <span className="shop-kit-affiliate">Compra en Amazon México</span>
+                  </div>
+                </article>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </ScreenShell>
+  );
+}
+
+function SupportCauseProduct({ shellMode = "donor" }: { shellMode?: AccountMode }) {
+  const navigate = useNavigate();
+  const { productId } = useParams();
+  const base = shopBasePath(shellMode);
+  const product = SUPPORT_CAUSE_PRODUCTS.find((item) => item.id === productId);
+  const [weight, setWeight] = useState<string>("");
+
+  useEffect(() => {
+    if (product) setWeight(product.weights[0] ?? "");
+  }, [product]);
+
+  if (!product) {
+    return (
+      <ScreenShell mode={shellMode}>
+        <div className="plain-screen donor-chrome">
+          <TopBar title="Producto" back={() => navigate(base)} />
+          <div className="content-pad">
+            <p>No encontramos este producto en el catálogo.</p>
+            <button type="button" className="primary-button" onClick={() => navigate(base)}>
+              Volver a la tienda
+            </button>
+          </div>
+        </div>
+      </ScreenShell>
+    );
+  }
+
+  return (
+    <ScreenShell
+      mode={shellMode}
+      pinHeader={
+        <div className="shop-product-pinned-top">
+          <TopBar title="Tienda Dopmi" back={() => navigate(base)} />
+        </div>
+      }
+    >
+      <div className="plain-screen donor-chrome shop-product-screen">
+        <div className="content-pad shop-product-body">
+          <p className="shop-product-brand">{product.brand}</p>
+          <h1 className="shop-product-title">{product.title}</h1>
+          <div className="shop-product-media">
+            <img src={product.image} alt="" loading="lazy" />
+          </div>
+
+          <section className="shop-product-section">
+            <h2>Sabor</h2>
+            <div className="shop-product-chips" role="group" aria-label="Sabor">
+              <button type="button" className="shop-product-chip is-active" aria-pressed="true">
+                {product.flavor}
+              </button>
+            </div>
+          </section>
+
+          <section className="shop-product-section">
+            <h2>Presentación</h2>
+            <div className="shop-product-chips" role="group" aria-label="Presentación">
+              {product.weights.map((option) => {
+                const active = weight === option;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`shop-product-chip${active ? " is-active" : ""}`}
+                    aria-pressed={active}
+                    onClick={() => setWeight(option)}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <div className="shop-product-foot">
+            <button type="button" className="primary-button shop-product-amazon">
+              Ver producto en Amazon México
+            </button>
+            <p className="shop-product-affiliate">Gracias por tu apoyo.</p>
+          </div>
         </div>
       </div>
     </ScreenShell>
@@ -6373,7 +7110,7 @@ function CroquetasConCausaCard({ onClick }: { onClick: () => void }) {
       <span className="profile-feature-banner-body">
         <span className="profile-feature-copy">
           <strong>Croquetas con causa</strong>
-          <small>Compra en nuestra tienda y ayuda a la app para seguir apoyando a la manada.</small>
+          <small>Compra a través de nuestra tienda y ayuda a que las mascotas en DopMi lleguen a más personas.</small>
         </span>
         <span className="profile-feature-banner-cta">
           Ver más
@@ -8850,7 +9587,7 @@ function RescuerHome() {
           brand={
             <img
               className="discover-wordmark"
-              src={`${A}dopmi-wordmark.png`}
+              src={`${A}dopmi-wordmark.png?v=7`}
               alt="DopMi"
               width={108}
               height={36}
@@ -15513,7 +16250,11 @@ function PrototypeRoutes() {
           <Route path="/history" element={<History />} />
           <Route path="/profile" element={<DonorProfile />} />
           <Route path="/apoya-causa" element={<SupportCause shellMode="donor" />} />
+          <Route path="/apoya-causa/kit/:speciesKey" element={<SupportCauseKit shellMode="donor" />} />
+          <Route path="/apoya-causa/producto/:productId" element={<SupportCauseProduct shellMode="donor" />} />
           <Route path="/rescuer/apoya-causa" element={<SupportCause shellMode="rescuer" />} />
+          <Route path="/rescuer/apoya-causa/kit/:speciesKey" element={<SupportCauseKit shellMode="rescuer" />} />
+          <Route path="/rescuer/apoya-causa/producto/:productId" element={<SupportCauseProduct shellMode="rescuer" />} />
           <Route path="/saved" element={<SavedPets />} />
           <Route path="/saved-rescuers" element={<Navigate to="/profile" replace />} />
           <Route path="/settings" element={<Navigate to="/profile" replace />} />
